@@ -44,7 +44,8 @@
   `E0597 __tauri_message__ does not live long enough`（`get_data_home_state` / `list_tasks` / `read_events` / `get_preferences` 已按此改正）；
   另 edition 2021 下 `let state = app.state::<T>(); if let Ok(g) = state.x.lock() { .. }` 需在 `if let` 后补 `;`，否则守卫临时值晚于 `state` 释放而报 `E0597`。
 - **待办（需要维护者的动作）**：
-  1. ~~配置 Secrets~~ **✅ 已完成（2026-09-27）**：`UPDATER_PUBKEY` / `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（私钥带密码，三项已成套）+ `GITEE_TOKEN`；
+  1. ~~配置 Secrets~~ **✅ 已完成并验证生效（2026-09-27）**：`UPDATER_PUBKEY` / `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（私钥带密码，三项已成套）+ `GITEE_TOKEN`；
+     配置后重新构建，`Detect signing capability` 不再输出「未配置」告警 → **签名路径已启用**（产物含更新包）；
      密钥对由 `npx tauri signer generate -w ~/.tauri/tianshu-gui.key` 在本机生成（私钥**不入库**，请离线备份 —— 更换密钥会让已发布版本的自动更新验签失败）；
   2. 首次发布打 `gui-v0.1.0-beta.1` tag，并按 [issue-25 真机记录](docs/issue-25-gui-real-machine-record.md) 的清单用 **CI 产物**完成真机验收（其中 §2.3 P1~P4 已在本机验证通过）；
   3. 本机 `gh` CLI 不可用，Actions artifact 需经浏览器下载。

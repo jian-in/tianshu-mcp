@@ -19,6 +19,7 @@
 | `gh` CLI | 不可用 | 故 artifact 需经浏览器从 Actions 运行页下载 |
 | CI 构建产物 | **已生成** | `GUI` workflow 已跑通并**三平台全部 success**：`windows-x86_64`（NSIS）、`darwin-x86_64`、`darwin-aarch64`（dmg + `.app.tar.gz`）均打包并上传产物 |
 | CI 排障通道 | **注解 + 只读代理** | 公开仓 job 日志需 admin（403）→ 用 `check-runs/<job_id>/annotations` 读取诊断（详见 §三.2） |
+| 签名密钥（Secrets） | **✅ 已配置并验证生效** | `UPDATER_PUBKEY` / `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（私钥带密码，三项成套）+ `GITEE_TOKEN`；配置后构建的注解中**不再出现**「未配置 `TAURI_SIGNING_PRIVATE_KEY`」，即已走签名路径 |
 
 ---
 
@@ -76,6 +77,8 @@
 | Rust 质量门禁 | `GUI` workflow：`cargo fmt --check` / `cargo clippy -D warnings` / `cargo test` | ✅ **三平台全通过**（Windows / macOS aarch64 / macOS x86_64） |
 | GUI 三平台构建 | `GUI` workflow（windows-latest / macos-15-intel / macos-15） | ✅ **三平台全部 success**：`windows-x86_64`（NSIS）、`darwin-x86_64`、`darwin-aarch64` 均完成 `tauri build` 打包并上传产物（清理临时诊断步骤后已复验一轮全绿） |
 | 与 MCP 发版隔离 | `gui-v*` 不匹配 `release.yml` 的 `v*` | ✅ workflow 内显式断言通过（另见 `docs/gui-log-viewer.md` §7.2） |
+| 更新包签名（minisign） | `GUI` workflow 的 `Detect signing capability` + 签名构建 | ✅ **已启用**：配置 Secrets 后构建注解中不再出现「未配置 `TAURI_SIGNING_PRIVATE_KEY`」；产物应含 `.sig`（可由 Artifacts 下载确认，见 §2.2 U8） |
+| 手动触发语义 | `GUI` workflow 的 `workflow_dispatch` | ✅ **无条件构建**（运行时长正常、矩阵不再被跳过）；push / PR 仍按 `mcp-gui/**`、两个真源、`gui.yml` 做变更过滤 |
 
 ### 3.2 本轮修复过程（首次跑通前）
 
@@ -88,6 +91,7 @@
 | 2 | Rust 编译（`cargo clippy` / `cargo test` 均 101） | **Tauri 2 规则**：`async fn` 命令含借用输入（`State<'_, T>`）必须返回 `Result<_, _>`，否则 `E0277` + `E0597 __tauri_message__`；另有 `if let` 守卫临时值晚于 `State` 释放的 `E0597`；`RecommendedWatcher` 未用导入（`-D warnings` 下为错误） | 4 个命令改为返回 `Result`；`if let` 后补 `;`；删未用导入 |
 | 3 | `cargo clippy` `dead_code` | 词表常量在私有模块内且仅由 CI 脚本比对；6 个请求结构体的 `data_home` 字段 Rust 侧不读取（契约字段） | 显式 `#[allow(dead_code)]` + 注释说明用途 |
 | — | 附带 | 跨平台测试断言：`C:/Windows` 在类 Unix 下只是普通相对路径 | 该断言加 `#[cfg(windows)]` |
+| 4 | 手动触发"跑了等于没跑" | `workflow_dispatch` 不带 `github.event.before`，变更检测退化为比较最近两次提交；若它们只改文档 → 三平台矩阵**全部 skipped**（显示 Success、时长 11s） | 手动触发改为**无条件构建**（tag 亦无条件；仅 push / PR 走 diff 过滤） |
 
 > 排障关键细节（已同步至 `HANDOFF.md`）：**cargo / rustc 输出带 ANSI 颜色码**，解析前必须剥离，否则 `^error` 行匹配不到；
 > Windows runner 上 `rustfmt` 的 diff 表头是 `Diff in <路径>:<行号>:`（非 Unix 的 `at line <行号>`）；注解有「单条 ~4K 字符 + 单步 10 条」上限，故按 2500 字符切块并分多步打印。
