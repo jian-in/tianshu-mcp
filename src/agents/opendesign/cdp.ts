@@ -93,6 +93,8 @@ export interface OpenDesignDocumentProbe {
   anchors: LayoutProbeEntry[];
   /** 页面可见文本长度（判「页面还没渲染完」用的粗信号） */
   bodyTextLength: number;
+  /** 页面可见文本片段（截断）：选择器漂移时用于判断「页面到底渲染了什么」 */
+  bodyText?: string;
 }
 
 /**
@@ -199,9 +201,14 @@ export class OpenDesignCdpClient {
   constructor(
     private readonly page: KimicodePageClient,
     private readonly overrides: SelectorOverrides = {},
-    private readonly sleep: (ms: number) => Promise<void> = (ms) =>
+    private readonly sleepFn: (ms: number) => Promise<void> = (ms) =>
       new Promise((resolve) => setTimeout(resolve, ms)),
   ) {}
+
+  /** 等待若干毫秒（供上层做「重试一次」这类有界等待；sleep 本身不进预算，由调用方夹住） */
+  sleep(ms: number): Promise<void> {
+    return this.sleepFn(ms);
+  }
 
   connect(): Promise<void> {
     return this.page.connect();
@@ -227,7 +234,7 @@ export class OpenDesignCdpClient {
   async bringToFront(): Promise<boolean> {
     try {
       await this.send("Page.bringToFront");
-      await this.sleep(300);
+      await this.sleepFn(300);
       return true;
     } catch {
       return false;
@@ -398,10 +405,10 @@ export class OpenDesignCdpClient {
     if (hit.count !== 1 || !hit.point)
       throw new Error(`Open Design 输入框无法唯一定位（匹配 ${hit.count}）——选择器可能已漂移`);
     await this.clickAt(hit.point);
-    await this.sleep(120);
+    await this.sleepFn(120);
     await this.send("Input.insertText", { text });
     // insertText 是可信输入，React 会收到真实 beforeinput/input；再等一拍让受控状态落定
-    await this.sleep(200);
+    await this.sleepFn(200);
   }
 
   /**
@@ -418,13 +425,13 @@ export class OpenDesignCdpClient {
     if (hit.count !== 1 || !point) point = (await this.firstPoint(key)).point;
     if (!point) return false;
     await this.clickAt(point);
-    await this.sleep(80);
+    await this.sleepFn(80);
     // 全选 + 删除，清掉上一次过滤条件（Ctrl+A / Delete）
     await this.key("a", "KeyA", 65, { modifiers: 2 });
     await this.key("Delete", "Delete", 46);
-    await this.sleep(60);
+    await this.sleepFn(60);
     await this.send("Input.insertText", { text });
-    await this.sleep(150);
+    await this.sleepFn(150);
     return true;
   }
 
@@ -472,7 +479,7 @@ export class OpenDesignCdpClient {
     for (;;) {
       if (await predicate().catch(() => false)) return true;
       if (Date.now() >= deadline) return false;
-      await this.sleep(200);
+      await this.sleepFn(200);
     }
   }
 }

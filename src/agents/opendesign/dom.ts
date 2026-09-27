@@ -179,6 +179,12 @@ export interface LayoutProbe {
   /** 关键锚点的存在性；key 缺失即代表页面结构变了或还没渲染完 */
   anchors: LayoutProbeEntry[];
   bodyTextLength: number;
+  /**
+   * 页面可见文本片段（截断 400 字）。
+   * 为什么带回来：选择器漂移时**光有「缺了哪个键」不足以修复选择器**，必须能一眼看到
+   * 当前页面到底渲染了什么（例如界面被换成了登录页、或整体语言变了）。
+   */
+  bodyText?: string;
 }
 
 /**
@@ -208,6 +214,7 @@ export function layoutProbeExpression(
       title: document.title,
       anchors,
       bodyTextLength: (document.body ? (document.body.innerText || '') : '').length,
+      bodyText: (document.body ? (document.body.innerText || '') : '').slice(0, 400),
     };
   })()`;
 }

@@ -501,7 +501,8 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
           return hardFail(
             `Open Design 页面结构已漂移（布局守卫未命中：${dead.join(", ")}）；已跳过全部点击。` +
               `请用 \`npm run probe:opendesign -- anchors\` 重新采集选择器。` +
-              `当前页面：${document.title} ${document.url}（可见文本 ${document.bodyTextLength} 字）`,
+              `当前页面：${document.title} ${document.url}（可见文本 ${document.bodyTextLength} 字）` +
+              `${document.bodyText?.trim() ? `\n页面文本片段：${document.bodyText.replace(/\s+/g, " ").trim().slice(0, 300)}` : ""}`,
             "selector_drift",
           );
       }

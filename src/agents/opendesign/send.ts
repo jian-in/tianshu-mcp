@@ -20,6 +20,8 @@ export interface OpenDesignSendPage {
   ): Promise<{ clicked: boolean; count: number }>;
   poll(): Promise<OpenDesignPollSnapshot>;
   waitFor(predicate: () => Promise<boolean>, timeoutMs: number): Promise<boolean>;
+  /** 有界等待（用于「重试一次」前的短暂让位） */
+  sleep(ms: number): Promise<void>;
 }
 
 export interface SendConfirmationEvidence {
@@ -77,22 +79,40 @@ export async function dispatchTask(input: DispatchTaskInput): Promise<SendOutcom
   const before = await page.conversationText().catch(() => "");
 
   await page.typeText(text);
-  const typed = await page.inputText();
+  // 输入回读：受控编辑器可能晚一拍才反映 insertText，**重读一次**（计划 §5「重试一次后硬失败」）；
+  // 重读仍不含标记 → 判 input_mismatch 且**不点发送**（否则会派一份空任务）。
+  let typed = await page.inputText();
+  if (!typed.includes(marker)) {
+    await page.sleep(300);
+    typed = await page.inputText();
+  }
   if (!typed.includes(marker))
     return {
       ok: false,
       reason: "input_mismatch",
       before,
-      message: `输入框回读不一致（未包含本次任务标记），已放弃发送以避免派发空任务：实际 ${typed.length} 字`,
+      message: `输入框回读不一致（未包含本次任务标记，已重读一次），已放弃发送以避免派发空任务：实际 ${typed.length} 字`,
     };
 
-  const clicked = await page.clickKey("sendButton");
+  /**
+   * 发送按钮：**不可用时重试一次**（按钮可能刚由「未就绪」转为可用，计划 §5），仍不可用才硬失败。
+   *
+   * 注意重试的边界：这里重试的是「点不到按钮」；**「发送结果无法确认」绝不重试**——
+   * 那一路径下第一次点击可能已经生效，再点一次就是重复派单（最危险的状态）。
+   */
+  let clicked = await page.clickKey("sendButton");
+  let clickAttempts = 1;
+  if (clicked.count !== 1 || !clicked.clicked) {
+    await page.sleep(500);
+    clicked = await page.clickKey("sendButton");
+    clickAttempts = 2;
+  }
   if (clicked.count !== 1 || !clicked.clicked)
     return {
       ok: false,
       reason: "send_failed",
       before,
-      message: `发送按钮无法唯一点击（匹配 ${clicked.count}）——窗口可能被遮挡或选择器漂移`,
+      message: `发送按钮无法唯一点击（已尝试 ${clickAttempts} 次；匹配 ${clicked.count}）——窗口可能被遮挡或选择器漂移`,
     };
 
   let evidence: SendConfirmationEvidence = {

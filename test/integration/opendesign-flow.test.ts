@@ -278,6 +278,9 @@ describe("Open Design GUI 驱动（假 CDP）", () => {
     const { res } = await run(state);
     expect(res.hardFailure).toBe(true);
     expect(res.endReason).toBe("selector_drift");
+    // 诊断必须能支撑「修选择器」：既要报缺哪个键，也要给出当前页面渲染了什么
+    expect(res.error ?? "").toContain("composer");
+    expect(res.error ?? "").toContain("页面文本片段");
     expect(state.sendClicks).toBe(0);
     expect(state.clicks).not.toContain("model-trigger");
   });

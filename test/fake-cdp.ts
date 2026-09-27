@@ -1270,6 +1270,7 @@ export class FakeOpenDesignPage {
         title: "Open Design",
         anchors,
         bodyTextLength: (s.conversation || s.direction || "Open Design").length,
+        bodyText: s.conversation || "Open Design 首页",
       };
     }
     if (expression.includes("od:exists")) return this.countOf(odKeyOf(expression)) > 0;

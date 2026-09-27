@@ -1,10 +1,12 @@
 /**
  * 发送段判据测试（步 7/8）。
  *
- * 三条纪律固化为回归：
- * 1. **发送前回读**：输入框不含本次任务标记就不点发送（否则会派一份空任务）；
- * 2. **只点一次、绝不重发**：确认不到只报 `send_unknown`，不重试；
- * 3. 确认证据分三种（消息落地 / 运行信号 / 输入框清空），但**清空单独不算成功**。
+ * 四条纪律固化为回归：
+ * 1. **发送前回读**：输入框不含本次任务标记就不点发送（否则会派一份空任务）；受控编辑器
+ *    可能晚一拍才反映 `insertText`，因此**重读一次**（计划 §5「重试一次后硬失败」）；
+ * 2. **发送按钮不可用 → 重试一次**，仍不可用才硬失败；
+ * 3. **只点一次、绝不重发**：确认不到只报 `send_unknown`，不重试（第一次点击可能已生效，再点就是重复派单）；
+ * 4. 确认证据分三种（消息落地 / 运行信号 / 输入框清空），但**清空单独不算成功**。
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -25,15 +27,24 @@ interface StubState {
     running?: boolean;
     clearInput?: boolean;
   };
-  /** 发送按钮是否可唯一点击 */
+  /** 发送按钮可见命中数（≠1 即「不可唯一点击」） */
   sendCount?: number;
   sendClicked?: boolean;
+  /** 前 N 次点击发送按钮返回「不可用」（复刻按钮尚未就绪，验证重试一次） */
+  sendUnavailableTimes?: number;
+  /** 前 N 次输入回读返回「不含标记」的值（复刻编辑器晚一拍才反映 insertText） */
+  staleInputTimes?: number;
 }
 
 function makePage(state: StubState) {
   let sendClicks = 0;
+  let inputReads = 0;
   const page: OpenDesignSendPage = {
-    inputText: async () => state.inputText,
+    inputText: async () => {
+      inputReads += 1;
+      if ((state.staleInputTimes ?? 0) >= inputReads) return "";
+      return state.inputText;
+    },
     conversationText: async () => state.conversation,
     typeText: async (text) => {
       state.inputText += text;
@@ -41,6 +52,7 @@ function makePage(state: StubState) {
     clickKey: async () => {
       sendClicks += 1;
       const count = state.sendCount ?? 1;
+      if ((state.sendUnavailableTimes ?? 0) >= sendClicks) return { clicked: false, count: 0 };
       if (count !== 1) return { clicked: false, count };
       const effect = state.effect ?? {};
       if (effect.conversationGrew) state.conversation += `\n${state.inputText}`;
@@ -56,6 +68,7 @@ function makePage(state: StubState) {
     }),
     waitFor: async (_predicate, timeoutMs) =>
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), Math.min(timeoutMs, 10))),
+    sleep: async (ms) => new Promise<void>((resolve) => setTimeout(resolve, Math.min(ms, 5))),
   };
   return { page, sendClicks: () => sendClicks };
 }
@@ -78,7 +91,7 @@ describe("judgeSendConfirmation：派发确认判据", () => {
 });
 
 describe("dispatchTask：输入并发送", () => {
-  it("输入框不含标记 → input_mismatch，且**不点发送**", async () => {
+  it("输入框始终不含标记 → input_mismatch，且**不点发送**", async () => {
     const state: StubState = { inputText: "", conversation: "" };
     const { page, sendClicks } = makePage(state);
     // typeText 被替换成「什么都没输进去」（复刻 insertText 没落进受控编辑器）
@@ -95,7 +108,45 @@ describe("dispatchTask：输入并发送", () => {
     expect(sendClicks()).toBe(0);
   });
 
-  it("发送按钮不唯一 → send_failed，只尝试一次", async () => {
+  it("编辑器晚一拍才反映输入 → 重读一次后正常发送（不误判 input_mismatch）", async () => {
+    const state: StubState = {
+      inputText: "",
+      conversation: "",
+      staleInputTimes: 1, // 首次回读为空，重读才拿到文本
+      effect: { conversationGrew: true, running: true },
+    };
+    const { page, sendClicks } = makePage(state);
+    const out = await dispatchTask({
+      page,
+      text: `${MARKER}\n任务`,
+      marker: MARKER,
+      confirmBudgetMs: 200,
+      pollIntervalMs: 5,
+    });
+    expect(out.ok).toBe(true);
+    expect(sendClicks()).toBe(1);
+  });
+
+  it("发送按钮前一次不可用 → 重试一次后成功", async () => {
+    const state: StubState = {
+      inputText: "",
+      conversation: "",
+      sendUnavailableTimes: 1, // 第一次点不到，重试成功
+      effect: { conversationGrew: true, running: true },
+    };
+    const { page, sendClicks } = makePage(state);
+    const out = await dispatchTask({
+      page,
+      text: `${MARKER}\n任务`,
+      marker: MARKER,
+      confirmBudgetMs: 200,
+      pollIntervalMs: 5,
+    });
+    expect(out.ok).toBe(true);
+    expect(sendClicks()).toBe(2);
+  });
+
+  it("发送按钮始终不可唯一点击 → send_failed（含重试共 2 次尝试）", async () => {
     const state: StubState = { inputText: "", conversation: "", sendCount: 2 };
     const { page, sendClicks } = makePage(state);
     const out = await dispatchTask({
@@ -107,10 +158,11 @@ describe("dispatchTask：输入并发送", () => {
     });
     expect(out.ok).toBe(false);
     expect(out.reason).toBe("send_failed");
-    expect(sendClicks()).toBe(1);
+    expect(out.message).toContain("已尝试 2 次");
+    expect(sendClicks()).toBe(2);
   });
 
-  it("消息落地 → 确认成功", async () => {
+  it("消息落地 → 确认成功（只点一次）", async () => {
     const state: StubState = {
       inputText: "",
       conversation: "",
@@ -129,7 +181,7 @@ describe("dispatchTask：输入并发送", () => {
     expect(sendClicks()).toBe(1);
   });
 
-  it("无任何证据 → send_unknown 且绝不重发", async () => {
+  it("无任何证据 → send_unknown 且绝不重发（点击次数恒为 1）", async () => {
     const state: StubState = { inputText: "", conversation: "", effect: {} };
     const { page, sendClicks } = makePage(state);
     const out = await dispatchTask({

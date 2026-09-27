@@ -26,6 +26,7 @@
 - **按步预算 `recovery.ts`**：与 `kimicode/recovery.ts` 同构，`remaining(cap)` 取「本步 cap / 任务总时限 / setup 预算」的最小值，重试不重置预算。
 - **验收 → 自动返修 → 再验收闭环接线**（`src/loop/fix-loop.ts`）：opendesign 验收失败时生成**项目根内** `.opendesign/plans/opendesign-fix-r<N>.md`（Open Design 只能读它「工作目录」白名单内的文件，写进任务数据目录会导致「我让你看计划，你说读不到」），并把「未通过摘要 + 计划相对路径 + 视觉差异证据」作为同会话返修指令发出；轮数受 `autoFixRounds` 封顶。
 - **`continue_task` / `rework_task` 支持 opendesign**（`src/tasks/task-manager.ts`、`src/mcp/context.ts`）：`agent_question` 把回答发进**当前会话**（适配器发送前确认会话页锚点，不在即 `session_lost`）；`user_confirmation` 只重连观察、**不发送任何消息**；环境类恢复走全新派发并补发完整任务书；手动返修要求已存在验收报告（否则拒绝发送）。
+- **发送段与漂移诊断的可用性收尾**（计划 §5）：发送按钮不可唯一点击时**重试一次**再硬失败（按钮可能刚由未就绪转为可用），输入回读在受控编辑器晚一拍反映 `insertText` 时**重读一次**；`selector_drift` 的诊断补**页面可见文本片段**（截断 300 字），使「缺哪个键 + 页面到底渲染了什么」同时可得，直接支撑修选择器。
 - **新增 `endReason`**：`version_mismatch`、`selector_drift`、`model_unavailable`、`model_mismatch`、`design_system_mismatch`、`input_mismatch`、`send_unknown`、`session_lost`、`reply_stable`、`idle_timeout`、`task_timeout`、`aborted`、`setup_failed`。
 - **新增 `needsUserKind`**：`login_required`、`system_permission`、`setup_recovery`、`user_confirmation`（`close_existing_instance` 保持）。
 
@@ -43,10 +44,10 @@
 
 ### 测试
 
-- 新增 **47** 个用例（5 文件）：
-  - `test/integration/opendesign-flow.test.ts`（12）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 8 条 fail-closed 路径（非法方向在入口拒绝、模型未命中回显候选、版本不匹配、宿主平台未取证不拦截、布局漂移、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`），并断言事件流（`task_dispatched` / `file_modification_started`）与 `guiStop` 如实回报；
+- 新增 **49** 个用例（5 文件）：
+  - `test/integration/opendesign-flow.test.ts`（12）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 8 条 fail-closed 路径（非法方向在入口拒绝、模型未命中回显候选、版本不匹配、宿主平台未取证不拦截、布局漂移（含页面文本片段诊断）、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`），并断言事件流（`task_dispatched` / `file_modification_started`）与 `guiStop` 如实回报；
   - `test/unit/opendesign-menu.test.ts`（8）：复用分支、触发器不唯一、菜单未出现、同名多命中、未命中回显候选、点中但回读不一致、搜索过滤路径、回读轮询；
-  - `test/unit/opendesign-send.test.ts`（6）：确认判据真值表（清空单独不算成功）与 `input_mismatch` / `send_failed` / 成功 / `send_unknown`（只点一次）；
+  - `test/unit/opendesign-send.test.ts`（8）：确认判据真值表（清空单独不算成功）、`input_mismatch`、编辑器晚一拍的重读、发送按钮前一次不可用的重试、始终不可用（含重试共 2 次尝试）、`send_unknown`（点击次数恒为 1）；
   - `test/unit/opendesign-transport.test.ts`（7）：目标枚举快/慢/全失败三条路径，以及会话路由（页面级带 `sessionId`、`Target.*` 不带）与未连接时的明确报错；
   - `test/unit/opendesign-recovery.test.ts`（14）：`remaining(cap)` 取三步最小值、绑定完成后 setup 预算失效、`setup_recovery` / `task_timeout` / `aborted` 三种分类互不混淆、`run()` 的 cap 到点与 abort 立即中断、`setStage` 把阶段写进错误对象、临时错误与权限错误的分类判据。
 - 测试桩扩展（`test/fake-cdp.ts`）：新增 Open Design 页面桩（`od:*` 标记分发 + 内存状态 + 坐标点击解释），语义键由注册表自身反查，选择器漂移时桩会一起失败而非「假装还能用」。
