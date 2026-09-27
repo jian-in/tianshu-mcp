@@ -99,6 +99,8 @@ export interface Preferences {
   dataHomes: string[];
   /** 上次成功使用的更新源（两端均不可达时回退） */
   lastGoodUpdateSource: "gitee" | "github" | null;
+  /** 关闭窗口时的行为：缩小到托盘（默认）/ 关闭应用 */
+  closeAction: "tray" | "exit";
 }
 
 /** 任务筛选条件（全部可选，缺省即不限制） */

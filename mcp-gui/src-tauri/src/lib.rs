@@ -12,6 +12,7 @@ mod scanner;
 mod schema;
 mod search;
 mod tail;
+mod tray;
 mod updater;
 mod watcher;
 
@@ -387,14 +388,25 @@ async fn set_preferences(
     state: State<'_, AppState>,
     prefs: Preferences,
 ) -> Result<(), String> {
-    {
+    let previous_language = {
         let mut guard = state
             .preferences
             .lock()
             .map_err(|_| "偏好状态锁失效".to_string())?;
+        let previous = guard.language.clone();
         *guard = prefs.clone();
+        previous
+    };
+    preferences::save(&app, &prefs)?;
+    // 托盘菜单文案跟随界面语言；菜单创建必须在主线程执行。
+    if previous_language != prefs.language {
+        let handle = app.clone();
+        let language = prefs.language.clone();
+        let _ = app.run_on_main_thread(move || {
+            let _ = tray::update_menu(&handle, &language);
+        });
     }
-    preferences::save(&app, &prefs)
+    Ok(())
 }
 
 #[tauri::command]
@@ -432,13 +444,34 @@ async fn install_update(app: AppHandle, source: String) -> InstallUpdateResult {
 pub fn run() {
     let detected = data_home::resolve_data_home().to_string_lossy().to_string();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let prefs = preferences::load(app.handle());
+            let language = prefs.language.clone();
             app.manage(AppState::new(detected.clone(), prefs));
+            // 托盘创建失败不阻塞启动：日志查看主流程优先。
+            let _ = tray::init(app.handle(), &language);
             Ok(())
+        })
+        // 关闭窗口不等于退出应用：默认「缩小到托盘」，仅在偏好选择「关闭应用」时真正退出
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let to_tray = app
+                    .state::<AppState>()
+                    .preferences
+                    .lock()
+                    .map(|prefs| prefs.close_action != "exit")
+                    .unwrap_or(true);
+                if to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    app.exit(0);
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_app_version,
@@ -464,6 +497,13 @@ pub fn run() {
             check_update,
             install_update,
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("启动 Tianshu-mcp 日志台失败");
+
+    app.run(|app_handle, event| {
+        // macOS：关闭到托盘后点 Dock 图标应重新显示窗口
+        if let tauri::RunEvent::Reopen { .. } = event {
+            tray::show_main_window(app_handle);
+        }
+    });
 }

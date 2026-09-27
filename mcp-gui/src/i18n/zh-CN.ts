@@ -274,6 +274,10 @@ export const zhCN = {
     sourceAuto: "自动择优",
     sourceGitee: "强制 Gitee",
     sourceGithub: "强制 GitHub",
+    closeWindow: "关闭窗口",
+    closeToTray: "缩小到托盘",
+    closeApp: "关闭应用",
+    closeHint: "默认缩小到托盘，应用继续在托盘运行；右键托盘图标可显示或退出。",
   },
   update: {
     title: "软件更新",

@@ -152,6 +152,17 @@ Task ID (breadcrumb), absolute task directory (expanded summary bar), and the fu
 - **Readout consistency**: counters, timestamps, line numbers, byte counts, rounds, and exit codes all use tabular figures (`tabular-nums`) so values do not jitter as they change.
 - **Accessibility**: every interactive element is reachable by `Tab` with a visible focus ring (task cards and nav items are native buttons, operable with `Enter` / `Space`); icon buttons carry `aria-label`; the system "reduce motion" setting is honoured.
 
+### 5.2 System tray and close behaviour
+
+- **An always-present system tray icon** (Windows notification area / macOS menu bar) that **reuses the app icon** — no extra asset is introduced.
+- **Right-clicking the tray icon** opens a two-item menu: **Show Logs** / **Exit Logs**. The labels **follow the UI language** (switching between Chinese and English in Settings takes effect immediately, **no restart needed**). **Left-clicking** the tray icon shows and focuses the window (it does not open the menu).
+- **Closing the window defaults to minimizing to the tray**: clicking the window's X only tucks the window into the tray; **the app keeps running** (log following and other capabilities are unaffected). You can bring it back or quit from the tray menu.
+- Settings offers a **"Close window"** choice (default: "Minimize to tray"):
+  - `Minimize to tray` — the X hides the window into the tray and the app keeps running;
+  - `Exit app` — the X quits for good and the tray icon disappears with it.
+- `Exit Logs` in the tray menu and `Exit app` in Settings **both quit completely** (nothing lingers in the background).
+- macOS extras: after the window is tucked into the tray, clicking the **Dock icon** shows it again.
+
 ---
 
 ## 6. Dual-source auto-update (Gitee / GitHub)
@@ -279,4 +290,7 @@ mcp-gui/
 - **No task write operations** (cancel / rework / continue stay in the MCP tools);
 - **No local full-text index**: search scans on demand and may be slow on very large log directories
   (it is cancellable);
+- **The browser mock preview has no native runtime**, so the tray icon, tray menu, and close-to-tray
+  behaviour **can only be verified in the desktop app** (the preview mode can still verify the setting
+  itself and its persistence);
 - macOS is only guaranteed to build in CI; no real-machine functional acceptance was performed there.

@@ -1044,6 +1044,7 @@ build**. The `GUI` workflow also triggers on the two truth files, so TS-side dri
 | `search.rs` | on-demand cross-task scanning + progress events + cancellation (**no full-text index**) |
 | `export.rs` | single-file export + whole-task zip (optionally excluding heavy raw logs) |
 | `updater.rs` | dual-source probing and selection + three-state switch + `tauri-plugin-updater` (signature gate) |
+| `tray.rs` | tray icon creation + menu building / hot-update **per UI language** + window reveal (**touches no business data**; only window visibility and process exit) |
 
 ### 16.4 Dual-source auto-update
 
@@ -1101,6 +1102,19 @@ website directory. Read this section before changing any UI styling.
 `src/core/**`, `src/api/**`, `src/stores/**`, `src/i18n/**`, `src/theme/index.ts`, and `src-tauri/**` (Rust) belong to the
 functional and data layers and **must not be modified** as part of styling work (i18n copy keys may be added only when **both**
 language bundles are updated together).
+
+### 16.7 Tray and close-behaviour contract
+
+| Contract | Rule |
+|---|---|
+| Ownership | The tray is created on the **Rust side** (`src-tauri/src/tray.rs`) and **consumes no frontend permission** (`capabilities/default.json` needs no new entry) |
+| Icon source | Reuses the built-in runtime icon (`AppHandle::default_window_icon()`) — **no new icon asset** (icons are always derived by CI from `assets/*.svg`; the artifacts are not committed) |
+| Menu items | Two items: Show Logs / Exit Logs (`tray-icon` feature + `tauri::menu`); **labels follow `Preferences.language`**, with two buckets (Chinese / English) and Chinese as the fallback |
+| Language hot-update | A language change always goes through `set_preferences`; that command rebuilds the menu **only when the language changed**, via `run_on_main_thread` (menu creation must happen on the main thread) |
+| Close behaviour | Preference `closeAction` (`"tray"` default / `"exit"`); `CloseRequested` is resolved on the Rust side: `tray` → `prevent_close()` + `hide()`, `exit` → `app.exit(0)` |
+| Preference compatibility | `Preferences.close_action` **must carry a serde default**: a deserialization failure in `preferences.rs` resets the whole file, so a missing field would also wipe language / theme / data homes |
+| Platform differences | Windows notification area / macOS menu bar; left-click reveals the window (the menu opens on right-click only, `show_menu_on_left_click(false)`); macOS additionally handles `RunEvent::Reopen` (clicking the Dock icon reveals the window) |
+| Failure isolation | A failed tray creation **does not block startup** (the error is ignored in `setup`); the log-viewing main flow takes priority |
 
 ---
 

@@ -996,6 +996,7 @@ Rust 侧需要重写一份「状态枚举 / 事件词表」用于事件分类，
 | `search.rs` | 跨任务按需扫描 + 进度事件 + 可取消（**不建全文索引**） |
 | `export.rs` | 单文件导出 + 任务整包 zip（可排除体积大的原始日志） |
 | `updater.rs` | 双源探测择优 + 三态开关 + 调用 `tauri-plugin-updater`（验签门禁） |
+| `tray.rs` | 托盘图标创建 + **按界面语言**构建 / 热更新菜单 + 窗口唤出（**不碰业务数据**，只做窗口显示与进程退出） |
 
 ### 16.4 双源自动更新
 
@@ -1043,6 +1044,19 @@ GUI 前端的**表现层有一份独立的设计系统**（**黑曜石终端 / O
 
 **改动边界**：样式重构只允许动 `App.vue`、`src/components/**`、`src/styles.css`、`index.html`。
 `src/core/**`、`src/api/**`、`src/stores/**`、`src/i18n/**`、`src/theme/index.ts` 与 `src-tauri/**`（Rust）属于功能与数据层，样式改动**不得顺带修改**（i18n 仅允许在**中英双语同时**新增文案键）。
+
+### 16.7 托盘与关闭行为契约
+
+| 契约 | 约定 |
+|---|---|
+| 托盘归属 | 托盘由 **Rust 侧**（`src-tauri/src/tray.rs`）创建，**不占用任何前端权限**（`capabilities/default.json` 无需新增条目） |
+| 图标来源 | 复用运行时内置图标（`AppHandle::default_window_icon()`），**不新增图标资源**（图标一律由 CI 从 `assets/*.svg` 派生，产物不入库） |
+| 菜单内容 | 两项：显示日志台 / 退出日志台（`tray-icon` feature + `tauri::menu`）；**菜单文案随 `Preferences.language`**，仅中英两档，其余回退中文 |
+| 语言热更新 | 语言变更必经 `set_preferences`；该命令**仅在语言变化时**经 `run_on_main_thread` 重建菜单（菜单创建必须在主线程） |
+| 关闭行为 | 偏好 `closeAction`（`"tray"` 默认 / `"exit"`）；窗口 `CloseRequested` 在 Rust 侧判定：`tray` → `prevent_close()` + `hide()`，`exit` → `app.exit(0)` |
+| 偏好兼容 | `Preferences.close_action` **必须带 serde 默认值**：`preferences.rs` 反序列化失败会整份回退默认，缺字段会连带重置语言 / 主题 / 数据目录 |
+| 平台差异 | Windows 通知区域 / macOS 菜单栏；左键单击唤出窗口（菜单只在右键弹出，`show_menu_on_left_click(false)`）；macOS 额外处理 `RunEvent::Reopen`（点 Dock 图标唤回窗口） |
+| 失败隔离 | 托盘创建失败**不阻塞启动**（`setup` 中忽略错误），日志查看主流程优先 |
 
 ---
 

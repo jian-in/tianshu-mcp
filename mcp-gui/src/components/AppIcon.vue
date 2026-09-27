@@ -42,6 +42,8 @@ const ICON_PATHS: Record<string, string> = {
   chevronLeft: "M15 6l-6 6 6 6",
   panelLeft: "M3 5h18v14H3zM9 5v14",
   listTree: "M4 6h4M4 12h4M4 18h4M11 6h9M11 12h9M11 18h9",
+  minimize: "M5 12h14",
+  power: "M12 4v7M7.8 6.9a7 7 0 1 0 8.4 0",
 };
 
 const props = withDefaults(

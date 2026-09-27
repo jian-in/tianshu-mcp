@@ -4,3 +4,4 @@
 export type Language = "zh-CN" | "en-US";
 export type ThemeMode = "system" | "light" | "dark";
 export type UpdateSource = "auto" | "gitee" | "github";
+export type CloseAction = "tray" | "exit";

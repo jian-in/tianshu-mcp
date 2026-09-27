@@ -3,7 +3,7 @@
 > **交接快照：2026-09-27 · 开发版本 `0.7.1`（**尚未打 tag、未发布 npm**）。**
 > **本轮（0.7.0 → 0.7.1）交付**：内置 agent `opendesign`（Open Design 桌面端）**从「开发中」推进到完整可派发**——
 > 选择器按产品产物取证落地、12 步执行链全部接线、并接入验收 → 自动返修 → 再验收闭环。
-> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.4`，独立 tag `gui-v*`，独立演进；最新一轮修掉**「更新后旧版本不消失」**——`productName` 改名导致 NSIS 卸载项注册表键变更，现用 `installerHooks` 做一次性迁移）。
+> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.5`，独立 tag `gui-v*`，独立演进；最近两轮分别是修掉**「更新后旧版本不消失」**——`productName` 改名导致 NSIS 卸载项注册表键变更，现用 `installerHooks` 做一次性迁移；以及新增**系统托盘 + 「关闭窗口」行为设置**）。
 > **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包 GUI 侧零改动。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
 > **issue #25 已按 DoD 全部达成回复并关闭**（2026-09-27）：DoD 2（F1~F12）与 DoD 9（U4~U8）由维护者在 Windows 10 真机逐项验收通过；
 > 验收中发现并修掉「更新后旧版本不消失」（GUI `0.1.0-beta.4`），已发布并完成真机端到端复现——详见下方「升级路径修复」小节与 `docs/issue-25-gui-real-machine-record.md`。
@@ -40,6 +40,20 @@
   桩扩展在 `test/fake-cdp.ts`（Open Design 页面桩，语义键由注册表自身反查，选择器漂移时桩会一起失败）。全部**不依赖本机安装 Open Design**、不联网。
 - **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**未打 tag、未发 npm**；
   `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。
+
+---
+
+### 独立交付面 · 日志台 GUI **系统托盘 + 「关闭窗口」行为设置**（`mcp-gui/`，`0.1.0-beta.5`，2026-09-27）
+
+- **范围**：`mcp-gui/src-tauri/**`（新增 `tray.rs`、改 `lib.rs` / `models.rs` / `Cargo.toml`）、`mcp-gui/src/**`（`SettingsDrawer.vue` / `AppIcon.vue` / `api/types.ts` / `api/types-lite.ts` / `stores/preferences.ts` / `api/mock.ts` / 两份 i18n 文案包）。**未改 `src/**`（MCP 主包）与 `tianshu-mcp-web/`**。
+- **托盘（Rust 侧，不占前端权限）**：`Cargo.toml` 打开既有 `tauri` 的 **`tray-icon`** feature（**未新增任何依赖**）；新增 `src-tauri/src/tray.rs`，复用 `AppHandle::default_window_icon()` 作图标（**不新增图标资源**，符合「图标一律由 CI 从 `assets/*.svg` 派生」）。**右键**菜单两项：显示日志台 / 退出日志台；**左键单击**唤出并聚焦窗口（`show_menu_on_left_click(false)`，菜单只在右键弹出）。
+- **菜单文案随界面语言热更新**：语言真源仍是 `Preferences.language`；`set_preferences` 里**仅当语言变化**时经 `app.run_on_main_thread` 重建菜单（菜单创建必须在主线程）。中英两档，其余回退中文。
+- **关闭行为（默认缩小到托盘）**：偏好新增 `closeAction`（`"tray"` 默认 / `"exit"`）；窗口 `CloseRequested` 由 Rust 侧判定 —— `tray` → `api.prevent_close()` + `window.hide()`；`exit` → `app.exit(0)`。设置面板「关闭窗口」二选一（复用既有分段控件版式，**零新增 CSS**），中英各补 4 条键。
+- **升级兼容（本次最关键的坑）**：`Preferences.close_action` **必须带 serde 默认值** —— `preferences.rs` 的读失败/反序列化失败会**整份回退默认**，字段缺失会连带把用户的语言 / 主题 / 数据目录一起重置；现已用 `#[serde(default = "default_close_action")]` 兜底。
+- **macOS 兼容**：`run()` 由 `.run(context)` 改为 `.build(context)` + `App::run(回调)`，在 `RunEvent::Reopen` 时唤回窗口（点 Dock 图标）。
+- **失败隔离**：托盘创建失败**不阻塞启动**（`setup` 中忽略错误，日志查看主流程优先）。
+- **版本与文档**：`mcp-gui` 四处版本同步 `0.1.0-beta.4 → 0.1.0-beta.5`（`package.json` / `package-lock.json` 两处 / `tauri.conf.json` / `Cargo.toml`）；同步 `docs/gui-log-viewer` 双语（新增「5.2 系统托盘与关闭行为」+ 已知限制）、`ARCHITECTURE` 双语（§16.3 新增 `tray.rs`、新增 §16.7 托盘与关闭行为契约）、`README` 双语（M33 增量）、`CHANGELOG` 双语（未发布段）。**未打 tag、未发版**（发版是维护者动作）。
+- **本机门禁全绿**：`typecheck` / `lint` / `test`（81 项）/ `check:schema`（版本一致）/ `build`。按 issue #25 约束**未在本机执行任何 Rust 侧构建与检查**，Rust 门禁与三平台打包由 `GUI` workflow 承担。
 
 ### 独立交付面 · 日志台 GUI **升级路径修复：更新后旧版本不消失**（`mcp-gui/`，`0.1.0-beta.4`，2026-09-27）
 

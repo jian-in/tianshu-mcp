@@ -104,6 +104,17 @@ pub struct Preferences {
     pub update_source: String,
     pub data_homes: Vec<String>,
     pub last_good_update_source: Option<String>,
+    /// 关闭窗口时的行为："tray"（默认，缩小到托盘）/ "exit"（关闭应用）。
+    ///
+    /// serde 默认值兜底：旧偏好文件缺该字段时按 "tray" 补齐。
+    /// 不可省略——`preferences.rs` 的反序列化失败会整份回退默认值，
+    /// 缺字段会连带把用户的语言 / 主题 / 数据目录一起重置。
+    #[serde(default = "default_close_action")]
+    pub close_action: String,
+}
+
+fn default_close_action() -> String {
+    "tray".to_string()
 }
 
 impl Default for Preferences {
@@ -114,6 +125,7 @@ impl Default for Preferences {
             update_source: "auto".to_string(),
             data_homes: Vec::new(),
             last_good_update_source: None,
+            close_action: default_close_action(),
         }
     }
 }

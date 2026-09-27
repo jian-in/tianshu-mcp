@@ -472,7 +472,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
   - **TraeWork**：新增 `discovery.ts`（固定盘枚举 + 注册表 + 相对路径），修正内置目录（`{APPDATA}/TRAE SOLO CN` 实为**用户数据目录**，非安装位置）；Windows 文件名收窄为只认 `TRAE SOLO CN.exe`（旧清单含 `Trae CN` 会误匹配另一产品 TraeCode CN）；端口未就绪时输出诊断（退出码 / 端口监听者 / 既有实例），**只诊断不改启动策略**
   - **统一诊断**：新增 `src/agents/gui-diagnostics.ts`，三 GUI agent 在选择器解析失败时把「页面可见候选」写进错误，使用者一步定位漂移
   - 详见 [v0.6.2 发布说明](<docs/release-v0.6.2.md>)；验证记录见 [issue-23 记录](docs/issue-23-selector-drift-record.md)
-- **M33 — 日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3）**（2026-09-27）— 新增 81 项前端用例（issue #25；GUI 独立版本 `0.1.0-beta.4`）
+- **M33 — 日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3）**（2026-09-27）— 新增 81 项前端用例（issue #25；GUI 独立版本 `0.1.0-beta.5`）
   - **独立只读桌面应用**：`mcp-gui/` 与 MCP server **完全解耦**（不依赖 MCP 进程在跑，纯读文件系统），把四类日志与任务产物统一到一个界面；对业务数据全程只读，唯一写入是应用自身偏好（系统应用配置目录）
   - **四类日志**：`logs/server.log`（级别/时间范围过滤 + 关键字高亮）、`task.jsonl`（区分状态跃迁 / 细粒度 Agent 事件 / `note` 进度通道，坏行跳过但计数）、`agent-<轮次>.log` 与 `verify-<轮次>.log`（轮次切换 + 行号/换行）、`report-<轮次>.{md,json,html}` 与 `dry-run-report-*`（Markdown 渲染 / 结构化卡片 / **sandbox iframe** 视觉预览 / 干跑与常规分区 / 多轮对比）
   - **大日志与实时 tail**：首屏只读 64 KiB 尾部窗口、向前按块加载并显示「已加载 N / 共 M」；`notify` 文件监听驱动增量刷新，**上翻自动暂停跟随**、可一键「跳到最新」
@@ -482,6 +482,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
   - **两态式界面 + 黑曜石终端（前端布局范式重写，`0.1.0-beta.3`）**：界面是两个整页——**任务概览**（顶栏 + 四格指标仪 + 状态圆片 + 筛选浮层 + 任务卡网格 + 跨任务搜索模式）与**全屏工作区**（面包屑 `‹ 任务列表 / <taskId>` + 可展开任务摘要带 + 竖排分区导航 + 内容区，`server.log` 为第二形态）；**无常驻任务栏 / 无常驻详情栏 / 无横排标签页**。视觉为自研「黑曜石终端」：深色为默认（锂黑底 + 荧绿点缀）、浅色按同一语言重做，等宽字体主导、方括号状态标签（`[OK] 已成功`）、任务卡状态脊与顶栏 1px 荧绿细线为记忆点；**零 UI 库、零外链、零字体文件**，并支持 `prefers-reduced-motion` 与 `color-scheme`
   - 使用与开发说明见 [日志台文档](docs/gui-log-viewer.md)，真机记录见 [issue-25 记录](docs/issue-25-gui-real-machine-record.md)；**GUI 版本独立演进，不随 MCP 主包发布**（主包版本与本期无关）
   - **升级路径修复（`0.1.0-beta.4`）**：修掉「Windows 上更新后旧版本不消失」。Tauri 的 NSIS 卸载项注册表键由 `bundle.productName` 拼成，早期把它由含空格改为无空格（为修发行资产名两端不一致）会让旧安装**既不被覆盖也不被卸载**，于是「应用和功能」里新旧并存、旧目录与旧快捷方式留在磁盘上（Tauri 只处理 `mainBinaryName` 变更）。现由 `mcp-gui/src-tauri/windows/installer-hooks.nsh`（`bundle.windows.nsis.installerHooks`）在安装前检测历史遗留名称、静默运行它自己的卸载器并兜底清除残留的注册表键与快捷方式；`bundle.productName` 自此**冻结**，静默卸载**不删用户数据**
+  - **系统托盘 + 「关闭窗口」行为（`0.1.0-beta.5`）**：新增常驻系统托盘（图标复用应用图标，不新增资源），**右键**给出 `显示日志台` / `退出日志台` 两项，**菜单文案随界面语言即时切换**（无需重启），**左键单击**唤出并聚焦窗口；**默认关闭窗口不退出应用而是缩小到托盘**，设置面板新增「关闭窗口」= `缩小到托盘`（默认）/ `关闭应用`。托盘在 Rust 侧创建（`tray.rs`，启用 `tauri` 的 `tray-icon` feature，**不占前端权限、不新增依赖**），macOS 另支持点 Dock 图标唤回窗口
 
 ## Agent 适配现状
 

@@ -9,7 +9,7 @@ import { useI18n } from "@/i18n";
 import { isMockRuntime } from "@/api";
 import { checkUpdate, installUpdate, probeUpdateSources, app } from "@/stores/app";
 import { preferences, updatePreferences } from "@/stores/preferences";
-import type { Language, ThemeMode, UpdateSource } from "@/api/types-lite";
+import type { CloseAction, Language, ThemeMode, UpdateSource } from "@/api/types-lite";
 
 const { t } = useI18n();
 
@@ -30,6 +30,11 @@ const sources: { value: UpdateSource; label: string }[] = [
   { value: "auto", label: t("settings.sourceAuto") },
   { value: "gitee", label: t("settings.sourceGitee") },
   { value: "github", label: t("settings.sourceGithub") },
+];
+
+const closeActions: { value: CloseAction; label: string; icon: string }[] = [
+  { value: "tray", label: t("settings.closeToTray"), icon: "minimize" },
+  { value: "exit", label: t("settings.closeApp"), icon: "power" },
 ];
 
 function probeText(side: "gitee" | "github"): string {
@@ -111,6 +116,22 @@ function probeText(side: "gitee" | "github"): string {
             <AppIcon name="alert" />
             <span>{{ t("update.offlineFallback") }}</span>
           </div>
+        </section>
+
+        <section class="pblock">
+          <div class="field-label">{{ t("settings.closeWindow") }}</div>
+          <div class="segmented">
+            <button
+              v-for="item in closeActions"
+              :key="item.value"
+              class="segment"
+              :class="{ 'is-active': preferences.closeAction === item.value }"
+              @click="updatePreferences({ closeAction: item.value })"
+            >
+              <AppIcon :name="item.icon" size="14" /> {{ item.label }}
+            </button>
+          </div>
+          <div class="hint">{{ t("settings.closeHint") }}</div>
         </section>
 
         <div class="divider" />

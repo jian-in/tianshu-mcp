@@ -157,6 +157,7 @@ function defaultPreferences(): Preferences {
     updateSource: "auto",
     dataHomes: [],
     lastGoodUpdateSource: null,
+    closeAction: "tray",
   };
 }
 

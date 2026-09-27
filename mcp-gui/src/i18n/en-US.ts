@@ -275,6 +275,11 @@ export const enUS: Messages = {
     sourceAuto: "Auto",
     sourceGitee: "Force Gitee",
     sourceGithub: "Force GitHub",
+    closeWindow: "Close window",
+    closeToTray: "Minimize to tray",
+    closeApp: "Exit app",
+    closeHint:
+      "By default the window minimizes to the tray and the app keeps running; right-click the tray icon to show or exit.",
   },
   update: {
     title: "App update",
