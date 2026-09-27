@@ -163,6 +163,28 @@ async function uploadAttachment(releaseId, filePath) {
   return JSON.parse(text);
 }
 
+async function deleteAttachment(releaseId, attachFileId) {
+  const res = await fetch(`${api}/releases/${releaseId}/attach_files/${attachFileId}?${q}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
+/** 本管道可能产出的安装包 / 更新载体后缀；仅用于识别「该清理的旧附件」 */
+const MANAGED_ATTACHMENT_SUFFIXES = [
+  ".app.tar.gz",
+  ".app.tar.gz.sig",
+  ".nsis.zip",
+  ".nsis.zip.sig",
+  ".msi.zip",
+  ".msi.zip.sig",
+  ".exe",
+  ".exe.sig",
+  ".msi",
+  ".msi.sig",
+  ".dmg",
+];
+
 async function putRepoFile(repoPath, content) {
   const getRes = await fetch(`${api}/contents/${repoPath}?${q}&ref=${branch}`);
   let sha;
@@ -179,13 +201,20 @@ async function putRepoFile(repoPath, content) {
     branch,
   };
   if (sha) body.sha = sha;
-  const res = await fetch(`${api}/contents/${repoPath}`, {
-    method: "PUT",
+  // Gitee 的 Contents API 与 GitHub 不同：**新建文件用 POST，更新已有文件才用 PUT**；
+  // 对不存在的文件发 PUT 会被拒绝（首次发布必踩），故按 sha 是否存在选择方法。
+  const method = sha ? "PUT" : "POST";
+  const res = await fetch(`${api}/contents/${repoPath}?${q}`, {
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`写入仓内文件 ${repoPath} 失败 HTTP ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) {
+    throw new Error(
+      `${sha ? "更新" : "新建"}仓内文件 ${repoPath} 失败 HTTP ${res.status}: ${text.slice(0, 300)}`,
+    );
+  }
 }
 
 async function main() {
@@ -212,6 +241,22 @@ async function main() {
     }
     urlByName.set(filename, url);
     console.log(`已上传附件：${filename} → ${url}`);
+  }
+
+  // 清理上一轮遗留的旧附件（例如早期运行时同名覆盖的 macOS 载体）。
+  // 只删「本管道管理」的后缀，绝不碰 Gitee 自动生成的源码归档（`gui-v*.zip` / `.tar.gz`）；
+  // 失败仅告警不中断——清理是卫生动作，不应影响发布本身。
+  const expected = new Set(files.map((f) => path.basename(f)));
+  for (const item of await listAttachments(release.id)) {
+    const name = item?.name;
+    if (!name || expected.has(name)) continue;
+    if (!MANAGED_ATTACHMENT_SUFFIXES.some((suffix) => name.endsWith(suffix))) continue;
+    try {
+      await deleteAttachment(release.id, item.id);
+      console.log(`已清理旧附件：${name}`);
+    } catch (err) {
+      console.warn(`清理旧附件 ${name} 失败（忽略）：${err.message}`);
+    }
   }
 
   // 用 Gitee 附件地址改写清单（签名保持不变：同一份 minisign 签名，两端内容等价）

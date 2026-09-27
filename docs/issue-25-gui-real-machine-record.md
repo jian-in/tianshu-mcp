@@ -110,6 +110,17 @@
 | 附带改进 | 找不到载体时**列出 bundle 目录全部文件**，便于按注解定位 |
 | 验证 | 本机对 4 种场景做纯 Node 回归：v1 兼容（zip 与 exe 共存→选 zip）、v2 原生 Windows（→选 exe）、macOS（→选 `.app.tar.gz`）、空目录（→非 0 退出并列出文件） |
 
+修复后**三平台构建全部 success**，但发布链路又暴露三个问题，已一并修掉（第 2 轮）：
+
+| 轮次 | 失败面 | 根因 | 修法 |
+|---|---|---|---|
+| 2-a | macOS 载体**同名覆盖**（发布前即已发生，不在 CI 报错） | Tauri 产出的 macOS 更新载体名为 `{productName}.app.tar.gz`，**不含架构**；`darwin-aarch64` 与 `darwin-x86_64` 同名，发布脚本 `cp -n` 只留先到的一个 → 其中一个架构会拿到**错误架构**的包（实测 GitHub / Gitee 发行版均只剩 1 个 `.app.tar.gz`） | 清单脚本在 fragment 阶段**按平台重命名**为 `*_<platform>.app.tar.gz`（含 `.sig`，幂等）；已本地验证两架构名唯一、重跑不叠加后缀 |
+| 2-b | `Publish Gitee pre-release with attachments + write Gitee manifest` | Gitee Contents API 与 GitHub 不同：**新建文件用 `POST`、更新才用 `PUT`**；脚本对首次发布的**不存在**文件发了 `PUT` → 被拒（发行版与附件其实都已建好，只差清单写入） | 按 `sha` 是否存在选择 `POST` / `PUT`，并把 `access_token` 同时放入 query；同时**清理上一轮残留旧附件**（仅限本管道管理的安装包/载体后缀，best-effort 不中断） |
+| 2-c | 重跑时 `gh release create` 报「已存在」 | 发布步骤非幂等：tag 重跑（本计划明确支持的恢复路径）会直接失败 | 改为幂等：发行版已存在则 `gh release edit` 更新元信息 + `delete-asset` 清空旧资产 + `upload` 重传 |
+
+> 教训：**「构建全绿」不等于「发布链路可用」**——`Build updater manifest fragment` 与 `publish` 里的发布步骤都只在 **tag 运行**时才执行，
+> 非 tag 的 push / 手动触发一律跳过；因此首次打 tag 才会把这些问题一次性暴露出来。
+
 ---
 
 ## 四、结论

@@ -20,11 +20,12 @@ Tianshu-mcp 日志台（英文名 **Tianshu-mcp Logs**）是一个**本地只读
 | 平台 | 安装包 | 自动更新载体 |
 |---|---|---|
 | Windows | `.exe`（NSIS 安装器） | 同一 `.exe` 直接被 updater 复用（配套 `.exe.sig` 签名；**Tauri updater 不支持 MSI**，故未提供 MSI） |
-| macOS | `.dmg` | `.app.tar.gz` |
+| macOS | `.dmg` | `.app.tar.gz`（**按架构区分为 `*_darwin-aarch64.app.tar.gz` / `*_darwin-x86_64.app.tar.gz`**） |
 
 > 自动更新载体的命名取决于 `bundle.createUpdaterArtifacts`：本项目用 v2 原生模式（`true`），
 > Windows 侧不额外打包 `.nsis.zip`，而是直接复用 NSIS 安装器（`*-setup.exe` + `*-setup.exe.sig`）；
 > macOS 侧为 `.app.tar.gz` + `.sig`。
+> 注意 Tauri 产出的 macOS 载体名**不含架构**，两个架构会同名相互覆盖，故发布前由 CI **按平台重命名**以保证唯一。
 
 > **macOS 未做 Apple 代码签名与公证**：首次打开可能需要在「系统设置 → 隐私与安全性」中手动允许。
 > 这不影响功能，也不影响自动更新——更新包的完整性由 minisign 签名校验保证。

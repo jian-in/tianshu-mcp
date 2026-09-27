@@ -274,11 +274,26 @@ jobs:
         shell: bash
         run: |
           TAG="${{ github.ref_name }}"
-          gh release create "$TAG" \
-            --prerelease \
-            --title "Tianshu-mcp 日志台 $TAG（测试版）" \
-            --notes "本地只读查看天枢 MCP 的运行日志与任务产物（Tauri 2.x + Vue 3）。测试版通道，与 MCP 主包发版互不干扰。文档见 docs/gui-log-viewer.md / .en.md。" \
-            release/*
+          TITLE="Tianshu-mcp 日志台 $TAG（测试版）"
+          NOTES="本地只读查看天枢 MCP 的运行日志与任务产物（Tauri 2.x + Vue 3）。测试版通道，与 MCP 主包发版互不干扰。文档见 docs/gui-log-viewer.md / .en.md。"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # 幂等重跑：先更新元信息，再清空旧资产后重传。
+            # 必须清空——旧一轮可能残留「同名但内容属于另一架构」的载体（macOS 两架构早期同名相互覆盖）。
+            echo "发行版已存在，改为更新并重置资产：$TAG"
+            gh release edit "$TAG" --prerelease --title "$TITLE" --notes "$NOTES"
+            while IFS= read -r name; do
+              if [ -n "$name" ]; then
+                gh release delete-asset "$TAG" "$name" -y
+              fi
+            done < <(gh release view "$TAG" --json assets --jq '.assets[].name')
+            gh release upload "$TAG" release/*
+          else
+            gh release create "$TAG" \
+              --prerelease \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              release/*
+          fi
 
       - name: Publish Gitee pre-release with attachments + write Gitee manifest
         if: steps.manifest.outputs.built == 'true'

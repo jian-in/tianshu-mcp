@@ -20,11 +20,13 @@ Artifacts are produced by CI (the `GUI` GitHub Actions workflow):
 | Platform | Installer | Auto-update payload |
 |---|---|---|
 | Windows | `.exe` (NSIS installer) | The same `.exe` is reused by the updater (with a matching `.exe.sig`; **the Tauri updater does not support MSI**, so no MSI is shipped) |
-| macOS | `.dmg` | `.app.tar.gz` |
+| macOS | `.dmg` | `.app.tar.gz` (**arch-qualified as `*_darwin-aarch64.app.tar.gz` / `*_darwin-x86_64.app.tar.gz`**) |
 
 > The auto-update payload naming depends on `bundle.createUpdaterArtifacts`: this project uses the v2 native mode
 > (`true`), so on Windows no extra `.nsis.zip` is produced — the NSIS installer itself is reused
 > (`*-setup.exe` + `*-setup.exe.sig`); on macOS it is `.app.tar.gz` + `.sig`.
+> Note that Tauri's macOS payload name carries **no arch**, so the two architectures would collide and overwrite each
+> other; CI therefore **renames it per platform** before publishing to keep the names unique.
 
 > **macOS builds are not code-signed or notarized by Apple**: the first launch may require manual approval under
 > System Settings → Privacy & Security. This does not affect functionality or auto-update — update integrity is

@@ -16,7 +16,7 @@
  *   node build-updater-manifest.mjs merge --fragments <dir> --version <v> [--notes <text>] \
  *        [--rewrite-url <mapping.json>] --out <latest.json>
  */
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 function walk(dir) {
@@ -65,6 +65,28 @@ function findUpdaterArtifact(files) {
   return undefined;
 }
 
+/**
+ * macOS 的更新载体名为 `{productName}.app.tar.gz`，**不含架构**：
+ * `darwin-x86_64` 与 `darwin-aarch64` 两个构建会产出**同名文件**，合并到同一个 Release 时
+ * 相互覆盖（发布脚本用 `cp -n`，只留先到的一个），导致其中一个架构拿到**错误架构**的包。
+ * 这里按平台重命名，保证两架构的载体名唯一。
+ *
+ * 幂等：名称已带 `_<platform>.app.tar.gz` 时原样返回（重跑不会叠加后缀）。
+ */
+function qualifyArtifactName(artifactPath, platform) {
+  const base = path.basename(artifactPath);
+  if (!base.endsWith(".app.tar.gz")) return artifactPath;
+  if (base.endsWith(`_${platform}.app.tar.gz`)) return artifactPath;
+  const renamed = path.join(
+    path.dirname(artifactPath),
+    `${base.slice(0, -".app.tar.gz".length)}_${platform}.app.tar.gz`,
+  );
+  renameSync(artifactPath, renamed);
+  renameSync(`${artifactPath}.sig`, `${renamed}.sig`);
+  console.log(`[manifest] macOS 更新载体按平台重命名：${base} → ${path.basename(renamed)}`);
+  return renamed;
+}
+
 function buildFragment(args) {
   const bundleDir = path.resolve(args["bundle-dir"] ?? ".");
   const platform = args.platform;
@@ -73,20 +95,21 @@ function buildFragment(args) {
 
   const files = walk(bundleDir);
   const listFiles = () => files.map((f) => `  ${path.relative(bundleDir, f)}`).join("\n");
-  const artifact = findUpdaterArtifact(files);
-  if (!artifact) {
+  const found = findUpdaterArtifact(files);
+  if (!found) {
     throw new Error(
       `在 ${bundleDir} 未找到更新载体（${UPDATER_ARTIFACT_SUFFIXES.join(" / ")}）。\n` +
         `目录下文件：\n${listFiles() || "  （空）"}`,
     );
   }
-  const sigFile = `${artifact}.sig`;
-  if (!files.includes(sigFile)) {
+  if (!files.includes(`${found}.sig`)) {
     throw new Error(
-      `缺少签名文件 ${sigFile}：请确认已配置 TAURI_SIGNING_PRIVATE_KEY（签名不通过时必须拒绝安装）。\n` +
+      `缺少签名文件 ${found}.sig：请确认已配置 TAURI_SIGNING_PRIVATE_KEY（签名不通过时必须拒绝安装）。\n` +
         `目录下文件：\n${listFiles()}`,
     );
   }
+  const artifact = qualifyArtifactName(found, platform);
+  const sigFile = `${artifact}.sig`;
   const filename = path.basename(artifact);
   const fragment = {
     platform,

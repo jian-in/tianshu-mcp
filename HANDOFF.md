@@ -43,6 +43,12 @@
   打 `gui-v0.1.0-beta.1` 后该步骤 **Windows 失败、macOS 两平台成功** —— 根因是载体命名取决于 `bundle.createUpdaterArtifacts`：
   本项目用 **v2 原生 `true`**，Windows **不产出 `.nsis.zip`**，而是**直接复用 NSIS 安装器** `*-setup.exe`（签名 `*-setup.exe.sig`）；只有 `"v1Compatible"` 才产出 `.nsis.zip`；macOS 两种模式都是 `.app.tar.gz`。
   修法：`mcp-gui/scripts/build-updater-manifest.mjs` 改为**按优先级匹配多后缀**（`.nsis.zip` / `.msi.zip` / `.app.tar.gz` / `.exe` / `.msi`，专用更新包优先于复用安装器），并在找不到载体时列出 bundle 目录全部文件。
+- **首次打 tag 暴露的发布链路问题（已修，第 2 轮）**：构建全绿后 `Publish` 仍失败，且发现一个**不会报错的静默缺陷**：
+  ① macOS 更新载体名为 `{productName}.app.tar.gz`（**不含架构**），两个架构同名相互覆盖 → 其中一个架构会拿到错误架构的包（实测两端发行版都只剩 1 个 `.app.tar.gz`）；
+  ② Gitee Contents API **新建文件必须 `POST`、更新才用 `PUT`**，脚本对首次发布的不存在文件发了 `PUT` → 被拒；
+  ③ 发布步骤非幂等，tag 重跑时 `gh release create` 报「已存在」。
+  修法：macOS 载体按平台重命名（幂等）；Gitee 按 `sha` 选择 `POST`/`PUT` 并清理旧附件；GitHub 发布改为「已存在则 edit + delete-asset + upload」。
+  **教训**：`Build updater manifest fragment` 与发布步骤只在 **tag 运行**时执行，非 tag 的 push / 手动触发一律跳过 → 「构建全绿」不等于「发布链路可用」。
 - **Tauri 2 异步命令规则（本次踩坑）**：`async fn` 命令**只要含借用输入**（如 `State<'_, T>`）就**必须返回 `Result<_, _>`**，
   否则编译报 `E0277 async commands that contain references as inputs must return a Result` +
   `E0597 __tauri_message__ does not live long enough`（`get_data_home_state` / `list_tasks` / `read_events` / `get_preferences` 已按此改正）；
