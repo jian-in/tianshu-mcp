@@ -247,6 +247,32 @@ describe("Open Design 页面内表达式（真实 DOM 执行）", () => {
     expect(multi.point).toBeUndefined();
   });
 
+  it("多候选**按优先级**取用：primary 命中后不再并入 fallback 的命中（真机 2026-09-27 回归）", () => {
+    // 真机形状：页面里同时存在 `inline-model-switcher-chip`（button，真正可点）与
+    // `inline-model-switcher`（外层 div 容器），分别匹配 primary 与 fallback；
+    // designDirectionTrigger 同理（容器 div + 无 testid 的 button）。
+    // 旧实现把**所有候选的命中累加到同一个数组**，于是报「多命中」拒绝点击，
+    // 真机表现为这两个键被判「选择器漂移」，整条链路 fail 在「确认模型」这一步。
+    // spec 形状：[cssCandidates, texts, arias, pats, excludes, scope] —— css 候选是**同一个数组**
+    const html = `<div data-od="wrap"><button data-od="chip">v4.1-flash</button></div>
+      <button data-od="other">v4.1-flash</button>`;
+    const res = evaluate(
+      html,
+      singlePointExpression(JSON.stringify([['[data-od="chip"]', '[data-od="other"]']])),
+    ) as { count: number; point?: unknown };
+    expect(res.count).toBe(1);
+    expect(res.point).toBeDefined();
+  });
+
+  it("primary 全部落空时才回退到 fallback（回退能力仍然有效）", () => {
+    const res = evaluate(
+      `<button data-od="other">v4.1-flash</button>`,
+      singlePointExpression(JSON.stringify([['[data-od="absent"]', '[data-od="other"]']])),
+    ) as { count: number; point?: unknown };
+    expect(res.count).toBe(1);
+    expect(res.point).toBeDefined();
+  });
+
   it("firstPoint 在多命中时仍给首个坐标并回报总数", () => {
     const res = evaluate(
       `${FIXTURE}<button data-od="dup">A</button><button data-od="dup">B</button>`,

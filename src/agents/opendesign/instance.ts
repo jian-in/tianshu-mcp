@@ -25,6 +25,13 @@ import type { AgentRunLogger } from "../adapter.js";
 import { TtlCache } from "../../util/ttl-cache.js";
 import { guiInstanceDiagSpawnOptions } from "../gui-instance.js";
 import { fetchCdpJson, type CdpJsonFetcher } from "../kimicode/instance.js";
+import { isProductPage, openDesignMainTargetRank } from "./cdp.js";
+import {
+  devToolsActivePortPaths,
+  openDesignNamespaceRoot,
+  readDevToolsActivePort,
+  readInstallInfo,
+} from "./discovery.js";
 import { resolvePageTargets } from "./transport.js";
 
 export { fetchCdpJson };
@@ -190,7 +197,12 @@ export function rootOpenDesignProcesses(rows: OpenDesignProcess[]): OpenDesignPr
 
 export function remoteDebugPort(commandLine: string): number | null {
   const m = /--remote-debugging-port(?:=|\s+)(\d+)/.exec(commandLine);
-  return m ? Number(m[1]) : null;
+  if (!m) return null;
+  const port = Number(m[1]);
+  // `=0` 是「由系统随机分配端口」的哨兵值，**不是**可探测的端口：真机实测（2026-09-27）固定端口会被
+  // 不承载窗口的 launcher 进程抢占，真窗口进程只能用 `=0` 随机分配。返回 0 会让调用方去探测 0 端口
+  // 并永远判「未就绪」，故一律 null —— 让调用方改用 DevToolsActivePort 定位实际端口。
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : null;
 }
 
 function freePort(port: number): Promise<boolean> {
@@ -225,17 +237,19 @@ export async function pickOpenDesignPort(
   return gui.cdpPort;
 }
 
-interface CdpPageTargetLike {
-  type?: string;
-  title?: string;
-  url?: string;
-}
-
-/** 主窗口判定：标题以 Open Design 开头最优先，其次是 URL 里出现 open-design 的页面。 */
-function isProductPage(target: CdpPageTargetLike): boolean {
-  const title = (target.title ?? "").trim();
-  const url = target.url ?? "";
-  return /^open design/i.test(title) || /open-design/i.test(url);
+/**
+ * 当前 `DevToolsActivePort` 里写着的真实 CDP 端口。
+ *
+ * **每轮重读**：该文件由应用覆盖写（launcher 与真窗口进程都会写），只有轮询才能拿到最终那个
+ * 承载窗口的端口。读不到就返回空数组，调用方继续用其它候选——不猜、不自造端口。
+ */
+function activeDebugPorts(namespaceRoot: string | null): number[] {
+  const ports = new Set<number>();
+  for (const file of devToolsActivePortPaths(namespaceRoot)) {
+    const port = readDevToolsActivePort(file);
+    if (port) ports.add(port);
+  }
+  return [...ports];
 }
 
 /**
@@ -259,18 +273,17 @@ export async function probeOpenDesignPort(
   const pages = targetList.filter((t) => t.type === "page");
   const productPages = pages.filter(isProductPage);
   if (!productPages.length) return { ready: false };
-  const main = productPages.sort((a, b) => rankOf(a) - rankOf(b))[0];
+  // 主窗口排序与 cdp.ts **共用同一个 rank**（单一真源）：曾经的本地副本只认带空格的
+  // `Open Design`，会让同标题的辅助页（`od://app/desktop-pet`）与主窗口同级，排序退化成「谁先返回」。
+  const main = productPages.sort(
+    (a, b) => openDesignMainTargetRank(a) - openDesignMainTargetRank(b),
+  )[0];
   return {
     ready: true,
     version: browser || ua || undefined,
     title: main?.title,
     url: main?.url,
   };
-}
-
-/** 主窗口优先：标题恰为 `Open Design` 者最优先，其余本产品页面次之 */
-function rankOf(target: CdpPageTargetLike): number {
-  return (target.title ?? "").trim() === "Open Design" ? 0 : 1;
 }
 
 /**
@@ -365,6 +378,10 @@ export async function ensureOpenDesignInstance(
   logger: AgentRunLogger,
   options: OpenDesignInstanceOptions = {},
 ): Promise<{ ready?: OpenDesignReady; needsClose?: boolean }> {
+  // DevToolsActivePort 的候选路径需要命名空间：真机实测文件写在**默认 userData 根**，
+  // namespace 两处只作兜底（见 devToolsActivePortPaths）。
+  const installInfo = readInstallInfo(exePath);
+  const namespaceRoot = installInfo ? openDesignNamespaceRoot(installInfo) : null;
   let roots = rootOpenDesignProcesses(await listOpenDesignProcessesAsync(options));
   if (!roots.length) {
     await delay(500, undefined, { signal: options.signal });
@@ -377,10 +394,12 @@ export async function ensureOpenDesignInstance(
     // macOS 主进程启动后会改写进程标题（ps 里只剩 "Open Design"，argv 中的端口被隐藏）：
     // 此时补扫配置端口段，预算收窄到 10s——扫不到本产品页面即确属「无 CDP 旧实例」。
     const scanAll = process.platform === "darwin" && argvPorts.length === 0;
+    // `--remote-debugging-port=0`（随机端口）时 argv 里读不到真实端口，靠 DevToolsActivePort 兜住。
+    const initialActive = activeDebugPorts(namespaceRoot);
     const ports = scanAll
       ? Array.from({ length: gui.cdpPortRange }, (_, i) => gui.cdpPort + i)
       : argvPorts;
-    if (!ports.length) return { needsClose: true };
+    if (!ports.length && !initialActive.length) return { needsClose: true };
     const reuseDeadline = Math.min(
       options.deadline ?? Infinity,
       Date.now() + (scanAll ? Math.min(gui.launchTimeoutMs, 10_000) : gui.launchTimeoutMs),
@@ -391,7 +410,12 @@ export async function ensureOpenDesignInstance(
       const recomputed = roots
         .map((p) => remoteDebugPort(p.commandLine))
         .filter((value): value is number => value !== null);
-      const tickPorts = scanAll ? ports : recomputed.length > 0 ? recomputed : ports;
+      const tickPorts = [
+        ...new Set([
+          ...(scanAll ? ports : recomputed.length > 0 ? recomputed : ports),
+          ...activeDebugPorts(namespaceRoot),
+        ]),
+      ];
       for (const port of tickPorts) {
         // eslint-disable-next-line no-await-in-loop
         const ready = await probeOpenDesignPort(port);
@@ -406,7 +430,13 @@ export async function ensureOpenDesignInstance(
   options.signal?.throwIfAborted();
   // 端口避让：基准端口被占时在区段内自动前移；整段不可用即硬失败并回显**尝试过的范围**
   // （计划 §5）。逻辑抽在 pickOpenDesignPort 里，便于单测注入「哪些端口可用」。
-  const port = await pickOpenDesignPort(gui);
+  // 固定端口会被**不承载窗口的 launcher 进程**抢占（真机实测 2026-09-27，0.24.1）：launcher 先绑定
+  // 端口并驻留，真窗口进程随后绑定失败 → CDP 里一个 page target 都没有（`/json/list` 恒为 `[]`，
+  // 而 `/json/version` 正常），表现为「端口连得上、却永远判不出就绪」。
+  // 故 profile 改用 `--remote-debugging-port=0` 让两个进程各拿一个随机端口，
+  // 真端口由 DevToolsActivePort / stderr 宣告定位。仅当 exeArgs 仍带 `<port>` 占位符时才选固定端口。
+  const wantsFixedPort = gui.exeArgs.some((arg) => arg.includes("<port>"));
+  const port = wantsFixedPort ? await pickOpenDesignPort(gui) : 0;
   const args = gui.exeArgs.map((arg) => arg.replaceAll("<port>", String(port)));
   options.signal?.throwIfAborted();
   // 桌面实例必须 detached：不变量与实测依据见 guiInstanceSpawnOptions。
@@ -432,7 +462,8 @@ export async function ensureOpenDesignInstance(
   // 实例要跨 MCP server 退出驻留，不能把已完成的探测进程挂在事件循环上。
   child.unref();
   logger.info(
-    `[opendesign] 已启动 ${path.basename(exePath)}，CDP 端口 ${port}，pid=${child.pid ?? "unknown"}`,
+    `[opendesign] 已启动 ${path.basename(exePath)}，CDP ` +
+      `${port ? `端口 ${port}` : "随机端口（按 DevToolsActivePort 定位）"}，pid=${child.pid ?? "unknown"}`,
   );
   const deadline = Math.min(options.deadline ?? Infinity, Date.now() + gui.launchTimeoutMs);
   /** 已宣告的调试端口（从启动器 stderr 解析；见 devtoolsPortsFromOutput） */
@@ -444,7 +475,9 @@ export async function ensureOpenDesignInstance(
     await delay(500, undefined, { signal: options.signal });
     // eslint-disable-next-line no-await-in-loop
     if (launchError) throw launchError;
-    for (const candidate of new Set([port, ...announced])) {
+    const candidates = new Set<number>([...announced, ...activeDebugPorts(namespaceRoot)]);
+    if (port > 0) candidates.add(port);
+    for (const candidate of candidates) {
       // eslint-disable-next-line no-await-in-loop
       const ready = await probeOpenDesignPort(candidate);
       if (ready.ready)
@@ -456,9 +489,16 @@ export async function ensureOpenDesignInstance(
     // 但既有实例**没带**调试端口时，转发后端口依然不可用 → 明确要求用户关闭旧实例。
     // eslint-disable-next-line no-await-in-loop
     const forwardedRoots = rootOpenDesignProcesses(await listOpenDesignProcessesAsync(options));
-    for (const proc of forwardedRoots) {
-      const forwardedPort = remoteDebugPort(proc.commandLine);
-      if (!forwardedPort) continue;
+    // 既有实例若也用了随机端口（`=0`），argv 里读不到实际端口 —— 靠 DevToolsActivePort 补上候选。
+    const forwardedPorts = [
+      ...new Set([
+        ...forwardedRoots
+          .map((proc) => remoteDebugPort(proc.commandLine))
+          .filter((value): value is number => value !== null),
+        ...activeDebugPorts(namespaceRoot),
+      ]),
+    ];
+    for (const forwardedPort of forwardedPorts) {
       // eslint-disable-next-line no-await-in-loop
       const forwarded = await probeOpenDesignPort(forwardedPort);
       if (forwarded.ready) {
@@ -466,7 +506,12 @@ export async function ensureOpenDesignInstance(
           `[opendesign] 启动器 exit=${child.exitCode}，已复用现有 Open Design CDP 端口 ${forwardedPort}`,
         );
         return {
-          ready: { port: forwardedPort, title: forwarded.title, url: forwarded.url, pid: proc.pid },
+          ready: {
+            port: forwardedPort,
+            title: forwarded.title,
+            url: forwarded.url,
+            pid: forwardedRoots[0]?.pid,
+          },
         };
       }
     }
@@ -494,9 +539,10 @@ export async function ensureOpenDesignInstance(
       `[opendesign] 启动器 exit=0（分离子进程形态），stderr 宣告调试端口 ${announced.join("、")}，继续等待就绪`,
     );
   }
-  if (announced.length)
+  const tried = [...new Set([...announced, ...activeDebugPorts(namespaceRoot)])];
+  if (tried.length)
     throw new Error(
-      `Open Design 已宣告调试端口 ${announced.join("、")} 但 ${gui.launchTimeoutMs}ms 内未就绪` +
+      `Open Design 已宣告调试端口 ${tried.join("、")} 但 ${gui.launchTimeoutMs}ms 内未就绪` +
         `（应用主线程可能卡在启动期请求；stderr: ${shrink(stderrTail) || "无输出"}）`,
     );
   throw new Error(

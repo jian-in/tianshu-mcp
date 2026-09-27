@@ -26,6 +26,8 @@ export type OpenDesignSelectorKey =
   | "inputBox"
   | "workingDirTrigger"
   | "selectDirItem"
+  | "recentDirTrigger"
+  | "recentDirItem"
   | "workingDirValue"
   | "modelTrigger"
   | "modelMenuItem"
@@ -127,6 +129,23 @@ export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSele
     primary: '[data-testid="working-dir-pick"]',
     fallbacks: ['[data-testid="composer-plus-working-dir-pick"]'],
     texts: ["选择目录", "选择文件夹…", "修改工作目录"],
+  },
+  /**
+   * 「最近使用的目录」入口：纯 DOM 点击即可切换工作目录，**比 Win32 原生对话框稳得多**。
+   * 真机 2026-09-27：原生路线在两次运行间时好时坏（一次成功、多次「对话框正常关闭但目录没变」），
+   * 而面板里确实有这一项（探针实测 `working-dir-recent|最近使用的目录`）。
+   */
+  recentDirTrigger: {
+    primary: '[data-testid="working-dir-recent"]',
+    texts: ["最近使用的目录"],
+  },
+  /**
+   * 最近目录列表项：无稳定 testid（探针只在**点开前**采集过面板），故用宽选择器 + **文本精确匹配**
+   * （`exactMatchPointExpression` 负责 NFKC 归一后的全等，多命中即拒绝）。
+   */
+  recentDirItem: {
+    primary: '[role="menuitem"]',
+    fallbacks: ['[role="option"]', '[data-testid="working-dir-recent-item"]'],
   },
   /** 工作目录显示值：回读触发器上的标签文本（绑定是否生效的唯一权威判据） */
   workingDirValue: {
@@ -260,7 +279,17 @@ export function resolveFnSource(): string {
     const inScope=(el)=>{if(!roots)return true;for(const r of roots){if(r===el||r.contains(el))return true}return false};
     const out=[];
     const push=(el)=>{if(!el||out.indexOf(el)>=0)return;if(!inScope(el))return;if(excl.some((s)=>{try{return el.closest(s)}catch(_){return false}}))return;out.push(el)};
-    for(const s of css){try{for(const el of document.querySelectorAll(s))push(el)}catch(_){}}
+    // 候选按**优先级**排列（primary → fallbacks）：命中即停，取第一个有命中的候选。
+    // 旧实现把各候选的命中去重合并进同一个数组，于是「primary 命中 1 个（真控件）
+    // + fallback 命中 1 个（容器 div / 无 testid 的按钮）」，同一个语义键就成了 2 个命中，
+    // singlePointExpression 判「多命中」拒绝点击 —— 真机 2026-09-27 就是这样把
+    // modelTrigger（inline-model-switcher-chip vs inline-model-switcher 外层 div）与
+    // designDirectionTrigger 报成「选择器漂移」，卡死在「确认模型」这一步的。
+    for(const s of css){
+      const before=out.length;
+      try{for(const el of document.querySelectorAll(s))push(el)}catch(_){}
+      if(out.length>before)break;
+    }
     if(texts.length||arias.length||pats.length){
       const norm=(s)=>(s||'').normalize('NFKC').trim().replace(/\\s+/g,' ').toLocaleLowerCase();
       const tset=texts.map(norm);const aset=arias.map(norm);

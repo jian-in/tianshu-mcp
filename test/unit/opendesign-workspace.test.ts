@@ -195,6 +195,22 @@ describe("Open Design 工作目录：路径比较", () => {
     expect(workspaceMatches(undefined, TARGET)).toBe(false);
     expect(workspaceMatches("D:\\proj", "")).toBe(false);
   });
+
+  it("真机形态：触发区只显示末段目录名时，必须凭产品旁证才认（回归：真机 2026-09-27）", () => {
+    const target = "D:\\Trae项目\\AI游戏\\test";
+    // 真机实测：绑定成功后触发区显示的是「test」（末段目录名），不是完整路径。
+    // 末段单独看太宽（D:\a\test 与 D:\b\test 区分不开），因此**没有旁证一律不放行**。
+    expect(workspaceMatches("test", target)).toBe(false);
+    expect(workspaceMatches("test", target, { recentLinkedDirs: [] })).toBe(false);
+    // 产品自己把目标目录记成了「最近绑定」→ 末段匹配 + 旁证命中 = 绑定成功
+    expect(
+      workspaceMatches("test", target, { recentLinkedDirs: ["D:\\Trae项目\\AI游戏\\test"] }),
+    ).toBe(true);
+    // 旁证是**别的**目录时仍必须拒绝：末段同名不足以证明绑到了目标
+    expect(workspaceMatches("test", target, { recentLinkedDirs: ["D:\\Another\\test"] })).toBe(
+      false,
+    );
+  });
 });
 
 describe("Open Design 工作目录绑定：成功路径", () => {

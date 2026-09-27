@@ -42,15 +42,37 @@ export interface OpenDesignTargetLike {
   url?: string;
 }
 
-/** 本产品的页面判据：标题以 Open Design 开头，或 URL 是产品自身的 `od://` 协议/含 open-design */
-function isProductPage(target: OpenDesignTargetLike): boolean {
+/**
+ * 本产品的页面判据 —— **单一真源**（`instance.ts` 的端口探测也 import 它）。
+ *
+ * 真机形态（2026-09-27，Open Design 0.24.1）：`/json/list` 返回
+ * `page | "OpenDesign" | "od://app/"` —— 标题**无空格**、URL 也不含 `open-design` 字样。
+ * 因此三条判据缺一不可：标题（容忍有无空格）／URL 含 open-design／URL 是本产品的 `od://` 协议。
+ *
+ * 历史教训：`instance.ts` 曾自带一份只认前两条的副本，导致真机「明明连上了真实 CDP，
+ * 就绪判据却判 false」，最终表现为 90000ms 等待后 `setup_failed`（详见 HANDOFF）。
+ */
+export function isProductPage(target: OpenDesignTargetLike): boolean {
   const title = (target.title ?? "").trim();
-  return /^open design/i.test(title) || /open-design/i.test(target.url ?? "") || /^od:\/\//i.test(target.url ?? "");
+  const url = target.url ?? "";
+  return /^open\s*design/i.test(title) || /open-design/i.test(url) || /^od:\/\//i.test(url);
 }
 
-/** 主窗口优先：标题恰为 `Open Design` 者最优先，其次本产品页面，最后其他 page */
+/**
+ * 主窗口优先：真主窗口 → 其他本产品页面 → 无关 page。
+ *
+ * 两条真机修正（2026-09-27，0.24.1）：
+ * 1. 主窗口标题是 **`OpenDesign`（无空格）**；只认带空格的 `Open Design` 会让它与辅助页同级；
+ * 2. 产品会另开一个**同标题的辅助页** `od://app/desktop-pet`（桌面宠物，没有任何业务控件）。
+ *    同级排序会退化成「谁先返回」，适配器可能连到空页面 —— 探针首跑就命中过：
+ *    全部锚点 count=0，看起来像「UI 全漂移」，其实是连错了页面。
+ * 故辅助页压到最低档，标题判据容忍有无空格。
+ */
 export function openDesignMainTargetRank(target: OpenDesignTargetLike): number {
-  if ((target.title ?? "").trim() === "Open Design") return 0;
+  const title = (target.title ?? "").trim();
+  const url = target.url ?? "";
+  if (/desktop-pet|overlay/i.test(url)) return 3;
+  if (/^open\s*design$/i.test(title)) return 0;
   if (isProductPage(target)) return 1;
   return 2;
 }

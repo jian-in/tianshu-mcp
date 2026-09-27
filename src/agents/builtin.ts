@@ -290,10 +290,22 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
       cdpPort: 9889,
       cdpPortAuto: true,
       cdpPortRange: 10,
-      exeArgs: ["--remote-debugging-port=<port>"],
+      // **随机端口**（`=0`），不是固定端口：真机实测（2026-09-27，0.24.1）固定端口会被
+      // **不承载窗口的 launcher 进程**抢占——launcher 先绑住端口并驻留，真窗口进程随后绑定失败，
+      // 结果 CDP 端点活着 (`/json/version` 正常) 却一个 page target 都没有（`/json/list` 恒为 `[]`），
+      // 表现为「端口连得上、却永远判不出就绪」。改成 `=0` 让 launcher 与真窗口进程各拿一个随机端口，
+      // 再按 DevToolsActivePort 定位承载窗口的那个（见 opendesign/instance.ts 的 activeDebugPorts）。
+      exeArgs: ["--remote-debugging-port=0"],
       windowMode: "reuse",
-      // Electron 冷启动 + 内置 151 个设计系统与 sidecar 进程启动，实测偏慢
-      launchTimeoutMs: 90_000,
+      // Electron 冷启动 + 内置 151 个设计系统与 sidecar 进程启动，实测偏慢：
+      // 真机（2026-09-27）从 spawn 到「输入框真正就绪」实测 45~77s，原来的 90s 只是勉强压线。
+      launchTimeoutMs: 120_000,
+      // 初始化阶段总预算（接管实例 → 连接主窗口 → 绑目录 → 选模型/设计系统/方向 → 发送）。
+      // 缺省沿用 ZCode 的 120_000，但真机实测**单是「启动 + 连接主窗口」就吃掉 77s**，
+      // 再叠上原生对话框绑定目录与三个菜单交互，120s 必然中途抛 setup_recovery
+      // ——表现为「一切看起来都正常，却报环境需要人工恢复」。这里给足 5 分钟；
+      // 该预算是**截止时间**不是每步额度，重试不重置（见 recovery.ts 的 remaining()）。
+      setupRecoveryTimeoutMs: 300_000,
       pollIntervalMs: 3_000,
       stableRounds: 4,
       idleTimeoutMs: 10 * 60_000,
@@ -313,6 +325,12 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     opendesign: {
       // 只对接已真机取证的版本；其他版本 fail-closed（见 instance.versionGateError）
       supportedVersions: { win32: ["0.24.1"] },
+      // 绑定工作目录的**分步预算**：真机实测（2026-09-27）这一整段要过「展开面板 → 点『选择目录』
+      // → Win32 原生对话框填路径 / UIA 回读 / 确认 / 等关闭」四小段，实测 24~35s+ 且波动大。
+      // 缺省 15s+20s=35s 的 cap 会在中途被咬断并报成 `operation_timeout`——那是**预算不足**，
+      // 不是任何一步真的失败，却会被读成「环境有问题」要求人工恢复。
+      workingDirPanelTimeoutMs: 30_000,
+      nativeDialogTimeoutMs: 60_000,
       directionLabels: {
         prototype: "原型",
         document: "文档",

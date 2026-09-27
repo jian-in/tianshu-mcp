@@ -197,15 +197,21 @@ public static class TianshuOdDlg {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
   [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr h);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, string l);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, StringBuilder l);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
   [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h, int id);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
   public const uint WM_SETTEXT = 0x000C;
   public const uint WM_GETTEXT = 0x000D;
+  public const uint WM_KEYDOWN = 0x0100;
+  public const uint WM_KEYUP = 0x0101;
   public const uint BM_CLICK = 0x00F5;
+  // 旧式「浏览文件夹」(#32770 + Shell 树) 设置**选中项**的官方消息：WM_USER+103（W 版，lParam 为路径字符串）
+  public const uint BFFM_SETSELECTIONW = 0x0400 + 103;
   public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
   public const uint MOUSEEVENTF_LEFTUP = 0x0004;
 }
@@ -241,10 +247,28 @@ function Get-NewDialogs {
 
 Write-Output 'native:find-new-dialog'
 $dialogHandle=[IntPtr]::Zero
+# 同一个属主进程里可能同时出现多个 #32770（真机 2026-09-27 实测：绑定目录时直接报 OD_DIALOG_AMBIGUOUS）。
+# 处置分两级，**两级都不猜**：
+#   1) 「选择文件夹」必有 id=1152 的「文件夹:」编辑框 → **恰好一个**候选带它就选它。
+#      用控件 id 而不是标题文本，是因为标题会被命令行编码破坏（真机日志里标题就是乱码）；
+#   2) 仍有歧义 → 把每个候选的 hwnd/标题打进错误里再拒绝，一次就能定位，
+#      而不是只报「有多个」让人无从下手。
+function Get-DialogTitle([IntPtr]$h) {
+  $sb=New-Object Text.StringBuilder 512
+  [void][TianshuOdDlg]::GetWindowText($h,$sb,$sb.Capacity)
+  return $sb.ToString()
+}
 do {
   $handles=@(Get-NewDialogs)
-  if($handles.Count -gt 1){throw 'OD_DIALOG_AMBIGUOUS'}
-  if($handles.Count -eq 1){$dialogHandle=$handles[0]}
+  if($handles.Count -ge 1){
+    $withEdit=@($handles | Where-Object { $p=[TianshuOdDlg]::GetDlgItem($_,$EDIT_ID); $p -ne [IntPtr]::Zero })
+    if($withEdit.Count -eq 1){$dialogHandle=$withEdit[0]}
+    elseif($handles.Count -eq 1){$dialogHandle=$handles[0]}
+    else{
+      $desc=@($handles | ForEach-Object { "hwnd=$($_.ToInt64()) title='$(Get-DialogTitle $_)'" }) -join ' ;; '
+      throw "OD_DIALOG_AMBIGUOUS:$desc"
+    }
+  }
   if($dialogHandle -eq [IntPtr]::Zero){Start-Sleep -Milliseconds 200}
 } while($dialogHandle -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline)
 if($dialogHandle -eq [IntPtr]::Zero){throw 'OD_DIALOG_NOT_FOUND'}
@@ -269,12 +293,43 @@ $readback=''
 $editHandle=[TianshuOdDlg]::GetDlgItem($dialogHandle,$EDIT_ID)
 if($editHandle -ne [IntPtr]::Zero -and [TianshuOdDlg]::IsWindowVisible($editHandle)){
   Write-Output 'native:route-wm-settext'
+  # 第一步：用 **BFFM_SETSELECTIONW** 设置对话框的**选中项**（旧式「浏览文件夹」的官方消息）。
+  # 真机 2026-09-27 实测教训：只把路径塞进 edt1 是**不够**的 —— 当时编辑框内容正确、
+  # 确定按钮可用、对话框也正常关闭，但应用拿到的仍是原目录，说明点「确定」返回的不是 edt1 文本。
+  # 该消息是「设置选中项」的官方 API；**但在本机 0.24.1 上仍未让应用接受**（同一轮里编辑框内容、
+  # 对话框存活、确定按钮可用全部正常）。它与下面的 WM_SETTEXT 一起作为尽力路径保留，
+  # 生效与否**只由最后的工作目录回读判定** —— 回读不一致就转 needs_user（绝不假装绑定成功）。
+  [void][TianshuOdDlg]::SendMessage($dialogHandle,[TianshuOdDlg]::BFFM_SETSELECTIONW,[IntPtr]1,$nativePath)
+  Start-Sleep -Milliseconds 600
+  # 第二步：把编辑框文本也对齐（部分实现要 edt1 一致才认），并回读确认。
   for($attempt=1;$attempt -le 3;$attempt++){
     Assert-Deadline
     [void][TianshuOdDlg]::SendMessage($editHandle,[TianshuOdDlg]::WM_SETTEXT,[IntPtr]::Zero,$nativePath)
     Start-Sleep -Milliseconds 250
     $readback=Read-Back $editHandle
     if(Paths-Match $readback $nativePath){$mode='wm-settext';break}
+  }
+  # 真机教训（2026-09-27，0.24.1）：WM_SETTEXT 只把文本写进编辑框，**不会改变对话框的实际选择**。
+  # 上一步的「回读一致」读的是刚写进去的那个控件自身，属自证，不能证明应用会接受。
+  # 若就此点「确定」，对话框会正常关闭、而应用仍用原目录 —— 表现为「对话框关了、工作目录却没变」。
+  # 故补一次 Enter 让对话框真正导航/确认该路径；后续仍按「对话框是否关闭」收敛，不新增放行条件。
+  if($mode -eq 'wm-settext'){
+    Write-Output 'native:settext-enter'
+    # 直接把回车发给**编辑框**（WM_KEYDOWN/UP + VK_RETURN），不走 SendKeys：
+    # SendKeys 依赖「对话框已获前台焦点」，真机 2026-09-27 里同样的 Enter 一次生效一次没生效，
+    # 结果一次绑定成功、一次「对话框关了但工作目录没变」。给控件发消息与焦点无关，
+    # 标准文件夹对话框的 edt1 收到回车即按其内容导航。
+    [void][TianshuOdDlg]::SendMessage($editHandle,[TianshuOdDlg]::WM_KEYDOWN,[IntPtr]13,[IntPtr]::Zero)
+    [void][TianshuOdDlg]::SendMessage($editHandle,[TianshuOdDlg]::WM_KEYUP,[IntPtr]13,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 1200
+    # 诊断（真机 2026-09-27）：回车究竟做了什么——编辑框内容是否还在、对话框是否还活着、
+    # 确认按钮是否可用。三者组合能区分「回车没被接受」「回车关掉了对话框」「回车后按钮仍禁用」。
+    $postEdit = Read-Back $editHandle
+    $alive = [TianshuOdDlg]::IsWindow($dialogHandle)
+    $okBtn = [TianshuOdDlg]::GetDlgItem($dialogHandle,$CONFIRM_ID)
+    $okEnabled = 'n/a'
+    if($okBtn -ne [IntPtr]::Zero){ if([TianshuOdDlg]::IsWindowEnabled($okBtn)){$okEnabled='yes'}else{$okEnabled='no'} }
+    Write-Output "native:after-enter edit='$postEdit' dialogAlive=$alive confirmEnabled=$okEnabled"
   }
 }
 
@@ -305,10 +360,14 @@ $confirm=[TianshuOdDlg]::GetDlgItem($dialogHandle,$CONFIRM_ID)
 if($confirm -ne [IntPtr]::Zero -and [TianshuOdDlg]::IsWindowVisible($confirm)){
   [void][TianshuOdDlg]::SendMessage($confirm,[TianshuOdDlg]::BM_CLICK,[IntPtr]::Zero,[IntPtr]::Zero)
   Write-Output 'native:submit-bm-click'
-} else {
-  # 控件 id 漂移时退回 Enter（标准选择器的默认按钮）
+} elseif([TianshuOdDlg]::IsWindow($dialogHandle)){
+  # 控件 id 漂移时退回 Enter（标准选择器的默认按钮）。
+  # 前提是对话框**还在**：若它已被上一步 Enter 关掉，这里再发 Enter 会打到前台的其他窗口，
+  # 可能触发意外操作（真机 2026-09-27 加固）。
   [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
   Write-Output 'native:submit-enter'
+} else {
+  Write-Output 'native:submit-skipped-dialog-gone'
 }
 
 # 成功判据：对话框**真的关闭**了（只发消息不等于生效）
@@ -319,6 +378,15 @@ do {
 } while(-not $closed -and (Get-Date) -lt $deadline)
 if(-not $closed){throw 'OD_DIALOG_STILL_OPEN'}
 Write-Output "native:done:$mode"`;
+
+/**
+ * 歧义错误的候选清单：脚本已把每个候选的 `hwnd` / 标题带出来（`OD_DIALOG_AMBIGUOUS:<详情>`）。
+ * 只用于把「有多个对话框」变成「具体是哪几个」，便于一次定位；缺失时返回空串。
+ */
+function ambiguousDetail(raw: string): string {
+  const detail = /OD_DIALOG_AMBIGUOUS:(.+)/.exec(raw)?.[1]?.trim();
+  return detail ? `\n候选窗口：${detail}` : "";
+}
 
 export async function selectOpenDesignFolder(
   targetPath: string,
@@ -380,7 +448,8 @@ export async function selectOpenDesignFolder(
         ok: false,
         reason: "ambiguous",
         message:
-          "同时出现多个新的 #32770 对话框，无法确定哪一个是 Open Design 弹出的；已放弃操作（绝不猜一个去点）。请关闭多余对话框后重试。",
+          "同时出现多个新的 #32770 对话框，无法确定哪一个是 Open Design 弹出的；已放弃操作（绝不猜一个去点）。" +
+          `请关闭多余对话框后重试。${ambiguousDetail(raw)}`,
       };
     if (raw.includes("OD_DIALOG_NOT_FOUND"))
       return {

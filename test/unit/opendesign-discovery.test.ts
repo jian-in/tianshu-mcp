@@ -4,10 +4,12 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BUILTIN_PROFILES } from "../../src/agents/builtin.js";
 import {
+  devToolsActivePortPaths,
   discoverOpenDesign,
   openDesignAppConfigPath,
   openDesignNamespaceRoot,
   orderedDrives,
+  readDevToolsActivePort,
   readInstallInfo,
   validExecutable,
   type OpenDesignInstallInfo,
@@ -370,6 +372,83 @@ describe("Open Design 进程枚举与产品校验", () => {
     expect(ok.title).toBe("Open Design");
   });
 
+  it("真机形态：标题 `OpenDesign`（无空格）+ url `od://app/` 也必须判为本产品页面", async () => {
+    // 真机采集（2026-09-27，Open Design 0.24.1）：/json/list 返回
+    //   page | "OpenDesign" | "od://app/"      与  page | "OpenDesign" | "od://app/desktop-pet"
+    // 标题无空格、URL 也不含 `open-design` 字样 —— 旧判据（^open design | /open-design/）两项都不命中，
+    // 于是「明明连上了真实 CDP 却说未就绪」，真机表现为 90000ms 等待后 setup_failed。
+    const real = await probeOpenDesignPort(
+      9889,
+      500,
+      fetcher({ "User-Agent": OPEN_DESIGN_UA, Browser: "Chrome/146.0.7680.188" }, [
+        { type: "page", title: "OpenDesign", url: "od://app/", webSocketDebuggerUrl: "ws://p" },
+        {
+          type: "page",
+          title: "OpenDesign",
+          url: "od://app/desktop-pet",
+          webSocketDebuggerUrl: "ws://p2",
+        },
+      ]),
+    );
+    expect(real.ready).toBe(true);
+    expect(real.url).toBe("od://app/");
+  });
+
+  it("主窗口排序：同标题的辅助页（桌面宠物）不得抢走主窗口（真机 2026-09-27）", async () => {
+    // 真机实测：CDP 页面列表里**两个页面标题都是 `OpenDesign`** ——
+    // `od://app/desktop-pet`（桌面宠物，无任何业务控件）与 `od://app/`（主窗口）。
+    // 旧判据只认带空格的 `Open Design`，两者因此同级，排序退化成「谁先返回」，
+    // 适配器可能连到空页面（真机探针首跑就命中过这个坑：全部锚点 count=0）。
+    const res = await probeOpenDesignPort(
+      9889,
+      500,
+      fetcher({ "User-Agent": OPEN_DESIGN_UA }, [
+        { type: "page", title: "OpenDesign", url: "od://app/desktop-pet" },
+        { type: "page", title: "OpenDesign", url: "od://app/" },
+      ]),
+    );
+    expect(res.ready).toBe(true);
+    expect(res.url).toBe("od://app/");
+    // 顺序颠倒也必须稳定选主窗口
+    const flipped = await probeOpenDesignPort(
+      9889,
+      500,
+      fetcher({ "User-Agent": OPEN_DESIGN_UA }, [
+        { type: "page", title: "OpenDesign", url: "od://app/" },
+        { type: "page", title: "OpenDesign", url: "od://app/desktop-pet" },
+      ]),
+    );
+    expect(flipped.url).toBe("od://app/");
+  });
+
+  it("从 DevToolsActivePort 读真实 CDP 端口（随机端口模式下定位真窗口进程）", () => {
+    // 真机实测（2026-09-27）：`--remote-debugging-port=0` 时 launcher 与真窗口进程各拿一个随机端口，
+    // 被宣告/被占用的那个没有 page，真窗口进程的端口只有这个文件说得清（两行：端口 + browser ws path）。
+    const file = path.join(tmpRoot, "DevToolsActivePort");
+    fs.writeFileSync(file, "12614\n/devtools/browser/7b1f47d3-17e6-42be-b54b-35e416f0d109", "utf8");
+    expect(readDevToolsActivePort(file)).toBe(12614);
+    // 损坏/越界内容一律 null —— 宁可继续等，也绝不猜端口
+    for (const bad of ["not-a-port\n", "", "99999\n", "0\n", "-1\n"]) {
+      fs.writeFileSync(file, bad, "utf8");
+      expect(readDevToolsActivePort(file)).toBeNull();
+    }
+    expect(readDevToolsActivePort(path.join(tmpRoot, "missing-file"))).toBeNull();
+  });
+
+  it("DevToolsActivePort 候选路径覆盖真机实测位置（默认 userData 根）与 namespace 两处", () => {
+    const appData = path.join(tmpRoot, "AppData");
+    const nsRoot = path.join(appData, "Open Design", "namespaces", "release-stable-win");
+    const paths = devToolsActivePortPaths(nsRoot, { APPDATA: appData });
+    // 真机实测：文件落在**默认 userData 根**（应用随后才 setPath 到 namespace/user-data）
+    expect(paths).toContain(path.join(appData, "Open Design", "DevToolsActivePort"));
+    expect(paths).toContain(path.join(nsRoot, "DevToolsActivePort"));
+    expect(paths.every((p) => path.isAbsolute(p))).toBe(true);
+    // namespaceRoot 缺失时也必须给出默认根候选，否则随机端口模式无从定位
+    expect(devToolsActivePortPaths(null, { APPDATA: appData })).toContain(
+      path.join(appData, "Open Design", "DevToolsActivePort"),
+    );
+  });
+
   it("拒绝别的 Electron 应用：UA 不含 electron 或页面不是本产品", async () => {
     const notElectron = await probeOpenDesignPort(
       9777,
@@ -529,7 +608,11 @@ describe("Open Design 内置 profile", () => {
     expect(parsed.adapter).toBe("opendesign-gui");
     expect(parsed.driver).toBe("gui");
     expect(parsed.gui?.cdpPort).toBe(9889);
-    expect(parsed.gui?.exeArgs).toEqual(["--remote-debugging-port=<port>"]);
+    // 必须是**随机端口**（`=0`）：固定端口会被不承载窗口的 launcher 进程抢占，真窗口进程绑不上，
+    // 于是 CDP 里一个 page target 都没有（真机 2026-09-27 实测，见 instance.ts 的 activeDebugPorts）。
+    expect(parsed.gui?.exeArgs).toEqual(["--remote-debugging-port=0"]);
+    // 回归守卫：退回 `<port>` 占位符 = 真机重新变成「端口连得上却永远判不出就绪」
+    expect(parsed.gui?.exeArgs?.some((arg) => arg.includes("<port>"))).toBe(false);
     // 不宣称「专属 userData」——产品会强制覆盖，写进去是假承诺
     expect(parsed.gui?.userDataDir).toBeUndefined();
     expect(parsed.opendesign?.supportedVersions).toEqual({ win32: ["0.24.1"] });

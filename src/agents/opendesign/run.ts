@@ -588,8 +588,18 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
             signal,
             deps: {
               listDialogs: (pids, o) => deps.listDialogs(pids, o),
-              selectFolder: (target, pids, baseline, o) => deps.selectFolder(target, pids, baseline, o),
+              selectFolder: (target, pids, baseline, o) =>
+                deps.selectFolder(target, pids, baseline, o),
               sleep: (ms) => deps.sleep(ms),
+              // 每轮重读：绑定成功后产品才会把目标目录写进 recentLinkedDirs（首位 = 最近一次绑定）。
+              // 触发区只显示末段目录名时，靠这条独立旁证区分「绑对了」与「绑到了同名目录」。
+              readRecentLinkedDirs: async () => {
+                const cfg = readAppConfig(namespaceRoot);
+                const dirs = cfg?.recentLinkedDirs;
+                return Array.isArray(dirs)
+                  ? dirs.filter((d): d is string => typeof d === "string")
+                  : [];
+              },
             },
           }),
         od.workingDirPanelTimeoutMs + od.nativeDialogTimeoutMs,

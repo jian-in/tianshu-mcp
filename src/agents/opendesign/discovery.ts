@@ -124,6 +124,48 @@ export function openDesignAppConfigPath(namespaceRoot: string | null): string | 
   return namespaceRoot ? path.join(namespaceRoot, "data", "app-config.json") : null;
 }
 
+/**
+ * `DevToolsActivePort` 候选文件路径（Chromium/Electron 写：第一行真实 CDP 端口，第二行 browser ws path）。
+ *
+ * 真机实测（2026-09-27，0.24.1）：文件落在**默认 userData 根** `<base>/Open Design/DevToolsActivePort`
+ * ——应用随后才 `app.setPath("userData", <namespace>/user-data)`，故 namespace 两处一并列出兜底。
+ *
+ * 为什么必须靠它：`--remote-debugging-port=<固定端口>` 会被**不承载窗口的 launcher 进程**抢占，
+ * 真窗口进程绑定失败后 CDP 里一个 page target 都没有（`/json/list` 恒为 `[]`）。改用 `=0`（随机端口）后
+ * 两个进程各拿一个端口，只有这个文件能指出**真窗口进程**用的是哪一个。
+ */
+export function devToolsActivePortPaths(
+  namespaceRoot: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const base =
+    process.platform === "win32"
+      ? env.APPDATA
+      : path.join(env.HOME ?? os.homedir(), "Library", "Application Support");
+  const paths: string[] = [];
+  if (base) paths.push(path.join(base, "Open Design", "DevToolsActivePort"));
+  if (namespaceRoot) {
+    paths.push(path.join(namespaceRoot, "DevToolsActivePort"));
+    paths.push(path.join(namespaceRoot, "user-data", "DevToolsActivePort"));
+  }
+  return paths;
+}
+
+/**
+ * 读 `DevToolsActivePort` 首行并解析为端口号。
+ * 内容缺失/非数字/越界一律返回 null —— 调用方继续轮询，**绝不猜端口**。
+ */
+export function readDevToolsActivePort(file: string): number | null {
+  try {
+    const first = fs.readFileSync(file, "utf8").split(/\r?\n/, 1)[0]?.trim() ?? "";
+    if (!/^\d+$/.test(first)) return null;
+    const port = Number(first);
+    return Number.isInteger(port) && port > 0 && port <= 65535 ? port : null;
+  } catch {
+    return null;
+  }
+}
+
 export function normalizeDrive(value: string): string | null {
   const m = /^([A-Za-z]):$/.exec(value.trim());
   return m ? `${m[1]!.toUpperCase()}:` : null;

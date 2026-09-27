@@ -46,6 +46,28 @@
   ② 工作目录绑定失败曾落成「非硬失败的 `setup_failed`」→ 编排器按普通失败处理、用户无法 `continue_task`，现一律转 `needs_user`。
 - **测试**：新增 **63** 用例（集成 `opendesign-flow` 14 → **18** + `opendesign-rework-loop` 5（仅 Windows：派发本身有平台门禁）；单测 `opendesign-{menu,send,transport,recovery}` 8/8/7/14；`opendesign-discovery` 扩到 33，含端口避让），
   桩扩展在 `test/fake-cdp.ts`（Open Design 页面桩，语义键由注册表自身反查，选择器漂移时桩会一起失败）。全部**不依赖本机安装 Open Design**、不联网。
+- **真机冒烟（2026-09-27）暴露并修掉 6 个只在真实窗口上才显形的缺陷**（单测全绿时它们一个都不显形）：
+  ① **CDP 接不上** —— 固定 `--remote-debugging-port` 被**不承载窗口的 launcher 进程**占住并驻留，
+  真窗口进程绑不上，于是 `/json/version` 正常而 `/json/list` 恒为 `[]`；改用 `=0`（两进程各拿随机端口）
+  并按 **`DevToolsActivePort`** 定位真窗口，真机 **4 秒**接管成功。
+  ② **就绪判据在 `instance.ts` 有一份不同步的副本**（缺 `^od://`），而真机页面正是
+  `title=OpenDesign`（**无空格**）+ `url=od://app/` —— 两个判据都不命中 → 改成**单一真源**并容忍有无空格。
+  ③ **主窗口排序会被同标题辅助页抢走**（`od://app/desktop-pet` 标题也是 `OpenDesign`）→ 辅助页压到最低档。
+  ④ **选择器候选按并集累加**：primary 与 fallback 各命中一个**不同**元素就报「多命中」
+  （真机 `modelTrigger` = chip(button) + 外层 div）→ 改为**命中即停**（primary 优先）。
+  ⑤ **工作目录回读不认真实 UI**：绑定成功后触发区只显示**末段目录名**（`test`）→ 增加
+  「末段相等 **且** 产品旁证 `recentLinkedDirs` 命中目标」这一档；**缺旁证仍拒绝**（末段太宽，会误判）。
+  ⑥ **预算照搬 ZCode 默认值**：`setupRecovery` 120s，而真机**单是「启动 + 连接主窗口」就吃掉 77s**，
+  绑目录的 `15s+20s` cap 也会被咬断 → 分别放大到 **300s** 与 **30s+60s**。
+- **真机冒烟尚未跑通到「派发」**（2026-09-27 收尾状态）：链路停在**步 3「绑定工作目录」**。
+  适配器的行为是正确的 fail-closed —— 原生对话框流程走完（编辑框内容正确、确定按钮可用、对话框正常关闭），
+  但应用没接受：`recentLinkedDirs` 未更新、触发区仍显示「工作目录」，于是转 `needs_user`
+  （可 `continue_task` 续跑），**没有把「对话框关了就当成绑定成功」**。
+  已加的尽力路径：补 Enter 导航、发官方 `BFFM_SETSELECTIONW` 设选中项、按 `id=1152` 唯一化对话框歧义、
+  歧义时把每个候选的 hwnd/标题写进错误、绑定流程补阶段日志。**Enter 与 BFFM 在本机 0.24.1 上均未让应用接受**
+  ——已在代码注释里如实标注，不当成已解决。可试的下一步：① 面板里的「最近目录」
+  （本轮实测点开后**没有**子列表，只有 `选择目录` / `最近使用的目录` 两项，故当前不可用）；
+  ② 改用 `IFileDialog` 的 COM 接口而非 Win32 消息；③ 在能稳定复现的机器上抓对话框的选中项控件。
 - **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**未打 tag、未发 npm**；
   `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。
 

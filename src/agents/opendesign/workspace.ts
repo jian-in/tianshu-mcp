@@ -47,15 +47,34 @@ export function normalizeWorkspacePath(value: string | undefined): string {
   return process.platform === "win32" ? out.toLowerCase() : out;
 }
 
-/** 目标路径是否已出现在当前显示值里（含被截断的情形） */
-export function workspaceMatches(actual: string | undefined, wanted: string): boolean {
+/**
+ * 目标路径是否与当前显示值一致。
+ *
+ * 三种形态（后两种来自真机实测）：
+ * 1. 显示完整路径 → 直接相等；
+ * 2. 以省略号截断（`D:\Trae项目\tian…`）→ 前缀匹配；
+ * 3. **只显示末段目录名**（真机 2026-09-27：绑到 `D:\Trae项目\AI游戏\test` 后触发区只显示 `test`）
+ *    → 末段相等**且**有独立旁证（产品已把该目录记为最近绑定）。
+ *
+ * 末段单独看太宽（`D:\a\test` 与 `D:\b\test` 区分不开），因此第 3 种**必须**带旁证，缺旁证一律拒绝
+ * ——宁可多要一次人工确认，也不能把「绑错目录」当成功（那会让 MCP 往别的目录派活）。
+ */
+export function workspaceMatches(
+  actual: string | undefined,
+  wanted: string,
+  sidecar?: { recentLinkedDirs?: string[] },
+): boolean {
   const a = normalizeWorkspacePath(actual);
   const w = normalizeWorkspacePath(wanted);
   if (!a || !w) return false;
   if (a === w) return true;
   // 界面常见截断：以省略号结尾，只保留了前缀
   const shownEllipsis = /(…|\.\.\.)\s*$/.test((actual ?? "").trim());
-  return shownEllipsis && w.startsWith(a);
+  if (shownEllipsis && w.startsWith(a)) return true;
+  // 只显示末段目录名：必须由产品自己的记录（app-config.recentLinkedDirs）佐证
+  const tail = w.split("\\").filter(Boolean).pop() ?? "";
+  if (!tail || a !== tail) return false;
+  return (sidecar?.recentLinkedDirs ?? []).some((dir) => normalizeWorkspacePath(dir) === w);
 }
 
 export type WorkspaceBindReason =
@@ -93,7 +112,17 @@ export interface WorkspaceBindDeps extends FolderDialogDeps {
     options: { signal?: AbortSignal; onProgress?: (stage: string) => void },
   ) => Promise<FolderDialogOutcome>;
   sleep: (ms: number) => Promise<void>;
+  /**
+   * 独立旁证：读产品自己记录的最近绑定目录（`app-config.json` 的 `recentLinkedDirs`，首位即最近一次）。
+   * 触发区只显示末段目录名时靠它区分「绑对了」与「绑到了同名目录」。
+   * 缺省返回空数组 = 无旁证 → 末段形态一律不放行（fail-closed）。
+   */
+  readRecentLinkedDirs?: () => Promise<string[]>;
 }
+
+/** 回读重试：产品把「最近绑定目录」异步落盘，触发区文本也可能晚一拍更新 */
+const READBACK_ATTEMPTS = 4;
+const READBACK_RETRY_MS = 700;
 
 const DEFAULT_DEPS: WorkspaceBindDeps = {
   listDialogs: (pids, options) => listOwnedDialogs(pids, options),
@@ -126,6 +155,55 @@ export async function readWorkspaceValue(
   overrides: SelectorOverrides = {},
 ): Promise<string> {
   return page.evaluate<string>(triggerTextExpression("workingDirValue", overrides));
+}
+
+/**
+ * 试着用「最近使用的目录」切换工作目录：点入口 → 在列表里按文本**精确**点目标 → 回读校验。
+ *
+ * 为什么优先它：这是纯 DOM 点击，不碰 Win32 自动化。真机 2026-09-27 实测原生对话框路线
+ * 时好时坏（一次成功，之后多次「对话框正常关闭、编辑框内容也对，但应用没接受」）。
+ *
+ * 返回 `null` 表示这条路线不可用（入口不在 / 列表无目标 / 点了没生效），由调用方回退原生对话框。
+ */
+async function bindViaRecentDirs(
+  page: OpenDesignPage,
+  targetPath: string,
+  overrides: SelectorOverrides,
+  deps: WorkspaceBindDeps,
+  logger: AgentRunLogger,
+): Promise<WorkspaceBindOutcome | null> {
+  const entry = await page.evaluate<{ count: number; point?: { x: number; y: number } }>(
+    singlePointExpression(selectorSpecFor("recentDirTrigger", overrides)),
+  );
+  if (entry.count !== 1 || !entry.point) return null;
+  const opened = await page.clickAt(entry.point, { expect: "working-dir-recent-list" });
+  if (!opened) return null;
+  await deps.sleep(400);
+  const tail = normalizeWorkspacePath(targetPath).split("\\").filter(Boolean).pop() ?? "";
+  // 列表项可能显示完整路径，也可能只显示末段目录名 —— 两种都试，命中唯一才算数
+  const wanted = [...new Set([targetPath, tail].filter(Boolean))];
+  let available: string[] = [];
+  for (const label of wanted) {
+    const hit = await page.evaluate<{
+      count: number;
+      available: string[];
+      point?: { x: number; y: number };
+    }>(exactMatchPointExpression("recentDirItem", label, overrides));
+    if (hit.available?.length) available = hit.available;
+    if (hit.count !== 1 || !hit.point) continue;
+    const clicked = await page.clickAt(hit.point, { expect: "workspace-bound" });
+    if (!clicked) continue;
+    const shown = await readWorkspaceValue(page, overrides);
+    const recentLinkedDirs = (await deps.readRecentLinkedDirs?.()) ?? [];
+    if (workspaceMatches(shown, targetPath, { recentLinkedDirs })) {
+      logger.info(`[opendesign] 经「最近使用的目录」绑定成功：${shown}（点击「${label}」）`);
+      return { ok: true, shown };
+    }
+  }
+  logger.info(
+    `[opendesign] 「最近使用的目录」未命中目标（候选：${JSON.stringify(available.slice(0, 8))}），回退原生对话框`,
+  );
+  return null;
 }
 
 /**
@@ -168,6 +246,7 @@ export async function bindWorkspace(input: BindWorkspaceInput): Promise<Workspac
   }
 
   // 3) 等「选择目录」项出现（文本谓词兜底：菜单项文案是稳定的中文）
+  logger.info("[opendesign] 已展开「工作目录」面板，等待「选择目录」项出现…");
   const itemReady = await waitUntil(
     () => page.evaluate<boolean>(existsExpression(selectorSpecFor("selectDirItem", overrides))),
     panelBudget,
@@ -181,6 +260,14 @@ export async function bindWorkspace(input: BindWorkspaceInput): Promise<Workspac
       message: `展开后未出现「选择目录」项（预算 ${panelBudget}ms）`,
     };
   }
+  logger.info("[opendesign] 「选择目录」项已就位，准备切换工作目录");
+  // 3.5) **优先走「最近使用的目录」**：纯 DOM 点击，不依赖 Win32 自动化。
+  //      真机 2026-09-27 实测：原生对话框路线在两次运行间时好时坏 —— 一次绑定成功，
+  //      之后多次都是「对话框正常关闭、编辑框内容也对，但应用没接受指定目录」；
+  //      而面板里本就有「最近使用的目录」入口（探针实测 working-dir-recent）。
+  //      能点它就绝不动原生对话框；不可用时再回退。
+  const viaRecent = await bindViaRecentDirs(page, targetPath, overrides, deps, logger);
+  if (viaRecent) return viaRecent;
 
   // 4) **基线必须在点击之前采样**：只有不在基线里的窗口才可能是本次弹出的
   const baseline = await deps.listDialogs(ownerPids, { signal: input.signal });
@@ -209,9 +296,11 @@ export async function bindWorkspace(input: BindWorkspaceInput): Promise<Workspac
   }
 
   // 5) 原生对话框：填路径 → 回读 → 确认 → 等关闭
+  // 原生对话框是已知慢点（Win32 对话框 + UIA 填路径），阶段进度用 info 级 —— 慢环境排查必须看得见。
+  logger.info(`[opendesign] 开始原生「选择文件夹」：填入 ${targetPath}`);
   const native = await deps.selectFolder(targetPath, ownerPids, baseline, {
     signal: input.signal,
-    onProgress: (stage) => logger.debug(`[opendesign] native:${stage}`),
+    onProgress: (stage) => logger.info(`[opendesign] 原生对话框：${stage}`),
   });
   if (!native.ok) {
     return {
@@ -223,8 +312,28 @@ export async function bindWorkspace(input: BindWorkspaceInput): Promise<Workspac
   }
 
   // 6) 回读工作目录显示值：**对话框关闭 ≠ 应用已接受**
-  const shown = await readWorkspaceValue(page, overrides);
-  if (!workspaceMatches(shown, targetPath)) {
+  //    触发区可能只显示末段目录名，且产品把「最近绑定目录」异步落盘，
+  //    故在短窗口内重试（UI 值 + 独立旁证一起看），避免把「刚写下去」误判成失败。
+  let shown = "";
+  let matched = false;
+  for (let attempt = 0; attempt < READBACK_ATTEMPTS; attempt++) {
+    // eslint-disable-next-line no-await-in-loop
+    shown = await readWorkspaceValue(page, overrides);
+    // eslint-disable-next-line no-await-in-loop
+    const recentLinkedDirs = (await deps.readRecentLinkedDirs?.()) ?? [];
+    if (workspaceMatches(shown, targetPath, { recentLinkedDirs })) {
+      matched = true;
+      break;
+    }
+    if (attempt < READBACK_ATTEMPTS - 1) {
+      logger.debug(
+        `[opendesign] 工作目录回读暂未命中（第 ${attempt + 1} 次：「${shown}」），${READBACK_RETRY_MS}ms 后重试`,
+      );
+      // eslint-disable-next-line no-await-in-loop
+      await deps.sleep(READBACK_RETRY_MS);
+    }
+  }
+  if (!matched) {
     return {
       ok: false,
       reason: "readback",
