@@ -1,17 +1,22 @@
 /**
  * Open Design 控件的选择器注册表与页面内解析函数。
  *
- * **选择器来源纪律**：Open Design 是打包过的 React 应用（无源码可读），选择器**只能真机采集**，
- * 不能按截图目测硬写——目测出来的坐标/类名会在第一次 UI 升级时静默漂移（issue #23 的教训）。
- * 采集入口：`node scripts/probe-opendesign.mjs anchors`。
+ * **选择器来源纪律**：本文件里的 `primary` **全部来自产品自身的产物证据**，不是截图目测——
+ * 目测出来的坐标/类名会在第一次 UI 升级时静默漂移（issue #23 的教训）。证据来源有两类：
  *
- * **当前状态（P1）**：`primary` 全部为空串，`fallbacks` 只保留少量语义化兜底（aria/role 类，
- * 不含任何截图目测的类名）。因此：
- * - `missingSelectorKeys()` 会返回全部**布局守卫键** → `run.ts` 在任何点击之前硬失败 `selector_drift`；
- * - 探针里的 `ANCHOR_CANDIDATES` 提供**宽匹配候选**用于人工收敛，收敛结果写回本文件的 `primary`；
- * - `profile.gui.selectors` 支持按语义键热覆盖（UI 小改版时无需发版）。
+ * 1. `data-testid`：Open Design 的 Web 前端（Next.js 产物
+ *    `<安装目录>/resources/open-design-web-standalone/apps/web/.next/static/chunks/*.js`）
+ *    系统性使用 `data-testid` 作为自动化钩子，且这些钩子带业务语义（`chat-send` /
+ *    `working-dir-trigger` / `composer-design-system-trigger` …），是**产品作者为自动化预留的稳定接口**。
+ * 2. 语义 role/aria：菜单项统一由 `aria-haspopup="listbox"` + `role="listbox"` + `role="option"` 承载，
+ *    停止按钮没有 testid，带 `class="composer-send stop"` 与 `aria-label=<chat.stop>`。
  *
- * 采集完成后必须同步 `docs/opendesign-cdp.md` 的证据表。
+ * 采集/复核入口：`node scripts/probe-opendesign.mjs anchors`（只读盘点，输出各键命中数与文本）。
+ * 证据表见 `docs/opendesign-cdp.md` §4（**真机 DOM 取证**）。
+ *
+ * **漂移兜底（两道）**：
+ * - `missingSelectorKeys()` 在任一布局守卫键无值时让 `run.ts` 硬失败 `selector_drift`；
+ * - `profile.gui.selectors` 支持按语义键热覆盖（UI 小改版时无需发版），且**覆盖即权威**（见 cssCandidates）。
  */
 
 /** 选择器键：覆盖 12 步流程需要的全部锚点 */
@@ -56,106 +61,144 @@ export interface OpenDesignSelectorSpec {
 /**
  * 布局守卫键：**必须全部有值**才允许开始操作。
  *
- * 只收「工作区初始状态就存在」的锚点。刻意**不含**下列键——它们在初始页面并不存在，
- * 放进守卫会让适配器永远无法启动：
- * - `selectDirItem`（展开「工作目录」后才出现）
- * - 三个 `*MenuItem` / `designSystemItem`（菜单/面板打开后才出现）
- * - `stopButton`（任务运行时才出现）
- * - `designSystemSearch`（设计系统面板打开后才出现）
+ * 只收两类锚点：
+ * 1. 注册表层面「已采集」的键（任一为空即 `selector_drift`，见 `missingSelectorKeys`）；
+ * 2. 页面层面「首页渲染完成就能看到」的锚点 —— 这里只放 `title / composer / inputBox / sendButton`
+ *    四个**无条件存在**的键（首页 hero 与输入区）。
+ *
+ * 刻意**不含**下列键（放进守卫会造成大面积假阻塞）：
+ * - 工作目录 / 模型 / 设计系统 / 设计方向触发器：它们由用户配置与页面形态决定是否渲染，
+ *   缺失属于「该能力不可用」而不是「页面结构漂移」——这些键在**各自的步骤**里单独校验并给出
+ *   精确失败原因（`no-trigger` / `no-menu` / `needs_user`），比在守卫里一刀切更如实；
+ * - `selectDirItem` / `modelMenuItem` / `designSystemItem` / `designDirectionItem` /
+ *   `designSystemSearch` / `stopButton`：`展开菜单/开始运行`之后才出现；
+ * - `conversationText`：只在会话页存在，首页没有。
  */
 export const OPEN_DESIGN_LAYOUT_GUARD_KEYS: readonly OpenDesignSelectorKey[] = [
   "title",
   "composer",
   "inputBox",
-  "workingDirTrigger",
-  "workingDirValue",
-  "modelTrigger",
-  "designSystemTrigger",
-  "designDirectionTrigger",
   "sendButton",
-  "conversationText",
 ];
 
+/**
+ * 选择器表。每个 `primary` 都是**产品产物证据**中的真实钩子（见文件头说明），
+ * 注释里写明证据出处，便于 UI 升级后核对。
+ *
+ * 命中语义是**并集**（primary + fallbacks 全部参与 querySelectorAll），所以 fallbacks
+ * 只放「同一控件在另一形态下的钩子」，不放宽泛容器型候选（会让唯一命中判据失效）。
+ */
 export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSelectorSpec> = {
-  /** 页面标题/框架锚点：用于确认「连上的是 Open Design 主窗口」且页面已渲染 */
+  /**
+   * 页面框架锚点。首页 hero 容器 = `data-testid="home-hero"`（已渲染首页的权威标志）。
+   * 会话页没有 hero，故补 `home-view` / 标题元素作为跨形态兜底。
+   */
   title: {
-    primary: "",
-    fallbacks: ["header h1", "main h1"],
+    primary: '[data-testid="home-hero"]',
+    fallbacks: ['[data-testid="home-view"]', "header h1", "main h1"],
   },
-  /** 输入区容器（发送按钮与各选择器都在其中） */
+  /** 输入区容器：会话页 `chat-composer`，首页 `home-hero-composer-card`（同一控件的两种形态） */
   composer: {
-    primary: "",
-    fallbacks: ["main form", "[role=form]"],
+    primary: '[data-testid="chat-composer"]',
+    fallbacks: [
+      '[data-testid="home-hero-composer-card"]',
+      '[data-testid="pending-chat-composer-shell"]',
+      "[data-od-chat-area=composer]",
+    ],
   },
-  /** 任务书输入框 */
+  /**
+   * 任务书输入框（Lexical 富文本，contenteditable）。
+   * 首页编辑器显式带 `data-testid="home-hero-input"`；会话页编辑器在 `chat-composer` 内。
+   */
   inputBox: {
-    primary: "",
-    fallbacks: ["textarea", "[contenteditable=true]", "[role=textbox]"],
+    primary: '[data-testid="home-hero-input"]',
+    fallbacks: ['[data-testid="chat-composer"] [contenteditable=true]', "[contenteditable=true]"],
   },
-  /** 「工作目录」触发器（图 1 第 1 步） */
+  /** 「工作目录」触发器（`working-dir-picker` 内的按钮，带 aria-expanded） */
   workingDirTrigger: {
-    primary: "",
-    fallbacks: ["[aria-haspopup]", "[aria-expanded]"],
+    primary: '[data-testid="working-dir-trigger"]',
+    fallbacks: ['[data-testid="composer-plus-working-dir"]'],
   },
-  /** 「选择目录」菜单项（图 1 第 2 步） */
+  /**
+   * 「选择目录」菜单项：首页工作目录面板内是 `working-dir-pick`，
+   * composer「+」菜单内是 `composer-plus-working-dir-pick`（同一动作的入口）。
+   */
   selectDirItem: {
-    primary: "",
-    fallbacks: ["[role=menuitem]", "[role=option]"],
+    primary: '[data-testid="working-dir-pick"]',
+    fallbacks: ['[data-testid="composer-plus-working-dir-pick"]'],
+    texts: ["选择目录", "选择文件夹…", "修改工作目录"],
   },
-  /** 工作目录显示值（绑定后的回读判据） */
+  /** 工作目录显示值：回读触发器上的标签文本（绑定是否生效的唯一权威判据） */
   workingDirValue: {
-    primary: "",
-    fallbacks: ["[aria-label]", "code"],
+    primary: '[data-testid="working-dir-trigger"]',
   },
-  /** 模型触发器（图 3 第 1 步） */
+  /**
+   * 模型触发器：会话页内联切换器 chip；新建项目弹窗内是 `model-picker-trigger`。
+   * 两者互斥出现（不同形态），并集不会同时命中。
+   */
   modelTrigger: {
-    primary: "",
-    fallbacks: ["[aria-haspopup]", "[aria-expanded]"],
+    primary: '[data-testid="inline-model-switcher-chip"]',
+    fallbacks: ['[data-testid="model-picker-trigger"]', '[data-testid="inline-model-switcher"]'],
   },
-  /** 模型菜单项（图 3 第 2 步） */
+  /** 模型菜单项：listbox 形态的 `role="option"`（触发器 `aria-haspopup="listbox"`） */
   modelMenuItem: {
-    primary: "",
-    fallbacks: ["[role=menuitem]", "[role=option]", "[role=menuitemradio]"],
+    primary: '[role="option"]',
+    fallbacks: ['[role="menuitemradio"]', '[role="menuitem"]'],
   },
-  /** 设计系统触发器（图 4 第 1 步） */
+  /** 设计系统触发器：composer 图标形态 / 首页 footer 形态 / 项目选择器入口 */
   designSystemTrigger: {
-    primary: "",
-    fallbacks: ["[aria-haspopup]", "[aria-expanded]"],
+    primary: '[data-testid="composer-design-system-trigger"]',
+    fallbacks: [
+      '[data-testid="home-hero-design-system-trigger"]',
+      '[data-testid="design-system-trigger"]',
+      '[data-testid="project-ds-picker-trigger"]',
+    ],
   },
-  /** 设计系统搜索框（图 4 第 3 步） */
+  /** 设计系统搜索框（面板打开后才出现） */
   designSystemSearch: {
-    primary: "",
-    fallbacks: ["input[type=search]", "[role=searchbox]", "input[placeholder]"],
+    primary: '[data-testid="design-system-search"]',
+    fallbacks: [".ds-picker-search", '[data-testid="model-picker-search"]'],
   },
-  /** 设计系统列表项（图 4 第 2 步） */
+  /** 设计系统列表项（同一面板内也是 listbox 形态） */
   designSystemItem: {
-    primary: "",
-    fallbacks: ["[role=option]", "[role=menuitem]", "[role=listitem]"],
+    primary: '[role="option"]',
+    fallbacks: ['[role="menuitemradio"]', '[role="listitem"]'],
   },
-  /** 设计方向触发器（图 5 第 1 步） */
+  /**
+   * 设计方向（界面上的「创建类型」选择器）：`home-hero-template-picker` 内含
+   * `home-hero-template-trigger`（`aria-haspopup="listbox"`）。
+   */
   designDirectionTrigger: {
-    primary: "",
-    fallbacks: ["[aria-haspopup]", "[aria-expanded]"],
+    primary: '[data-testid="home-hero-template-trigger"]',
+    fallbacks: ['[data-testid="home-hero-template-picker"] [aria-haspopup=listbox]'],
   },
-  /** 设计方向菜单项（图 5 第 2 步） */
+  /** 设计方向菜单项 */
   designDirectionItem: {
-    primary: "",
-    fallbacks: ["[role=menuitem]", "[role=option]", "[role=menuitemradio]"],
+    primary: '[role="option"]',
+    fallbacks: ['[role="menuitemradio"]', '[role="menuitem"]'],
   },
-  /** 发送按钮（图 1/图 3/图 5 右上角的圆形按钮） */
+  /**
+   * 发送按钮：会话页 `chat-send`（`aria-label=<chat.send>`），首页 `home-hero-submit`。
+   * 发送中态另有 `chat-send-pending`（disabled），刻意**不**收进来——它不是可点击的发送按钮。
+   */
   sendButton: {
-    primary: "",
-    fallbacks: ["button[type=submit]", "[aria-label*=send i]", "[aria-label*=发送]"],
+    primary: '[data-testid="chat-send"]',
+    fallbacks: ['[data-testid="home-hero-submit"]'],
+    ariaLabels: ["发送", "Send"],
   },
-  /** 停止按钮：**运行中的权威信号**（任务运行时才出现） */
+  /**
+   * 停止按钮：**运行中的权威信号**。该控件没有 testid，产品用
+   * `class="composer-send stop"` + `aria-label=<chat.stop>` 标识；
+   * 这里以 class 为 primary（不随语言变化），aria 只作诊断性兜底。
+   */
   stopButton: {
-    primary: "",
-    fallbacks: ["[aria-label*=stop i]", "[aria-label*=停止]"],
+    primary: "button.composer-send.stop",
+    ariaPatterns: ["^(停止|停止生成|Stop|Stoppen|停止する)$"],
   },
-  /** 对话正文容器：运行检测取文本哈希 */
+  /** 对话正文容器：`chat-log`（产品自己的滚动/取证锚点，语义极稳定） */
   conversationText: {
-    primary: "",
-    fallbacks: ["[role=log]", "[class*=message i]"],
+    primary: '[data-testid="chat-log"]',
+    fallbacks: ["[class*=chat-log i]"],
   },
 };
 

@@ -305,6 +305,11 @@ export class TaskManager {
     ) {
       return { found: false, reason: "ZCode 原会话定位信息缺失，拒绝创建新任务冒充续修" };
     }
+    if (meta.agentId === "opendesign" && (!meta.reportJson || !meta.reportMd)) {
+      // Open Design 的返修指令必须引用 MCP 生成的修复计划（依据上一轮验收报告），
+      // 没有报告就无法生成计划——拒绝发送，避免把「无处可查的口头返修」派给 agent。
+      return { found: false, reason: "Open Design 原验收报告缺失，无法生成返修计划，拒绝发送" };
+    }
     meta.status = "queued";
     meta.updatedAt = nowIso();
     meta.finishedAt = undefined;
@@ -398,10 +403,18 @@ export class TaskManager {
         meta.continueSendMessage = false;
         meta.continueReobserve = undefined;
       }
+    } else if (meta.agentId === "opendesign") {
+      // Open Design 没有可回选的会话 id（单页应用，当前视图即当前会话）：
+      // - agent_question：回答要发进当前会话（适配器发送前确认会话页锚点，不在即 session_lost）；
+      // - user_confirmation：用户确认文本绝不发给模型，只重连观察；
+      // - 环境类：任务尚未真正派发 → 复检环境后走全新派发并补发完整任务书。
+      meta.continueMessage = message.trim();
+      meta.continueSendMessage = meta.needsUserKind === "agent_question";
+      meta.continueReobserve = meta.needsUserKind === "user_confirmation" ? true : undefined;
     } else {
       return {
         found: false,
-        reason: `continue_task 当前仅支持 zcode/codex/kimicode/qoder 任务（agentId=${meta.agentId}）`,
+        reason: `continue_task 当前仅支持 zcode/codex/kimicode/qoder/opendesign 任务（agentId=${meta.agentId}）`,
       };
     }
     meta.status = "queued";

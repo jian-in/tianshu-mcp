@@ -25,6 +25,7 @@ import type { AgentRunLogger } from "../adapter.js";
 import { TtlCache } from "../../util/ttl-cache.js";
 import { guiInstanceDiagSpawnOptions } from "../gui-instance.js";
 import { fetchCdpJson, type CdpJsonFetcher } from "../kimicode/instance.js";
+import { resolvePageTargets } from "./transport.js";
 
 export { fetchCdpJson };
 export type { CdpJsonFetcher };
@@ -217,6 +218,9 @@ function isProductPage(target: CdpPageTargetLike): boolean {
  * 探测端口是否为「Open Design 的 CDP 端口」。
  * 产品校验：UA 含 `electron`（本产品是 Electron 应用）且存在本产品页面。
  * 二者缺一即拒绝——否则会把别的 Electron 应用（同样有 page + CDP）当成本产品接管。
+ *
+ * 目标枚举走 `resolvePageTargets`：真机实测本产品的 HTTP `/json` 会挂起，
+ * 该函数会回退到浏览器级 `Target.getTargets`（详见 `transport.ts` 的文件头说明）。
  */
 export async function probeOpenDesignPort(
   port: number,
@@ -224,13 +228,11 @@ export async function probeOpenDesignPort(
   fetchJson: CdpJsonFetcher = fetchCdpJson,
 ): Promise<OpenDesignProbeResult> {
   const version = await fetchJson(port, "/json/version", timeoutMs).catch(() => undefined);
-  const targets = await fetchJson(port, "/json", timeoutMs).catch(() => undefined);
+  const targetList = await resolvePageTargets(port, timeoutMs, { fetchJson }).catch(() => []);
   const ua = String((version as { "User-Agent"?: unknown } | undefined)?.["User-Agent"] ?? "");
   const browser = String((version as { Browser?: unknown } | undefined)?.Browser ?? "");
   if (!/electron/i.test(ua)) return { ready: false };
-  const pages = (Array.isArray(targets) ? (targets as CdpPageTargetLike[]) : []).filter(
-    (t) => t.type === "page",
-  );
+  const pages = targetList.filter((t) => t.type === "page");
   const productPages = pages.filter(isProductPage);
   if (!productPages.length) return { ready: false };
   const main = productPages.sort((a, b) => rankOf(a) - rankOf(b))[0];

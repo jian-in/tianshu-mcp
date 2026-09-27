@@ -73,6 +73,7 @@ export function makeBuildCtx(services: AppServices) {
  * - codex：实例与当前对话常驻，只需「复用同一会话」意图，无需回选 id。
  * - kimicode：与 zcode 同构（主窗口 URL + 侧栏都能定位会话），锚点用 kimicodeSession*；
  *   user_confirmation 恢复透传 reobserve（重连观察，不发送任何消息）。
+ * - opendesign：没有可回选的会话 id，恢复语义是「对当前会话续说」，适配器侧确认会话页锚点。
  */
 function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
   const continuing = meta.continueMessage !== undefined;
@@ -129,6 +130,19 @@ function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
       boundProjectPath: meta.boundProjectPath,
       model: meta.model,
       permissionMode: meta.permissionMode,
+    };
+  }
+  if (meta.agentId === "opendesign") {
+    if (!continuing && round <= 0) return undefined;
+    // Open Design 没有可回选的会话 id：恢复语义是「对当前会话续说」——
+    // 发送前由适配器确认当前确实在会话页（不在即 session_lost），绝不退化到首页重新派发。
+    return {
+      kind: continuing ? "continue" : "rework",
+      message: meta.continueMessage,
+      sendMessage: meta.continueSendMessage ?? round > 0,
+      ...(meta.continueReobserve ? { reobserve: true } : {}),
+      boundProjectPath: meta.boundProjectPath,
+      model: meta.actualModel ?? meta.model,
     };
   }
   return undefined;

@@ -1,19 +1,40 @@
 /**
- * Open Design 的 CDP 客户端装配。
+ * Open Design 的 CDP 客户端装配与页面操作原语。
  *
- * 复用 `TraeworkCdpClient` 作为页面级实现（WebSocket / send 超时 / 断线语义已经打磨过），
- * 只注入本产品的**目标排序**：主窗口与浮层（下拉菜单可能渲染在独立渲染进程里，
- * 与 Kimi Code 的 Browser Overlay 同构）各自需要一个 rank 函数。
+ * 复用 `TraeworkCdpClient` 作为**页面级传输**（WebSocket / send 超时 / 断线语义已经打磨过），
+ * 只注入本产品的**目标排序**；在其之上封装本产品需要的语义操作（12 步流程全部走这一层，
+ * 绝不在 `run.ts` 里直接拼页面表达式——两处各写一套必然漂移）。
+ *
+ * 两条与计划对齐的硬约束：
+ * 1. **点击是可信点击**：坐标由 `getBoundingClientRect` 实时算出后经 `Input.dispatchMouseEvent`
+ *    派发，而不是 `element.click()`（React 的合成事件链对 `isTrusted` 敏感，真机教训）；
+ * 2. **每次「点击成功」都要回读确认**（面板是否真的展开、菜单项是否真的出现），
+ *    点击本身只代表事件已派发。
  */
 import { TraeworkCdpClient } from "../traework/cdp/client.js";
 import type { KimicodePageClient, KimicodePageRole } from "../kimicode/cdp.js";
-import type { SelectorOverrides } from "./dom.js";
+import { OPEN_DESIGN_DOM, type SelectorOverrides } from "./dom.js";
 import {
   OPEN_DESIGN_LAYOUT_GUARD_KEYS,
   OPEN_DESIGN_SELECTORS,
   type OpenDesignSelectorKey,
 } from "./selectors.js";
-import { layoutProbeExpression, type LayoutProbeEntry } from "./dom.js";
+import {
+  conversationTextExpression,
+  countExpression,
+  dismissExpression,
+  exactMatchPointExpression,
+  existsExpression,
+  firstPointExpression,
+  inputValueExpression,
+  layoutProbeExpression,
+  listLabelsExpression,
+  selectorSpecFor,
+  singlePointExpression,
+  textExpression,
+  triggerTextExpression,
+  type LayoutProbeEntry,
+} from "./dom.js";
 
 export interface OpenDesignTargetLike {
   type?: string;
@@ -21,10 +42,10 @@ export interface OpenDesignTargetLike {
   url?: string;
 }
 
-/** 标题以 Open Design 开头的页面 = 本产品主窗口 */
+/** 本产品的页面判据：标题以 Open Design 开头，或 URL 是产品自身的 `od://` 协议/含 open-design */
 function isProductPage(target: OpenDesignTargetLike): boolean {
   const title = (target.title ?? "").trim();
-  return /^open design/i.test(title) || /open-design/i.test(target.url ?? "");
+  return /^open design/i.test(title) || /open-design/i.test(target.url ?? "") || /^od:\/\//i.test(target.url ?? "");
 }
 
 /** 主窗口优先：标题恰为 `Open Design` 者最优先，其次本产品页面，最后其他 page */
@@ -37,7 +58,7 @@ export function openDesignMainTargetRank(target: OpenDesignTargetLike): number {
 /** 浮层优先：下拉菜单若在独立渲染进程，其标题通常不是主窗口标题 */
 export function openDesignOverlayTargetRank(target: OpenDesignTargetLike): number {
   const title = (target.title ?? "").trim();
-  if (!title || /^about:blank$/i.test(target.url ?? "")) return 0;
+  if (!title || /^about:blank$/i.test(title) || /^about:blank$/i.test(target.url ?? "")) return 0;
   return isProductPage(target) ? 2 : 1;
 }
 
@@ -47,8 +68,8 @@ export interface OpenDesignCdpDeps {
 }
 
 /**
- * 页面角色 → 客户端。与 KimicodeCdpClient 的装配同构，但**不**在这里做聚焦/重试策略，
- * 那些属于具体步骤（P2 起）的职责。
+ * 页面角色 → 客户端。Open Design 的菜单/面板都是**同一文档内的浮层**
+ * （不像 Kimi Code 那样有独立 overlay 渲染进程），`overlay` 角色只保留给诊断脚本。
  */
 export function createOpenDesignPageClient(
   role: KimicodePageRole,
@@ -116,4 +137,342 @@ export function mergeSelectors(
     if (value && value.trim()) out[key] = value.trim();
   }
   return out;
+}
+
+/** 精确点击的结果（与 kimicode 的 KimicodeClickExactResult 同构） */
+export interface OpenDesignClickExactResult {
+  clicked: boolean;
+  /** 归一后与目标全等的可见命中数（>1 视为歧义，拒绝点击） */
+  count: number;
+  /** 当前可见候选（未命中时的诊断依据，最多 20 项） */
+  available: string[];
+}
+
+export interface OpenDesignPoint {
+  x: number;
+  y: number;
+}
+
+/** `clickKey` 允许声明的后置条件：点击后必须观察到什么才算「确实生效」 */
+export type OpenDesignClickExpect = "working-dir-panel" | "none";
+
+/** 运行检测的单次快照（字段与 `liveness.OpenDesignPoll` 对应的子集） */
+export interface OpenDesignPollSnapshot {
+  stopVisible: boolean;
+  sendStarting: boolean;
+  conversationText: string;
+  inputText: string;
+  pageHidden: boolean;
+}
+
+/**
+ * 运行检测的单次快照表达式：一次页面求值取回全部信号，避免多次 CDP 往返产生观测竞态
+ * （与 `TraeworkCdpClient.probeLiveness` 同一取舍）。
+ * 字段与 `liveness.OpenDesignPoll` 一一对应，改名必须同步两处。
+ */
+export function pollExpression(overrides: SelectorOverrides = {}): string {
+  const spec = (key: OpenDesignSelectorKey): string => selectorSpecFor(key, overrides);
+  return `(function(){${OPEN_DESIGN_DOM}/*od:poll*/
+    const nodes = odResolve(${spec("stopButton")}, true);
+    return {
+      stopVisible: nodes.length > 0,
+      // 发送中态：按钮带 aria-busy 或 disabled（产品用 chat-send-pending 表达「已受理未开跑」）
+      sendStarting: odResolve(${spec("sendButton")}, true).some(
+        (e) => e.getAttribute('aria-busy') === 'true' || e.getAttribute('disabled') !== null,
+      ),
+      conversationText: odResolve(${spec("conversationText")}, true).map(odText).join('\\n'),
+      inputText: (function () {
+        const inputs = odResolve(${spec("inputBox")}, true);
+        if (!inputs.length) return '';
+        const e = inputs[0];
+        return 'value' in e && typeof e.value === 'string' ? e.value : odText(e);
+      })(),
+      pageHidden: document.hidden === true,
+    };
+  })()`;
+}
+
+/**
+ * Open Design 主窗口的语义操作层：所有页面交互都经这里，`run.ts` 只调语义方法。
+ */
+export class OpenDesignCdpClient {
+  constructor(
+    private readonly page: KimicodePageClient,
+    private readonly overrides: SelectorOverrides = {},
+    private readonly sleep: (ms: number) => Promise<void> = (ms) =>
+      new Promise((resolve) => setTimeout(resolve, ms)),
+  ) {}
+
+  connect(): Promise<void> {
+    return this.page.connect();
+  }
+
+  disconnect(): void {
+    this.page.disconnect();
+  }
+
+  get connected(): boolean {
+    return this.page.connected === true;
+  }
+
+  evaluate<T = unknown>(expression: string): Promise<T> {
+    return this.page.evaluate<T>(expression);
+  }
+
+  send(method: string, params?: Record<string, unknown>): Promise<unknown> {
+    return this.page.send(method, params);
+  }
+
+  /** 置前：Chromium 会节流后台页面，合成事件在非前台时经常被吞（真机教训） */
+  async bringToFront(): Promise<boolean> {
+    try {
+      await this.send("Page.bringToFront");
+      await this.sleep(300);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  pageHidden(): Promise<boolean> {
+    return this.evaluate<boolean>("document.hidden === true").catch(() => false);
+  }
+
+  href(): Promise<string> {
+    return this.evaluate<string>("location.href").catch(() => "");
+  }
+
+  /** 只读布局盘点（布局守卫 / 探针共用） */
+  probe(): Promise<OpenDesignDocumentProbe> {
+    return probeLayout(this.page, this.overrides);
+  }
+
+  /* ---------------- 通用读写 ---------------- */
+
+  exists(key: OpenDesignSelectorKey): Promise<boolean> {
+    return this.evaluate<boolean>(existsExpression(selectorSpecFor(key, this.overrides)));
+  }
+
+  text(key: OpenDesignSelectorKey): Promise<string> {
+    return this.evaluate<string>(textExpression(selectorSpecFor(key, this.overrides)));
+  }
+
+  count(key: OpenDesignSelectorKey): Promise<number> {
+    return this.evaluate<number>(countExpression(selectorSpecFor(key, this.overrides)));
+  }
+
+  labels(key: OpenDesignSelectorKey): Promise<string[]> {
+    return this.evaluate<string[]>(listLabelsExpression(selectorSpecFor(key, this.overrides)));
+  }
+
+  /** 触发器上的当前值文本（模型/设计系统/设计方向/工作目录回读共用） */
+  triggerText(key: OpenDesignSelectorKey): Promise<string> {
+    return this.evaluate<string>(triggerTextExpression(key, this.overrides));
+  }
+
+  /**
+   * 输入框当前文本（`inputValueExpression` 返回 `{found,value,length}`，
+   * 这里只取 `value`——类型写成 string 却返回对象会让调用方的 `includes` 在运行时炸掉）。
+   */
+  async inputText(): Promise<string> {
+    const result = await this.evaluate<{ found?: number; value?: string }>(
+      inputValueExpression(this.overrides),
+    );
+    return typeof result?.value === "string" ? result.value : "";
+  }
+
+  conversationText(): Promise<string> {
+    return this.evaluate<string>(conversationTextExpression(this.overrides));
+  }
+
+  /** 输入框是否可见（「页面可交互」判据：只列到 target 不代表已渲染完） */
+  inputReady(): Promise<boolean> {
+    return this.evaluate<boolean>(existsExpression(selectorSpecFor("inputBox", this.overrides))).catch(
+      () => false,
+    );
+  }
+
+  /* ---------------- 点击 ---------------- */
+
+  /** 可信鼠标点击（坐标在页面内实时计算） */
+  async clickAt(point: OpenDesignPoint): Promise<boolean> {
+    try {
+      const x = Math.round(point.x);
+      const y = Math.round(point.y);
+      await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+      await this.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x,
+        y,
+        button: "left",
+        clickCount: 1,
+      });
+      await this.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x,
+        y,
+        button: "left",
+        clickCount: 1,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 点击某语义键指向的**唯一**元素，并可选校验后置条件。
+   * 多命中/零命中一律不给坐标（猜一个点会点到别的控件），由调用方据此判 fail-closed。
+   */
+  async clickKey(
+    key: OpenDesignSelectorKey,
+    options: { expect?: OpenDesignClickExpect; expectBudgetMs?: number } = {},
+  ): Promise<{ clicked: boolean; count: number }> {
+    const hit = await this.evaluate<{ count: number; point?: OpenDesignPoint }>(
+      singlePointExpression(selectorSpecFor(key, this.overrides)),
+    );
+    if (hit.count !== 1 || !hit.point) return { clicked: false, count: hit.count };
+    const dispatched = await this.clickAt(hit.point);
+    if (!dispatched) return { clicked: false, count: 1 };
+    if (options.expect === "working-dir-panel") {
+      const ok = await this.waitFor(
+        () => this.exists("selectDirItem"),
+        options.expectBudgetMs ?? 5_000,
+      );
+      return { clicked: ok, count: 1 };
+    }
+    return { clicked: true, count: 1 };
+  }
+
+  /** 取第一个可见匹配的坐标（不要求唯一，仅用于诊断/兜底） */
+  firstPoint(key: OpenDesignSelectorKey): Promise<{ count: number; point?: OpenDesignPoint }> {
+    return this.evaluate<{ count: number; point?: OpenDesignPoint }>(
+      firstPointExpression(selectorSpecFor(key, this.overrides)),
+    );
+  }
+
+  /**
+   * 按可见文本/aria **精确**匹配菜单项并点击（NFKC 归一后全等，多命中即拒绝）。
+   * 未命中时把当前可见候选原样带回，供调用方按「未命中就报错并回显候选」的纪律落文案。
+   */
+  async clickExact(key: OpenDesignSelectorKey, value: string): Promise<OpenDesignClickExactResult> {
+    const hit = await this.evaluate<{
+      count: number;
+      available: string[];
+      point?: OpenDesignPoint;
+    }>(exactMatchPointExpression(key, value, this.overrides));
+    const available = Array.isArray(hit.available) ? hit.available : [];
+    if (hit.count !== 1 || !hit.point) return { clicked: false, count: hit.count, available };
+    const dispatched = await this.clickAt(hit.point);
+    return { clicked: dispatched, count: 1, available };
+  }
+
+  /**
+   * 按**原始 CSS** 点击首个可见元素（点第一个、并回报命中总数）。
+   * 用于注册表之外的兜底入口（例如首页导航钩子）；业务锚点一律走语义键，避免又出现一套散落的选择器。
+   */
+  async clickSelector(selector: string): Promise<{ clicked: boolean; count: number }> {
+    const hit = await this.evaluate<{ count: number; point?: OpenDesignPoint }>(
+      `(function(){${OPEN_DESIGN_DOM}/*od:raw-point*/
+        let nodes = [];
+        try { nodes = [...document.querySelectorAll(${JSON.stringify(selector)})]; } catch (_) { return { count: -1 }; }
+        const visible = nodes.filter(odVisible);
+        if (!visible.length) return { count: 0 };
+        return { count: visible.length, point: odPoint(visible[0]) };
+      })()`,
+    );
+    if (!hit.point) return { clicked: false, count: hit.count };
+    return { clicked: await this.clickAt(hit.point), count: hit.count };
+  }
+
+  /* ---------------- 输入 ---------------- */
+
+  /**
+   * 在输入框内键入文本：先可信点击聚焦，再走 `Input.insertText`（真实输入管线，
+   * Lexical/contenteditable 友好；直接改 textContent 不会触发 React 的 onChange）。
+   */
+  async typeText(text: string): Promise<void> {
+    const hit = await this.evaluate<{ count: number; point?: OpenDesignPoint }>(
+      singlePointExpression(selectorSpecFor("inputBox", this.overrides)),
+    );
+    if (hit.count !== 1 || !hit.point)
+      throw new Error(`Open Design 输入框无法唯一定位（匹配 ${hit.count}）——选择器可能已漂移`);
+    await this.clickAt(hit.point);
+    await this.sleep(120);
+    await this.send("Input.insertText", { text });
+    // insertText 是可信输入，React 会收到真实 beforeinput/input；再等一拍让受控状态落定
+    await this.sleep(200);
+  }
+
+  /**
+   * 在指定语义键的输入框里**清空后**键入（设计系统面板的搜索框）。
+   * 必须先清空：上一次搜索的残留会让过滤结果只剩旧项，表现为「目标项没渲染出来」。
+   * 搜索框可能被多条候选同时命中（例如面板里既有搜索框又有隐藏输入），
+   * 因此这里允许退化为「首个可见命中」，但仍要求至少命中一个。
+   */
+  async clearAndType(key: OpenDesignSelectorKey, text: string): Promise<boolean> {
+    const hit = await this.evaluate<{ count: number; point?: OpenDesignPoint }>(
+      singlePointExpression(selectorSpecFor(key, this.overrides)),
+    );
+    let point = hit.point;
+    if (hit.count !== 1 || !point) point = (await this.firstPoint(key)).point;
+    if (!point) return false;
+    await this.clickAt(point);
+    await this.sleep(80);
+    // 全选 + 删除，清掉上一次过滤条件（Ctrl+A / Delete）
+    await this.key("a", "KeyA", 65, { modifiers: 2 });
+    await this.key("Delete", "Delete", 46);
+    await this.sleep(60);
+    await this.send("Input.insertText", { text });
+    await this.sleep(150);
+    return true;
+  }
+
+  /** Escape 关闭浮层（尽力而为；浮层未关闭由后续回读判据兜底） */
+  async dismissMenus(): Promise<void> {
+    try {
+      await this.evaluate(dismissExpression(this.overrides));
+    } catch {
+      /* 尽力而为 */
+    }
+    try {
+      await this.key("Escape", "Escape", 27);
+    } catch {
+      /* 尽力而为 */
+    }
+  }
+
+  async key(
+    key: string,
+    code: string,
+    vk: number,
+    options: { text?: string; modifiers?: number } = {},
+  ): Promise<void> {
+    const base = {
+      key,
+      code,
+      windowsVirtualKeyCode: vk,
+      nativeVirtualKeyCode: vk,
+      ...(options.text === undefined ? {} : { text: options.text }),
+      ...(options.modifiers === undefined ? {} : { modifiers: options.modifiers }),
+    };
+    await this.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
+    await this.send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+  }
+
+  /* ---------------- 运行检测 ---------------- */
+
+  poll(): Promise<OpenDesignPollSnapshot> {
+    return this.evaluate<OpenDesignPollSnapshot>(pollExpression(this.overrides));
+  }
+
+  /** 在预算内轮询直到谓词为真（不做无界等待） */
+  async waitFor(predicate: () => Promise<boolean>, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      if (await predicate().catch(() => false)) return true;
+      if (Date.now() >= deadline) return false;
+      await this.sleep(200);
+    }
+  }
 }

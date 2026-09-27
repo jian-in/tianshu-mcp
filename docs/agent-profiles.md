@@ -267,7 +267,7 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 > `needs_user`，绝不关闭或重启。未登记目录经「新的任务 → 工作区 → 新建工作区 → 添加可读写文件夹」导入。
 > 思考等级经「模型管理」保存为**全局偏好**（不自动还原），权限模式沿用不切换。详见 [qoder-cdp.md](qoder-cdp.md)。
 
-### Open Design（GUI 驱动，开发中：判定层已交付、界面接线待选择器采集）
+### Open Design（GUI 驱动，界面接线已完成；Windows 真机取证，macOS 为 `research`）
 
 ```json
 {
@@ -316,9 +316,13 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 > - **`designSystem` 的语义是「设计系统名」**（如 `Claude`），由适配器在设计系统面板搜索并点选；
 > - 已有实例未开调试端口时转 `needs_user(close_existing_instance)`，**绝不 kill 用户进程**。
 >
-> **当前进度**：P0（发现/接管/CDP）、P1（选择器与表达式层、布局守卫）与 P2/P5/P6 的**判定层**
-> （原生对话框、三信号运行检测、修复计划、视觉页面来源推导）已交付；界面接线待真机选择器采集。
-> 选择器缺失时派活会**硬失败 `selector_drift`** 并列出缺失键——不会盲点坐标。
+> **界面驱动已接线**：`selectors.ts` 的 `primary` 全部落地，证据取自**产品自身的 Web 前端产物**
+> （`resources/open-design-web-standalone/apps/web/.next/static/chunks/*.js` 里的 `data-testid` 钩子），**不是截图目测**；
+> 握手后的 12 步执行链（接管 → 连接主窗口 → 版本门禁 → 布局守卫 → 绑定工作目录 → 模型 → 设计系统 →
+> 设计方向 → 输入任务书 → 发送 → 三信号轮询 → 终态）与验收-返修闭环均已接通。
+> Windows 真机取证；macOS 仍为 `research`（无真机证据，registry 拒绝派发）。
+> 仍然 fail-closed：选择器漂移时派活会**硬失败 `selector_drift`** 并列出缺失键——不会盲点坐标。
+> `gui.selectors` 支持按**语义键热覆盖**（UI 小改版不用发版）。
 
 ### 历史：Codex 内核 CLI（`codex exec`，已被 GUI 驱动取代）
 

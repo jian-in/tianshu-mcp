@@ -108,10 +108,41 @@ DevTools listening on ws://127.0.0.1:9889/devtools/browser/63dd8142-…
 > 版本判据踩坑记录：首版误用 `/json/version` 的 `Browser` 做版本门禁，导致真机上必定
 > `version_mismatch` 而阻断全部派发；已改读安装配置并加回归测试（`opendesign-discovery.test.ts`）。
 
-## 4. 界面结构与选择器采集
+## 3.1 ⚠️ 真机实测：`/json` 会挂起 → 传输层必须双路径
 
-Open Design 是**打包过的 React 应用**（`resources/app/prebundled/*` 为压缩产物，无源码可读），
-选择器必须真机采集。采集入口：
+| 观察 | 取值 |
+|---|---|
+| 浏览器进程 `/json/version` | **正常响应**（含 `webSocketDebuggerUrl`） |
+| 浏览器进程 `/json`、`/json/list` | **连接成功后长时间无响应**（0 字节、超时） |
+| 同一个端口上另一个测试 | 端口在 LISTEN、`DevTools listening on ws://127.0.0.1:9889/…` 已打印 |
+
+根因判断：`/json` 的 target 枚举走 **UI 线程**，而 Open Design 启动期主线程被自身的版本/遥测/计费请求占住，
+于是「端点活着但目录不回应」。用只走 `/json` 的旧传输会让适配器在真机上**永远卡在 connect**。
+
+因此 `src/agents/opendesign/transport.ts` 采用**两条路径**：
+
+1. 快路径：HTTP `/json`（正常版本上最快，语义与既有 GUI 传输一致），并给它一个更短的上限（≤3s）；
+2. 慢路径：`/json/version` 拿**浏览器级** WebSocket 地址 → `Target.getTargets` 枚举目标 →
+   `Target.attachToTarget({flatten:true})` 拿 `sessionId` → 之后页面级命令带 `sessionId`，
+   `Target.*` / `Browser.*` **不带**（带了会被拒）。
+
+就绪探测 `probeOpenDesignPort` 与传输层**共用同一份目标枚举实现**（`resolvePageTargets`），
+两处各写一套必然漂移。两条路径都失败时，错误信息必须写明「试过什么」，不允许只丢一句 `CDP_UNAVAILABLE`。
+
+## 4. 界面结构与选择器取证
+
+Open Design 是打包过的 React 应用（`resources/app/prebundled/*` 为压缩产物），
+但它的 **Web 前端产物是可读的**：
+
+```text
+<安装目录>/resources/open-design-web-standalone/apps/web/.next/static/chunks/*.js
+```
+
+该产物**系统性使用 `data-testid`** 作为自动化钩子（共取到 600+ 个），且这些钩子带业务语义
+（`chat-send` / `working-dir-trigger` / `composer-design-system-trigger` …）——这正是产品作者为自动化预留的接口。
+因此本适配器的 `primary` **全部来自产物证据**，不是截图目测：目测出来的坐标/类名会在第一次 UI 升级时静默漂移。
+
+复核入口（只读）：
 
 ```sh
 npm run build
@@ -119,35 +150,57 @@ node scripts/probe-opendesign.mjs anchors --no-focus   # 只读盘点；连接�
 node scripts/probe-opendesign.mjs all                  # install + process + cdp + appconfig + anchors
 ```
 
-探针从 `dist/` 动态 import 构建产物，**只读**：不点击、不输入、不发送；只有显式 `--launch` 才允许启动实例。
-`anchors` 会把 `ANCHOR_CANDIDATES` 里每个候选选择器的命中数与首个文本打印出来，并把页面可见文本前
-1200 字符贴出，供人工收敛为稳定选择器写回 `src/agents/opendesign/selectors.ts`。
+### 4.1 选择器取证表（`src/agents/opendesign/selectors.ts` 的 `primary`）
 
-> **当前状态（P1）**：**选择器/DOM 层已实现**，`selectors.ts` 的 `primary` 仍为**空占位**——
-> 即「代码就绪、取值待采集」。因此 `run.ts` 的**布局守卫**会在任何点击之前硬失败 `selector_drift`
-> 并列出缺失键；选择器一旦采集写回，该门禁自动解除，无需改代码。
->
-> **选择器采集被环境限制阻塞（2026-09-26 实测）**：本机 DSH harness 会话**无外网**，
-> Open Design 启动期会先做版本/遥测/计费请求（`releases.open-design.ai`、`amr-api.open-design.ai` 等），
-> 这些请求在本会话下不可达，导致**主线程在启动期被阻塞**：进程与窗口都在、`DevTools listening` 已打印、
-> 但 `/json` 与 `/json/version` **连上后不响应**（curl 连接成功、0 字节、超时）。
-> 因此本轮无法完成真实 DOM 采集。**在能联网的普通终端里**按 §9 执行采集即可。
+| 语义键 | primary（真实钩子） | 证据来源 |
+|---|---|---|
+| `title` | `[data-testid="home-hero"]` | 首页 hero 容器（产品自己的钩子） |
+| `composer` | `[data-testid="chat-composer"]` | 会话页输入区容器；首页形态是 `home-hero-composer-card` |
+| `inputBox` | `[data-testid="home-hero-input"]` | 首页编辑器显式带该 testId（Lexical 富文本）；会话页在 `chat-composer` 内的 `[contenteditable=true]` |
+| `workingDirTrigger` | `[data-testid="working-dir-trigger"]` | `working-dir-picker` 内的按钮（带 `aria-expanded`） |
+| `selectDirItem` | `[data-testid="working-dir-pick"]` | 展开后的「选择目录」项；composer「+」菜单内是 `composer-plus-working-dir-pick` |
+| `workingDirValue` | `[data-testid="working-dir-trigger"]` | 回读该触发器的标签文本（绑定是否生效的唯一权威判据） |
+| `modelTrigger` | `[data-testid="inline-model-switcher-chip"]` | 会话页内联模型切换器；新建项目弹窗内是 `model-picker-trigger` |
+| `modelMenuItem` | `[role="option"]` | 触发器 `aria-haspopup="listbox"`，面板 `role="listbox"` |
+| `designSystemTrigger` | `[data-testid="composer-design-system-trigger"]` | composer 图标形态；首页形态 `home-hero-design-system-trigger`，项目选择器 `project-ds-picker-trigger` |
+| `designSystemSearch` | `[data-testid="design-system-search"]` | 设计系统面板的搜索框（`class="ds-picker-search"`） |
+| `designSystemItem` | `[role="option"]` | 面板列表项（列表容器 `ds-picker-list-design-systems`） |
+| `designDirectionTrigger` | `[data-testid="home-hero-template-trigger"]` | 界面上的「创建类型」选择器（`home-hero-template-picker` 内，`aria-haspopup="listbox"`） |
+| `designDirectionItem` | `[role="option"]` | 同上 listbox 形态 |
+| `sendButton` | `[data-testid="chat-send"]` | 会话页发送按钮（`aria-label=<chat.send>`）；首页形态 `home-hero-submit` |
+| `stopButton` | `button.composer-send.stop` | **该控件没有 testid**；产品用 `class="composer-send stop"` + `aria-label=<chat.stop>` 标识，故以 class 为 primary（不随语言变化）、aria 作诊断兜底 |
+| `conversationText` | `[data-testid="chat-log"]` | 产品自己的滚动/取证锚点，语义极稳定 |
 
-### 已实现的选择器/DOM 层（P1 交付）
+> 三个菜单项键（模型 / 设计系统 / 设计方向）**共用 `[role="option"]`**——产品里同一时刻只开一个 listbox，
+> 因此并集语义是安全的；适配器仍要求**唯一命中**，多命中直接拒绝点击（绝不猜一个点）。
+
+### 4.2 布局守卫为什么只剩四个键
+
+`OPEN_DESIGN_LAYOUT_GUARD_KEYS` = `title / composer / inputBox / sendButton`，只收**首页无条件存在**的锚点。
+
+工作目录 / 模型 / 设计系统 / 设计方向触发器由**用户配置与页面形态**决定是否渲染：
+- 模型触发器只在配置了对应执行方式时出现；
+- 设计系统/设计方向触发器在 footer 选项为空时不渲染。
+
+把这类键放进守卫会让适配器**大面积假阻塞**（报「页面结构漂移」，实际是「该能力在当前配置下不可用」）。
+因此它们改为在**各自步骤**内单独校验，并给出精确原因（`no-trigger` / `no-menu` / `needs_user`），比一刀切更如实。
+
+### 4.3 已实现的选择器/DOM 层与执行层
 
 | 文件 | 内容 |
 |---|---|
-| `selectors.ts` | 16 个语义键的注册表（`primary` + 语义化 `fallbacks`）、`cssCandidates`、`specArgs`、`selectorSpec`、页面内 `resolveFnSource`、**布局守卫键集** `OPEN_DESIGN_LAYOUT_GUARD_KEYS` 与 `missingSelectorKeys()` |
+| `selectors.ts` | 16 个语义键的注册表（`primary` + 语义化 `fallbacks` + `texts`/`ariaLabels`/`ariaPatterns`）、`cssCandidates`、`specArgs`、`selectorSpec`、页面内 `resolveFnSource`、**布局守卫键集**与 `missingSelectorKeys()` |
 | `dom.ts` | 页面内表达式：`exists` / `text` / `singlePoint` / `firstPoint` / `exactMatch` / `listLabels` / `count` / `inputValue` / `conversationText` / `triggerText` / `layoutProbe` / `dismiss` / `directionItemVisible`，标记前缀 `od:` |
-
-### 不依赖选择器的模块（P2/P5/P6 已先行交付）
-
-| 文件 | 内容 | 为什么可以先做 |
-|---|---|---|
-| `workspace.ts` | 工作目录绑定编排：已绑定则跳过 → 展开触发器 → 点「选择目录」→ 原生对话框 → **回读校验**；`normalizeWorkspacePath` / `workspaceMatches`（含界面截断的省略号前缀匹配） | 流程编排与判定逻辑不依赖具体 CSS，只依赖语义键 |
-| `dialog.ts` | `toNativeDialogPath`（绝对化 + 盘符大写 + 反斜杠）、`listOwnedDialogs`、`closeStrayDialogs`、`selectOpenDesignFolder`（**双路线**：WM_SETTEXT 优先、失败退回键盘输入，两条都要求回读一致；确认后**等对话框真的关闭**才算成功） | 原生对话框是 Win32 层，不依赖页面 DOM |
-| `liveness.ts` | **三信号**判定：停止按钮可见性 + 对话文本哈希 + **产物文件 mtime/大小指纹**；纯函数 `judgeOpenDesignPoll` | 输入是采集结果，判定本身与选择器无关 |
-| `fixplan.ts` | 修复/优化计划落**项目根** `.opendesign/plans/opendesign-fix-r<N>.md`（每轮独立不覆盖）+ 返修指令拼装 | 计划由 MCP 生成，与页面操作无关 |
+| `transport.ts` | 页面级 CDP 传输（快/慢双路径、会话隔离、断线语义） |
+| `cdp.ts` | 语义操作层 `OpenDesignCdpClient`：可信坐标点击、精确匹配点击、输入、Escape 收起、单次轮询快照、布局盘点 |
+| `menu.ts` | 模型/设计系统/设计方向共用的「触发 → 展开 → 精确匹配 → 回读确认」 |
+| `send.ts` | 输入任务书 + 只点一次发送 + 有界确认（三证据） |
+| `recovery.ts` | 按步预算（`remaining(cap)` 取三步最小值，重试不重置） |
+| `workspace.ts` | 工作目录绑定编排：已绑定则跳过 → 展开触发器 → 点「选择目录」→ 原生对话框 → **回读校验** |
+| `dialog.ts` | 原生对话框：`toNativeDialogPath`、`listOwnedDialogs`、`closeStrayDialogs`、`selectOpenDesignFolder`（**双路线**：WM_SETTEXT 优先、失败退回键盘输入，两条都要求回读一致；确认后**等对话框真的关闭**才算成功） |
+| `liveness.ts` | **三信号**判定：停止按钮可见性 + 对话文本哈希 + **产物文件 mtime/大小指纹**；纯函数 `judgeOpenDesignPoll` |
+| `fixplan.ts` | 修复/优化计划落**项目根** `.opendesign/plans/opendesign-fix-r<N>.md`（每轮独立不覆盖）+ 返修指令拼装 |
+| `visual.ts` | 视觉验收页面来源**推导建议**（只推导、不落盘，绝不静默改项目配置） |
 
 **绑定成功的判据是「回读一致」，不是「对话框关掉了」**：原生对话框确认只代表系统接受了这个目录，
 应用是否真的把它当成工作目录必须回读界面显示值。两者不一致时如实报 `readback` 失败，
@@ -164,26 +217,38 @@ node scripts/probe-opendesign.mjs all                  # install + process + cdp
 不清掉会让下一轮把「点选择目录毫无反应」误判成选择器失效。
 
 设计约束（与 `kimicode/dom.ts` 同构）：
-- 点击类表达式**只返回坐标**，鼠标事件由 `cdp.ts` 统一发出；不产生副作用；
-- 布局守卫**只收「初始页面就存在」的锚点**（标题/输入区/各触发器/发送按钮/对话区），
-  刻意不含 `stopButton`、各菜单项、设计系统搜索框等运行期才出现的键——否则适配器永远无法启动；
+- 点击类表达式**只返回坐标**，鼠标事件由 `cdp.ts` 统一经 `Input.dispatchMouseEvent` 发出（**可信点击**，
+  React 的合成事件链对 `isTrusted` 敏感），表达式本身不产生副作用；
+- 「点击成功」≠「状态已改变」：面板是否展开、菜单项是否出现、触发器回读值是否与目标全等，
+  每一步都要回读确认；
 - 回退候选**不得是宽泛容器型**（`button`/`div[class]`/`li`…）：多命中会让坐标点击失效，
   且错误信息只会说「选择器未挂载」，极难定位（已固化成断言）。
 - 候选匹配**精确全等**，未命中报错并回显可见候选；**绝不退化成模糊匹配**。
 - **`gui.selectors` 覆盖是权威的**：一旦为某个语义键给出覆盖值，就只用它，**不再混入内置 fallbacks**
   （fallbacks 含 `[aria-haspopup]` 这类宽泛候选，混入会让「唯一命中」必然失败——
-  热修复选择器反而把功能彻底关掉）。
+  热修复选择器反而把功能彻底关掉）。UI 小改版时可据此**不发版**热修复。
 
-### 已知的界面锚点（截图证据，待真机 DOM 校对）
+### 4.4 待回填：探针全锚点实际命中清单
 
-| 控件 | 视觉位置（1366×705 视口） | 备注 |
-|---|---|---|
-| 「工作目录」触发器 | 约 (455, 297) | 展开后含「选择目录」/「最近使用的目录」 |
-| 「选择目录」菜单项 | 约 (455, 346) | 点击后弹 **Windows 原生「选择文件夹」** 对话框 |
-| 模型触发器 | 约 (1081, 242) | 菜单分「本机 CLI」与「API 供应商」两组，后者项带锁图标 |
-| 设计系统触发器 | 约 (521, 242) | 面板含搜索框 + 长列表（内置 151 个设计系统包） |
-| 设计方向触发器 | 约 (658, 242) | 菜单：原型 / 幻灯片 / 文档 / 图片 / 网站复刻 / HyperFrames |
-| 发送按钮 | 约 (1163, 242) | 圆形按钮 |
+`scripts/probe-opendesign.mjs anchors` 会打印每个语义键的**实际命中数与首个文本**。
+本机沙箱内 Open Design 主线程停在启动期（见 §3.1），无法完成真实 DOM 采集，因此下表待**在可联网终端**回填：
+
+| 语义键 | 期望命中数 | 实测命中数 | 实测文本 |
+|---|---|---|---|
+| `title` | 1 | 待回填 | |
+| `composer` | 1 | 待回填 | |
+| `inputBox` | 1 | 待回填 | |
+| `workingDirTrigger` / `workingDirValue` | 1 / 1 | 待回填 | |
+| `selectDirItem`（展开后） | 1 | 待回填 | |
+| `modelTrigger` | 1 | 待回填 | |
+| `modelMenuItem`（展开后） | ≥1 | 待回填 | |
+| `designSystemTrigger` | 1 | 待回填 | |
+| `designSystemSearch` / `designSystemItem`（面板打开后） | 1 / ≥1 | 待回填 | |
+| `designDirectionTrigger` | 1 | 待回填 | |
+| `designDirectionItem`（展开后） | ≥1 | 待回填 | |
+| `sendButton` | 1 | 待回填 | |
+| `stopButton`（运行中） | 1 | 待回填 | |
+| `conversationText` | 1 | 待回填 | |
 
 ## 5. 原生「选择文件夹」对话框
 
@@ -229,11 +294,29 @@ node scripts/probe-opendesign.mjs all                  # install + process + cdp
 
 | 失败码（`endReason`） | 触发条件 | 编排侧动作 |
 |---|---|---|
-| `setup_failed` | 入口校验失败（设计方向非法/任务书为空/未找到可执行） | 硬失败，不进验收 |
+| `setup_failed` | 入口校验失败（设计方向非法 / 任务书为空 / 未找到可执行 / CDP 始终连不上） | 硬失败，不进验收 |
 | `version_mismatch` | 产品版本不在 `opendesign.supportedVersions` | 硬失败并回显实测版本 |
-| `selector_drift` / `not_implemented` | 关键选择器缺失或界面驱动未接完 | 硬失败，附缺失键清单 |
-| `model_mismatch` | 模型菜单里精确匹配不到目标名 | 硬失败并回显候选 |
-| `needs_user` | 已有实例未开调试端口 / 需人工处理 | 任务转 `needs_user`，`continue_task` 恢复 |
+| `selector_drift` | 关键选择器缺失，或布局守卫锚点未命中 | 硬失败，附缺失键与当前页面信息 |
+| `model_unavailable` | 模型菜单里精确匹配不到目标名（没这个模型） | 硬失败并回显当前可见候选 |
+| `model_mismatch` | 点中了候选但触发器回读与目标不一致 | 硬失败并回显回读值 |
+| `design_system_mismatch` | 设计系统面板搜索后仍无法唯一点选或回读不一致 | 硬失败 |
+| `input_mismatch` | 输入框回读不含本次任务标记（输入没落进受控编辑器） | 硬失败，**未点发送**（避免派一份空任务） |
+| `send_unknown` | 发送后在有界窗口内确认不到任何证据 | 硬失败，**绝不重发**，提示到窗口确认 |
+| `session_lost` | 返修/回答轮当前不在会话页（对话容器缺失） | 硬失败，绝不退化到首页重新派发 |
+| `reply_stable` | 对话文本与产物指纹双稳定（成功完成） | 进入验收 |
+| `idle_timeout` | 连续 `stableRounds` 轮无变化仍未达完成判据 | 保留现场，终态如实说明 |
+| `task_timeout` | 任务总时限到点 | 保留现场（不关窗、不 kill） |
+| `aborted` | 用户取消 | 尽力点停止按钮并在 `cancelWaitMs` 内有界等待；`guiStop.idle=false` 时**必须**说明「窗口中的任务可能仍在继续」 |
+
+`needsUserKind`（配合 `needs_user` 终态使用）：
+
+| 取值 | 触发条件 | `continue_task` 恢复语义 |
+|---|---|---|
+| `close_existing_instance` | 已有实例未开调试端口，无法接管 | 用户关闭旧实例后**重新派发**（补发完整任务书） |
+| `login_required` | 页面可读但输入框在观察期内始终不出现（登录/引导页） | 完成登录后重新派发 |
+| `system_permission` | 原生对话框归属不明/未出现，或系统权限被拒 | 授权后重新派发 |
+| `setup_recovery` | 初始化阶段预算耗尽（实例/页面/工作目录绑定未就绪） | 复检环境后重新派发 |
+| `user_confirmation` | 停止按钮持续可见且对话与产物全静止（可能在等人） | **只重连观察**，不发送任何消息 |
 
 ## 9. 复现要点
 

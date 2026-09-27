@@ -8,7 +8,58 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## [Unreleased]
+## [0.7.1] — Unreleased (MCP package; no tag, not published to npm)
+
+> This change moves the built-in agent `opendesign` (the Open Design desktop app, `driver=gui` /
+> `adapter=opendesign-gui`) from "in development" to **fully dispatchable**: selectors are now grounded in the
+> product's own artifacts, all twelve steps are wired, and the adapter is plugged into the existing
+> acceptance → automatic rework → re-acceptance loop.
+
+### Added
+
+- **All Open Design selectors landed (evidence taken from the product's own artifacts, not eyeballed screenshots)** (`src/agents/opendesign/selectors.ts`):
+  - Primary anchors come from the `data-testid` hooks used systematically by Open Design's web bundle (`resources/open-design-web-standalone/apps/web/.next/static/chunks/*.js`): `chat-composer`, `chat-send`, `chat-log`, `working-dir-trigger`, `working-dir-pick`, `composer-design-system-trigger`, `design-system-search`, `home-hero-template-trigger` (the "creation type" picker), `home-hero-input`, `home-hero-submit`, `inline-model-switcher-chip`, `model-picker-trigger`.
+  - The stop button carries no testid, so it is identified by the product's own `class="composer-send stop"` plus `aria-label=<chat.stop>`.
+  - Menu items are uniformly `role="option"` (their triggers are `aria-haspopup="listbox"`), matched by **normalised exact text**; a miss echoes the visible candidates and **never** falls back to fuzzy matching.
+- **CDP transport `src/agents/opendesign/transport.ts` (two paths)**: on real hardware Open Design's browser-level `/json/version` responds, but `/json` and `/json/list` **connect successfully and then never answer** (target enumeration runs on the UI thread, which the product blocks during startup on its own billing/telemetry requests). The transport therefore tries HTTP `/json` first and, on timeout/failure, falls back to the browser-level WebSocket: `Target.getTargets` + `Target.attachToTarget(flatten)` yields a `sessionId` used for subsequent commands (page-level commands carry `sessionId`; `Target.*` / `Browser.*` do not). The readiness probe `probeOpenDesignPort` reuses the same target-enumeration implementation.
+- **The full twelve-step execution chain** (`src/agents/opendesign/run.ts`): attach or launch the instance → connect to the main window (the input must genuinely be ready) → version gate → selector guard and layout probe → bind the working directory (expand trigger → click "choose directory" → fill the absolute path in the native dialog → **read the displayed value back**) → model (exact match plus readback, written back to `actualModel`) → design system (search filter, exact pick, readback) → design direction (prototype / document / website clone only) → type the task (trusted input plus readback containing the marker) → send (**exactly once, never resent**, bounded confirmation) → three-signal polling (stop button / conversation-text hash / artifact-file fingerprint) → terminal state.
+- **Generic menu selection `menu.ts`**: the shared "trigger → expand → exact match → readback" flow used by model, design system and design direction; the `already-bound` reuse branch performs no pointless clicking, and multiple matches are refused (never guess a coordinate).
+- **Input and send confirmation `send.ts`**: before sending it reads back that the input really contains this round's task marker, otherwise it does not click send; afterwards it confirms within bounds using three pieces of evidence (user message landed / running signal / input cleared) and reports only `send_unknown` when nothing is confirmed — **never resending**.
+- **Per-step budget `recovery.ts`**: mirrors `kimicode/recovery.ts`; `remaining(cap)` takes the minimum of the step cap, the task deadline and the setup budget, so retries never reset the budget.
+- **Acceptance → automatic rework → re-acceptance is wired** (`src/loop/fix-loop.ts`): when an opendesign verification fails, a plan is written **inside the project root** at `.opendesign/plans/opendesign-fix-r<N>.md` (Open Design can only read files inside its working-directory allowlist; writing into the task data directory produces "I told you to read the plan, you say it's unreachable"), and "failure summary + plan relative path + visual-diff evidence" is sent as an in-session rework instruction; rounds are capped by `autoFixRounds`.
+- **`continue_task` / `rework_task` now support opendesign** (`src/tasks/task-manager.ts`, `src/mcp/context.ts`): `agent_question` answers are sent into the **current** conversation (the adapter confirms the conversation-page anchor before sending, otherwise `session_lost`); `user_confirmation` only reconnects to observe and **sends nothing**; environment-class recovery re-dispatches from scratch with the full task text; manual rework requires an existing verification report (otherwise sending is refused).
+- **New `endReason` values**: `version_mismatch`, `selector_drift`, `model_unavailable`, `model_mismatch`, `design_system_mismatch`, `input_mismatch`, `send_unknown`, `session_lost`, `reply_stable`, `idle_timeout`, `task_timeout`, `aborted`, `setup_failed`.
+- **New `needsUserKind` values**: `login_required`, `system_permission`, `setup_recovery`, `user_confirmation` (`close_existing_instance` is unchanged).
+
+### Fixed
+
+- **Reading the input text returned an object instead of a string** (`src/agents/opendesign/cdp.ts`): `inputValueExpression` yields `{found,value,length}`, but it was returned as a `string`, so the pre-send readback threw on `includes` (surfacing as `setup_failed`) and mislabelled "the text never reached the editor" as an infrastructure failure.
+- **Working-directory bind failures were emitted as a non-hard `setup_failed`** (`src/agents/opendesign/run.ts`): the orchestrator treats such a result as an ordinary agent failure, so the user got neither an actionable message nor a way to resume with `continue_task`. All bind failures now become `needs_user` (`system_permission` or `setup_recovery`), matching plan decision 12 ("after one retry, hand it to the user").
+- **Layout guard keys tightened** (`src/agents/opendesign/selectors.ts`): the guard keeps only the four anchors that unconditionally exist on the home page (`title / composer / inputBox / sendButton`). The working-directory, model, design-system and design-direction triggers render depending on user configuration and page shape, so their absence means "that capability is unavailable" rather than "the page structure drifted"; they are now validated **within their own steps** with precise reasons (keeping them in the guard caused large-scale false blocking).
+
+### Tests
+
+- **32** new cases across 4 files:
+  - `test/integration/opendesign-flow.test.ts` (11): the full chain over a fake CDP (bind directory → pick model / design system / direction → send → poll to completion) plus seven fail-closed paths (invalid direction rejected at the entry point, model miss echoing candidates, version mismatch, layout drift, an existing instance that cannot be adopted, an unconfirmable send that is never resent, and `session_lost` when the conversation page is missing during a rework round), asserting the event stream (`task_dispatched` / `file_modification_started`) and that `guiStop` is reported truthfully.
+  - `test/unit/opendesign-menu.test.ts` (8): the reuse branch, non-unique trigger, menu never appears, duplicate names, miss echoing candidates, clicked-but-readback-mismatch, the search-filter path, and readback polling.
+  - `test/unit/opendesign-send.test.ts` (6): the confirmation truth table (clearing alone does not count as success) plus `input_mismatch`, `send_failed`, success, and `send_unknown` (clicked exactly once).
+  - `test/unit/opendesign-transport.test.ts` (7): the fast / slow / both-fail target-enumeration paths, session routing (page-level commands carry `sessionId`, `Target.*` does not), and an explicit error when not connected.
+- Shared test harness extended (`test/fake-cdp.ts`): a new Open Design page stub (`od:*` marker dispatch, in-memory state, coordinate-click interpretation) that resolves semantic keys from the registry itself, so selector drift breaks the stub rather than letting it "pretend it still works".
+- None of the cases require Open Design to be installed, and none touch the network (injection and temp directories only).
+
+### Real-machine evidence
+
+- Version: Open Design 0.24.1 (the `appVersion` in `resources/open-design-config.json`), namespace `release-stable-win`; Windows 10 19045.
+- Newly discovered and documented: browser-level `/json/version` works while `/json` hangs → the two-path transport above.
+- Still outstanding: the **actual all-anchor hit list** from `scripts/probe-opendesign.mjs` must be captured on a networked terminal where Open Design can start normally, and filled into the evidence table in `docs/opendesign-cdp.md` §4 (inside this sandbox the app's main thread stalls during startup, so real DOM collection cannot complete).
+
+### Docs
+
+- [docs/opendesign-cdp.md](docs/opendesign-cdp.md) / [.en.md](docs/opendesign-cdp.en.md): selector evidence sources and the evidence table, the two-path transport conclusion, and a completed failure-code table.
+- ARCHITECTURE / README / agent-profiles / adapter-matrix / SKILL / usage-examples (both languages): the status moves from "in development" to "wired", and the new `endReason` / `needsUserKind` values are added.
+- Versions: `package.json` and `src/version.generated.ts` are synced to `0.7.1` (per the `+0.0.1` rule; **no tag, not published to npm**).
+
+## [Unreleased] — mcp-gui independent line
 
 > This change adds a **new independent delivery surface**. The MCP package's runtime logic (tool contracts, task
 > model, acceptance engine and all of `src/**`) is **unchanged**.

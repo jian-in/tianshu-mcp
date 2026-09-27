@@ -177,7 +177,7 @@ run_task(projectPath=D:/repo/app, agentId=qoder,
 
 多选值用选项文字数组；先全量校验再操作答题控件，题目变化 / 缺答案 / 选项不存在都**保留等待**，**不接受推荐项代替答案**。单题可直接用普通文本。
 
-### 2.8 opendesign（⚠️ 开发中：界面接线未完成，当前派活会硬失败 `selector_drift`）
+### 2.8 opendesign（Open Design 桌面端；Windows 真机取证，macOS `research`）
 
 ```text
 run_task(projectPath=D:/repo/design, agentId=opendesign,
@@ -195,7 +195,7 @@ run_task(projectPath=D:/repo/design, agentId=opendesign,
 - 目录绑定按「展开工作目录 → 选择目录 → 原生『选择文件夹』填绝对路径 → **回读显示值校验**」；已是目标目录则跳过。
 - 视觉验收要求项目里有可截图的页面来源；适配器只**推导建议**（静态入口优先），**不会自动修改** `.tianshu-mcp/acceptance.json`。
 - 修复/优化计划落项目根 `.opendesign/plans/`（Open Design 只能读它工作目录白名单内的文件）。
-- **当前阶段**：选择器尚未真机采集完，派活会硬失败 `selector_drift` 并列出缺失键；这不是缺陷而是 fail-closed 保护。
+- 可正常派活（Windows 真机取证；macOS 为 `research` 且禁止派发）。仍 **fail-closed**：选择器漂移时硬失败 `selector_drift` 并列出缺失键，模型未命中报 `model_unavailable` 并回显可见候选，设计方向非法在**入口**即拒绝。
   详见 [docs/opendesign-cdp.md](../../docs/opendesign-cdp.md) 与 `.dsh/plans/opendesign-gui-adapter-plan.md`。
 
 ### 2.9 codex-cli（用户自建 profile；无头路径，无 GUI）
@@ -217,7 +217,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 - `run_task` 是**异步契约**：立即返回 `taskId` + 队列位置，不要当同步调用等结果。
 - 轮询间隔 5–10 秒（`query_task` 缺省返回 agent 日志末 40 行）；同项目串行 + 全局并发默认 2，重复派单只会排队。
 - **重试复用同一条 `idempotencyKey`（issue #15）**：`tools/call` 超时、断线、宿主重启后重发同一意图时，`run_task` 会返回**原 `taskId` 与当前状态**（不排队第二轮 agent），`verify_task` 会返回「进行中」或既有报告（不重跑检查）。**参数变了就换 key**——同键异参 fail-closed 报错并回报原记录 id。幂等重放的响应文本以「幂等重放：」开头、meta 带 `idempotencyReplay`，不要汇报成「已重新派单」。
-- 只有 `needs_user` 能用 `continue_task` 恢复，且当前支持 **codex / zcode / kimicode / qoder / opendesign**（opendesign 目前只会产出 `close_existing_instance`，恢复语义为「复检环境后补发完整任务书」）；traework 与 spawn 类会被明确拒绝。
+- 只有 `needs_user` 能用 `continue_task` 恢复，且当前支持 **codex / zcode / kimicode / qoder / opendesign**（opendesign 会产出 `login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance` 五类，均支持 `continue_task` 恢复）；traework 与 spawn 类会被明确拒绝。
 - `autoVerify` 不传时**默认开**；`autoFixRounds` 不传时取 agent 缺省（codex 5 / zcode 2 / kimicode 2 / qoder 3 / traework 落 server 默认 0）。
 
 ---

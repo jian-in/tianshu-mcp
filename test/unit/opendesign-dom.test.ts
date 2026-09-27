@@ -133,33 +133,50 @@ describe("Open Design 选择器注册表", () => {
     }
   });
 
-  it("布局守卫只收「初始页面就存在」的锚点，不含运行期才出现的键", () => {
-    const runtimeOnly: OpenDesignSelectorKey[] = [
+  it("布局守卫只收「首页无条件存在」的锚点，不含控件级/运行期键", () => {
+    // 控件级触发器（工作目录/模型/设计系统/设计方向）由用户配置与页面形态决定是否渲染，
+    // 缺失属「该能力不可用」而非「页面结构漂移」——它们在各步骤内单独校验，
+    // 放进守卫会造成大面积假阻塞（真机形态差异会让适配器永远起不来）。
+    const outsideGuard: OpenDesignSelectorKey[] = [
       "selectDirItem",
       "modelMenuItem",
       "designSystemItem",
       "designDirectionItem",
       "designSystemSearch",
       "stopButton",
+      "conversationText",
+      "workingDirTrigger",
+      "workingDirValue",
+      "modelTrigger",
+      "designSystemTrigger",
+      "designDirectionTrigger",
     ];
-    for (const key of runtimeOnly) expect(OPEN_DESIGN_LAYOUT_GUARD_KEYS).not.toContain(key);
-    // 正向：输入区与各触发器必须在守卫里
+    for (const key of outsideGuard) expect(OPEN_DESIGN_LAYOUT_GUARD_KEYS).not.toContain(key);
+    // 正向：首页无条件存在的输入/发送锚点必须在守卫里
     for (const key of ["title", "composer", "inputBox", "sendButton"] as const)
       expect(OPEN_DESIGN_LAYOUT_GUARD_KEYS).toContain(key);
   });
 
-  it("未采集时 missingSelectorKeys 报出全部守卫键（fail-closed）", () => {
-    expect(missingSelectorKeys()).toEqual([...OPEN_DESIGN_LAYOUT_GUARD_KEYS]);
+  it("全部布局守卫键都已落真机取证的 primary（缺一个即 selector_drift 硬失败）", () => {
+    // 采集完成后守卫应当全绿；这条断言同时防止「后续误把某个 primary 清空」而静默放行点击。
+    for (const key of OPEN_DESIGN_LAYOUT_GUARD_KEYS)
+      expect(OPEN_DESIGN_SELECTORS[key].primary.trim(), key).not.toBe("");
+    expect(missingSelectorKeys()).toEqual([]);
   });
 
-  it("覆盖值可解除缺键（profile.gui.selectors 热修复路径）", () => {
-    expect(missingSelectorKeys(CAPTURED)).toEqual([]);
-    // 只覆盖一部分 → 只报剩余部分
-    const partial = { ...CAPTURED };
-    delete partial.sendButton;
-    expect(missingSelectorKeys(partial)).toEqual(["sendButton"]);
-    // 空白覆盖值不生效（否则会把守卫静默打开）
-    expect(missingSelectorKeys({ ...CAPTURED, sendButton: "   " })).toEqual(["sendButton"]);
+  it("fail-closed 契约：任一守卫键 primary 为空即报出该键（忽略空白覆盖）", () => {
+    const spec = OPEN_DESIGN_SELECTORS.sendButton;
+    const saved = spec.primary;
+    spec.primary = "";
+    try {
+      // 空白覆盖不得把守卫打开（否则热修复会把功能静默关掉时看不出来）
+      expect(missingSelectorKeys({ sendButton: "   " })).toEqual(["sendButton"]);
+      // 非空覆盖可解除缺键（profile.gui.selectors 热修复路径）
+      expect(missingSelectorKeys({ sendButton: '[data-testid="chat-send"]' })).toEqual([]);
+    } finally {
+      spec.primary = saved;
+    }
+    expect(missingSelectorKeys()).toEqual([]);
   });
 
   it("cssCandidates：无覆盖时 primary 优先 + 去重", () => {
@@ -317,7 +334,7 @@ describe("Open Design 页面内表达式（真实 DOM 执行）", () => {
     ) as { anchors: Array<{ key: string; count: number }> };
     const dead = res.anchors.filter((a) => a.count <= 0).map((a) => a.key);
     expect(dead).toContain("sendButton");
-    expect(dead).toContain("modelTrigger");
+    expect(dead).toContain("composer");
     expect(dead).not.toContain("title");
   });
 

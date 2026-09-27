@@ -12,7 +12,7 @@
 
 **天枢 × AI-Agent 编排 MCP server**
 
-由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent（Codex 桌面端、TraeWork/TRAE SOLO CN、ZCode、Kimi Code、Qoder CN 均经 CDP 驱动桌面 UI；Open Design 适配器开发中）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环（架构可横向扩展）。
+由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent（Codex 桌面端、TraeWork/TRAE SOLO CN、ZCode、Kimi Code、Qoder CN、Open Design 均经 CDP 驱动桌面 UI）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环（架构可横向扩展）。
 
 > 天枢官方仓库：[github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) —— 基于 harness 工程的终端编程智能体运行时（TUI × GUI），本 MCP 作为其 MCP server 接入。
 
@@ -265,7 +265,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 | [docs/kimi-cdp.md](docs/kimi-cdp.md) | Kimi Code GUI 驱动：双渲染进程（主窗口 + `Kimi Browser Overlay`）、工作区完整路径绑定与原生对话框导入、模型三级选择与思考档位、执行模式、运行检测与排障 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
 | [docs/qoder-cdp.md](docs/qoder-cdp.md) | Qoder CN GUI 驱动：安装发现与实例复用、完整路径工作区与原生导入、`modelSource` 与模型管理全局思考等级、发送/答题检查点、运行判定与原会话返修、真机证据与未覆盖项 |
-| [docs/opendesign-cdp.md](docs/opendesign-cdp.md) | Open Design GUI 驱动（阶段 P0）：安装发现与数据目录推导、单实例锁与 `--user-data-dir` 真相、sidecar 根进程判定、CDP 产品校验与端口档位、界面锚点候选与选择器采集流程、失败码表 |
+| [docs/opendesign-cdp.md](docs/opendesign-cdp.md) | Open Design GUI 驱动：安装发现与数据目录推导、单实例锁与 `--user-data-dir` 真相、sidecar 根进程判定、CDP 产品校验与端口档位、**选择器取证表（产品产物 `data-testid`）与 12 步执行链**、传输层双路径（`/json` 挂起回退浏览器级 WS）、失败码表 |
 | [docs/gui-log-viewer.md](docs/gui-log-viewer.md) | **日志台 GUI（`mcp-gui/`）**：本地只读查看四类日志与任务产物、数据目录配置、搜索/导出、双源（Gitee/GitHub）自动更新与故障自救、本地开发与 CI 构建边界 |
 | [docs/issue-25-gui-real-machine-record.md](docs/issue-25-gui-real-machine-record.md) | 日志台 GUI 的真机验收记录（CI 产物为载体）与双源更新实测清单（issue #25） |
 | [docs/release-v0.5.10.md](<docs/release-v0.5.10.md>) | v0.5.10 发布说明（`run_task` / `verify_task` 幂等键：TTL 重放、执行中提示、同键异参 fail-closed、`idempotency.json` 落盘与 `idempotentHint` 注解；issue #15） |

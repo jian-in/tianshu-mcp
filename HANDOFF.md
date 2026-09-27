@@ -1,14 +1,43 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-27 · 开发版本 `0.7.0`（**尚未发布**）；本次新增独立交付面「日志台 GUI」（`0.1.0-beta.2`，独立 tag `gui-v*`，独立演进）。**
-> **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包**运行时逻辑零改动、版本号不变**。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
+> **交接快照：2026-09-27 · 开发版本 `0.7.1`（**尚未打 tag、未发布 npm**）。**
+> **本轮（0.7.0 → 0.7.1）交付**：内置 agent `opendesign`（Open Design 桌面端）**从「开发中」推进到完整可派发**——
+> 选择器按产品产物取证落地、12 步执行链全部接线、并接入验收 → 自动返修 → 再验收闭环。
+> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.2`，独立 tag `gui-v*`，独立演进）。
+> **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包 GUI 侧零改动。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
 > **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布），**五个 issue 均已回复并关闭**（2026-09-24）。
 > **#18~#22 的真机记录已全部补齐**（2026-09-25）：见 [issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md) 与 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)；各 issue 另附真机证据补充评论。
-> **⚠️ 新发现一条会阻断全部 Codex 派发的适配器缺陷**（`26.917.9434` 模型触发器回读混入整条思考等级条 → `model_mismatch`），尚未修复、建议单开 issue，详见下方「真机取证补记」与记录文件 §5。
+> **⚠️ 仍有一条会阻断全部 Codex 派发的适配器缺陷**（`26.917.9434` 模型触发器回读混入整条思考等级条 → `model_mismatch`），尚未修复、建议单开 issue，详见下方「真机取证补记」与记录文件 §5。
+> **⚠️ Open Design 仍有一项真机验收未完成**：本机沙箱内 Open Design 主线程停在启动期（自身版本/遥测/计费请求不可达），
+> `/json` 与 `/json/version` 连接成功却无响应，故**真实 DOM 采集与真机全链路验收**待联网终端执行（见 `docs/opendesign-cdp.md` §4.4 与 `.dsh/plans/opendesign-gui-adapter-plan.md` §7.0/§9）。
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 内置 agent · Open Design 适配器接线完成（`0.7.1`，未发布，2026-09-27）
+
+- **范围**：`src/agents/opendesign/**`（新增 `transport.ts` / `menu.ts` / `send.ts` / `recovery.ts`，重写 `run.ts`、`selectors.ts`、`cdp.ts`），
+  以及 `src/loop/fix-loop.ts`、`src/tasks/task-manager.ts`、`src/mcp/context.ts` 的 opendesign 接线。**未改 `tianshu-mcp-web/`**。
+- **选择器取证（不是截图目测）**：Open Design 的 Web 前端产物（`resources/open-design-web-standalone/apps/web/.next/static/chunks/*.js`）
+  **系统性使用 `data-testid`**（600+），`primary` 全部取自这些真实钩子（`chat-send` / `working-dir-trigger` /
+  `composer-design-system-trigger` / `design-system-search` / `home-hero-template-trigger` / `home-hero-input` / `home-hero-submit` …）；
+  停止按钮无 testid，用产品自身的 `class="composer-send stop"` + `aria-label=<chat.stop>`；菜单项统一 `role="option"`。
+- **真机新发现 → 传输层必须双路径**（`transport.ts`）：Open Design 的浏览器进程 `/json/version` 正常，但 `/json` 与
+  `/json/list` **连接成功后长时间无响应**（Target 枚举走 UI 线程，产品启动期主线程被自身计费/遥测请求占住）。
+  故先走 HTTP `/json`（≤3s 上限），失败即回退浏览器级 WebSocket：`Target.getTargets` + `Target.attachToTarget(flatten)`
+  拿 `sessionId`（页面级命令带 `sessionId`，`Target.*`/`Browser.*` 不带）。就绪探测与传输**共用同一份目标枚举实现**。
+- **完整 12 步**：接管/自启 → 连接主窗口（要求输入框就绪）→ 版本门禁 → 选择器守卫与布局盘点 → 绑定工作目录（含原生对话框 + **回读**）
+  → 模型（精确匹配 + 回读，写回 `actualModel`）→ 设计系统（搜索过滤 + 精确点选 + 回读）→ 设计方向（只支持原型/文档/网站复刻）
+  → 输入任务书（可信输入 + 回读含标记）→ 发送（**只点一次、绝不重发**、三证据有界确认）→ 三信号轮询（停止按钮 / 对话文本哈希 / 产物文件指纹）→ 终态。
+- **验收-返修闭环**：`fix-loop.ts` 在 opendesign 验收失败时生成**项目根** `.opendesign/plans/opendesign-fix-r<N>.md`
+  （Open Design 只能读它工作目录白名单内的文件），并同会话发送返修指令；`continue_task` / `rework_task` 已支持 opendesign。
+- **本轮修掉的两个真实缺陷**：① `inputText()` 曾把 `{found,value,length}` 当 `string` 返回 → 发送前回读抛错、被误报 `setup_failed`；
+  ② 工作目录绑定失败曾落成「非硬失败的 `setup_failed`」→ 编排器按普通失败处理、用户无法 `continue_task`，现一律转 `needs_user`。
+- **测试**：新增 **32** 用例（`test/integration/opendesign-flow.test.ts` 11 + `test/unit/opendesign-{menu,send,transport}.test.ts` 8/6/7），
+  桩扩展在 `test/fake-cdp.ts`（Open Design 页面桩，语义键由注册表自身反查，选择器漂移时桩会一起失败）。全部**不依赖本机安装 Open Design**、不联网。
+- **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**未打 tag、未发 npm**；
+  `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。
 
 ### 独立交付面 · 日志台 GUI 前端设计系统重构（`mcp-gui/`，未发布，2026-09-27）
 
@@ -28,7 +57,7 @@
   `npm run dev` 启动后逐模块请求 14 个源文件**均 200**，编译产物 CSS 括号平衡、关键选择器齐备；组件内**零硬编码颜色、零内联结构样式、零 emoji**。
 - **版本**：GUI 独立版本 `0.1.0-beta.1 → 0.1.0-beta.2`（`package.json` / `package-lock.json`（2 处）/ `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 同提交）；
   **未打 tag、未触发任何发布流程**；按硬约束**本机未执行任何 Rust 构建 / 检查**。
-- **不涉及 MCP 主包**：主包仍为 `0.7.0`（尚未发布），本次零改动。
+- **不涉及 MCP 主包**：本次 GUI 重构对主包**零改动**（主包本轮另因 Open Design 接线自 `0.7.0` 升到 `0.7.1`，见上方条目）。
 
 ### 独立交付面 · 日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3）（未发布，2026-09-27）
 
@@ -149,7 +178,7 @@
 ### Open Design GUI 适配器 · 阶段 P0 交接（0.6.8，2026-09-26）
 
 - **范围**：新增内置 agent `opendesign`（`driver=gui` / `adapter=opendesign-gui`）的**安装发现 + 实例接管 + CDP 探测**；
-  界面驱动（P1 选择器采集 → P2 目录绑定 → P3 模型/设计系统 → P4 方向/输入/发送 → P5 运行检测 → P6 视觉验收与返修）**尚未实现**。
+  界面驱动（P1 选择器采集 → P2 目录绑定 → P3 模型/设计系统 → P4 方向/输入/发送 → P5 运行检测 → P6 视觉验收与返修）**已于 0.7.1 全部接线完成**（详见上方「内置 agent · Open Design 适配器接线完成」条目）。
 - **完整计划**：`.dsh/plans/opendesign-gui-adapter-plan.md`（含 20 轮确认结论与 §7.1 真机实测修正）。
 - **真机事实**（详见 [docs/opendesign-cdp.md](docs/opendesign-cdp.md)）：
   - 普通安装（非 MSIX）；`D:\Open Design\Open Design.exe`；产品版本与命名空间从 `<安装目录>\resources\open-design-config.json` 读（实测 `0.24.1` / `release-stable-win`）。
@@ -157,8 +186,9 @@
   - **sidecar 陷阱**：daemon / web sidecar 也是同一 exe 的子进程（argv 带 `*.mjs`），实测 11 个同名进程只有 1 个真主进程。`rootOpenDesignProcesses()` 必须剔除它们，否则用户关窗后受管实例**永远起不来**。
   - 端口基准原计划 9777，实测**已被 Qoder CN 占用**（区段 9777-9796）→ 改为 **9889**（区段 9889-9898）。
   - 版本门禁用**产品版本**；CDP `/json/version` 的 `Browser` 是 **Electron 版本**（41.3.0），误用会阻断全部派发（已加回归测试）。
-- **本阶段刻意 fail-closed**：`selectors.ts` 仍是空占位，`run.ts` 在缺关键选择器时**硬失败 `not_implemented`** 并列出缺失键。
-  这是有意设计——派一个还没接上界面的适配器却报成功，会污染验收与返修记账。**P1 采集完选择器后**该门禁自然解除。
+- **P0 阶段刻意 fail-closed**（**已被 0.7.1 取代**）：当时 `selectors.ts` 是空占位，`run.ts` 在缺关键选择器时硬失败并列出缺失键——
+  有意设计：派一个还没接上界面的适配器却报成功，会污染验收与返修记账。**0.7.1 已按产品产物取证补齐全部 `primary`**，
+  守卫改为只收首页无条件存在的四个锚点，界面驱动与验收-返修闭环全部接通。
 - **接口变更**：新增 `run_task` 参数 `designDirection`（仅 Open Design；只支持「原型 / 文档 / 网站复刻」，其余显式拒绝，入口即拒）；
   `designSystem` 对 Open Design 的语义是**设计系统名**。`mode` 刻意不复用（那是 TraeWork 的面板模式）。
 - **探针**：`npm run probe:opendesign`（`install` / `process` / `cdp` / `appconfig` / `anchors`），默认只读；`--launch` 才启动实例。
@@ -166,8 +196,10 @@
 - **测试**：新增 34 用例（`test/unit/opendesign-{discovery,model}.test.ts`），全量 **1173 passed / 12 skipped**（105 文件）；
   `typecheck` / `eslint src test scripts` / `check:stdio`（dist 与 src 各 8/8）全绿。
   **新增用例不依赖本机安装 Open Design**（用注入 + 临时目录），符合「新增用例不得依赖本机 GUI agent」的既有教训。
-- **下一步（P1）**：关掉现有窗口后 `node scripts/probe-opendesign.mjs anchors --launch`，
-  把收敛出的稳定选择器写回 `src/agents/opendesign/selectors.ts`，并补 `dom.ts` 表达式与 layoutGuard。
+- **下一步（真机验收，0.7.1 之后）**：在**可联网的普通终端**里跑
+  `node scripts/probe-opendesign.mjs anchors --launch`，把各语义键的**实测命中数 + 文本**回填
+  `docs/opendesign-cdp.md` §4.4 的证据表；再做一次真实 `run_task`（原型方向 + 「Claude」设计系统 + 指定模型），
+  记录截图与日志到 `docs/opendesign-evidence/`，并验证「验收失败 → 返修 → 通过」一轮。
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: tianshu-mcp
-description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder，以及开发中的 opendesign）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/prepare_visual_baseline/approve_visual_baseline）派活、暂停继续、轮询、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
+description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder/opendesign）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/prepare_visual_baseline/approve_visual_baseline）派活、暂停继续、轮询、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
 triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|kimicode|kimi.?code|qoder|opendesign|open.?design|claude|编排|项目开发|派活|派单'
 ---
 
@@ -101,9 +101,9 @@ run_task（秒回 taskId，异步）
   `model`/`reasoningLevel` 可省略（沿用界面当前值并记录）；指定模型时若「默认」与「自定义」两组同名，必须用 `modelSource` 消歧，否则报 `qoder_model_ambiguous`。
   思考等级经「模型管理」设置并**重新打开回读**验证，不支持的档位在发送前报错；修改会保留为**全局偏好**（任务结束不还原），报告会说明影响。权限模式沿用当前设置，**不自动切「完全访问」**。
   自动与手动返修都**先落修复计划**，再把失败说明、计划文件名、完整路径与**全文**发回原会话。**macOS 为 `research` 且禁止派发**（`unsupported_platform`）。
-- **`opendesign`**（⚠️ **开发中，暂不可派活**）：Open Design 桌面端（Electron，实测 0.24.1；CDP 基准端口 **9889**）。
+- **`opendesign`**：Open Design 桌面端（Electron，实测 0.24.1；CDP 基准端口 **9889**）。Windows 真机取证；macOS 为 `research` 且禁止派发。
   `designDirection` **必填**（只支持「原型 / 文档 / 网站复刻」；`幻灯片`/`图片`/`HyperFrames` 在**入口**即拒绝）；`designSystem` 传**设计系统名**（如 `Claude`）；`mode` 不支持。
-  **当前阶段派活会硬失败 `selector_drift`**（界面选择器尚未真机采集完），错误信息会列出缺失键——
+  界面驱动已接线，可正常派活；仍 **fail-closed**：选择器漂移时硬失败 `selector_drift`（列出缺失键），模型未命中报 `model_unavailable` 并回显候选，设计方向非法在**入口**即拒绝。
   详见 [docs/opendesign-cdp.md](../../docs/opendesign-cdp.md) 与 `.dsh/plans/opendesign-gui-adapter-plan.md`。
   排查注意：外层启动器是「内嵌 Node 的 Electron」，**调用方若带 `ELECTRON_RUN_AS_NODE=1` 会被置为 Node 模式而拒绝调试端口**（受管启动已自动净化环境）。
 - **`codex-cli`**（可选，用户自建 profile，非内置）：不想依赖 GUI 时的**无头**路径，走 `codex exec`。需用户先在数据目录 `agent-profiles.json` 加 `driver=spawn` 的 profile（示例见 README「macOS 无头路径：codex-cli」）。
@@ -162,11 +162,11 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 | `needsUserKind` | 出现于 | 用户先做什么 | `continue_task` 的行为 |
 |---|---|---|---|
 | `agent_question` | zcode / kimicode / qoder | 无需操作（或在客户端补充信息） | **把 `message` 发表在原会话**（不重发任务书）。qoder 多题用 JSON 对象字符串，键为界面完整问题文字，多选值为字符串数组；先全量校验再提交，缺答案/题目变化/选项不存在都保留等待 |
-| `user_confirmation` | codex / kimicode / qoder | 在客户端窗口完成确认（方案卡/订阅页等） | **只重新接入观察**，不发送消息 |
-| `login_required` | codex / zcode / kimicode / qoder | 在窗口完成登录 | codex：复检环境后**重新派发任务书**（新会话 + 项目绑定 + 完整初始指令）；kimicode/qoder：补发完整任务书；zcode：message 仅作已处理确认 |
+| `user_confirmation` | codex / kimicode / qoder / opendesign | 在客户端窗口完成确认（方案卡/订阅页等） | **只重新接入观察**，不发送消息 |
+| `login_required` | codex / zcode / kimicode / qoder / opendesign | 在窗口完成登录 | codex：复检环境后**重新派发任务书**（新会话 + 项目绑定 + 完整初始指令）；kimicode/qoder：补发完整任务书；zcode：message 仅作已处理确认；opendesign：复检环境后补发完整任务书 |
 | `close_existing_instance` | zcode / kimicode / qoder / opendesign | 关闭冲突的旧实例（MCP 不自动关停） | 复检环境后补发完整任务书（message 不作问题发送） |
-| `system_permission` | zcode / kimicode | 授予系统权限（辅助功能等） | 同上 |
-| `setup_recovery` | zcode / kimicode / qoder | 在客户端确认目标项目/工作区，或手工完成绑定 | 同上；无锚点的环境恢复会补发完整原任务、上下文与已验证引用 |
+| `system_permission` | zcode / kimicode / opendesign | 授予系统权限（辅助功能等） | 同上 |
+| `setup_recovery` | zcode / kimicode / qoder / opendesign | 在客户端确认目标项目/工作区，或手工完成绑定 | 同上；无锚点的环境恢复会补发完整原任务、上下文与已验证引用 |
 
 限制与纪律：
 
@@ -279,6 +279,9 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 | `project_not_registered` | ZCode `allowCreateProject=false` 且目录未登记 | 在 ZCode 中手动登记该项目后重提 |
 | `model_unavailable` | 面板里找不到指定模型（错误文本附可见候选） | 用面板实际模型名重派 |
 | `model_mismatch` | 模型回读与期望不符 / 档位不被该模型支持 | 确认 `model` 与界面完全一致；档位改到界面实际存在的集合 |
+| `selector_drift` | opendesign 关键选择器未命中或页面锚点漂移（在任何坐标点击前硬失败，附缺失键） | 确认产品版本；必要时用 `gui.selectors` 语义键热覆盖后重派 |
+| `version_mismatch` | opendesign 安装版本不在 `opendesign.supportedVersions` 内 | 升级/降级产品，或更新 profile 的 `supportedVersions` |
+| `design_system_mismatch` | opendesign 设计系统搜索/点选后回读不一致 | 核对 `designSystem` 传的名字与界面实际条目后重派 |
 | `permission_unknown` | 权限模式未确认（如 ZCode 未开「完全访问」） | 让用户在 agent 内切好权限模式 |
 | `cdp_disconnected` | CDP 连接断开且未能恢复 | 让用户关掉冲突实例；重试 |
 | `instance_busy` | 同项目/同实例已有未停止的运行（重派护栏） | 先 `cancel_task` 并**确认 GUI 已停**，或等其自行结束 |

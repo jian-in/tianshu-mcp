@@ -7,7 +7,57 @@
 
 ---
 
-## [未发布]
+## [0.7.1] — 未发布（MCP 主包，未打 tag、未发布 npm）
+
+> 本次变更把内置 agent `opendesign`（Open Design 桌面端，`driver=gui` / `adapter=opendesign-gui`）
+> 从「开发中」推进到**完整可派发**：选择器已按产品产物取证落地，12 步执行链全部接线，
+> 并接入既有的验收 → 自动返修 → 再验收闭环。
+
+### 新增
+
+- **Open Design 选择器全部落地（真机产物取证，非截图目测）**（`src/agents/opendesign/selectors.ts`）：
+  - 主锚点取自 Open Design Web 前端产物（`resources/open-design-web-standalone/apps/web/.next/static/chunks/*.js`）里系统使用的 `data-testid`：`chat-composer`、`chat-send`、`chat-log`、`working-dir-trigger`、`working-dir-pick`、`composer-design-system-trigger`、`design-system-search`、`home-hero-template-trigger`（界面上的「创建类型」）、`home-hero-input`、`home-hero-submit`、`inline-model-switcher-chip`、`model-picker-trigger`；
+  - 停止按钮没有 testid，按产品自身的 `class="composer-send stop"` + `aria-label=<chat.stop>` 标识；
+  - 菜单项统一为 `role="option"`（触发器 `aria-haspopup="listbox"`），按**归一化后的全等文本**精确匹配，未命中回显候选、**绝不模糊匹配**。
+- **CDP 传输层 `src/agents/opendesign/transport.ts`（双路径）**：真机实测 Open Design 的浏览器进程 `/json/version` 正常，但 `/json` 与 `/json/list` 会**连接成功却长时间无响应**（Target 枚举走 UI 线程，产品启动期主线程被自身计费/遥测请求占住）。因此先走 HTTP `/json`，超时/失败即回退到浏览器级 WebSocket 的 `Target.getTargets` + `Target.attachToTarget(flatten)`，拿到 `sessionId` 后在会话上执行命令（页面级命令带 `sessionId`，`Target.*`/`Browser.*` 不带）。就绪探测 `probeOpenDesignPort` 复用同一份目标枚举实现。
+- **完整 12 步执行链**（`src/agents/opendesign/run.ts`）：接管/自启实例 → 连接主窗口（要求输入框真正就绪）→ 版本门禁 → 选择器守卫与布局盘点 → 绑定工作目录（展开触发区 → 点「选择目录」→ 原生对话框填绝对路径 → **回读显示值**）→ 模型（精确匹配 + 回读，写回 `actualModel`）→ 设计系统（搜索过滤 + 精确点选 + 回读）→ 设计方向（只支持原型/文档/网站复刻）→ 输入任务书（可信输入 + 回读含标记）→ 发送（**只点一次、绝不重发**、有界确认）→ 三信号轮询（停止按钮 / 对话文本哈希 / 产物文件指纹）→ 终态。
+- **通用菜单选择 `menu.ts`**：模型 / 设计系统 / 设计方向共用的「触发区 → 展开 → 精确匹配 → 回读确认」流程；`already-bound` 复用分支不做无意义点击；多命中即拒绝（不猜一个点）。
+- **输入与发送确认 `send.ts`**：发送前回读「输入框确实含本次任务标记」，否则不点发送；发送后按「用户消息落地 / 运行信号 / 输入框清空」三证据有界确认，确认不到只报 `send_unknown` 且**绝不重发**。
+- **按步预算 `recovery.ts`**：与 `kimicode/recovery.ts` 同构，`remaining(cap)` 取「本步 cap / 任务总时限 / setup 预算」的最小值，重试不重置预算。
+- **验收 → 自动返修 → 再验收闭环接线**（`src/loop/fix-loop.ts`）：opendesign 验收失败时生成**项目根内** `.opendesign/plans/opendesign-fix-r<N>.md`（Open Design 只能读它「工作目录」白名单内的文件，写进任务数据目录会导致「我让你看计划，你说读不到」），并把「未通过摘要 + 计划相对路径 + 视觉差异证据」作为同会话返修指令发出；轮数受 `autoFixRounds` 封顶。
+- **`continue_task` / `rework_task` 支持 opendesign**（`src/tasks/task-manager.ts`、`src/mcp/context.ts`）：`agent_question` 把回答发进**当前会话**（适配器发送前确认会话页锚点，不在即 `session_lost`）；`user_confirmation` 只重连观察、**不发送任何消息**；环境类恢复走全新派发并补发完整任务书；手动返修要求已存在验收报告（否则拒绝发送）。
+- **新增 `endReason`**：`version_mismatch`、`selector_drift`、`model_unavailable`、`model_mismatch`、`design_system_mismatch`、`input_mismatch`、`send_unknown`、`session_lost`、`reply_stable`、`idle_timeout`、`task_timeout`、`aborted`、`setup_failed`。
+- **新增 `needsUserKind`**：`login_required`、`system_permission`、`setup_recovery`、`user_confirmation`（`close_existing_instance` 保持）。
+
+### 修复
+
+- **输入框文本读取返回对象而非字符串**（`src/agents/opendesign/cdp.ts`）：`inputValueExpression` 返回 `{found,value,length}`，此前按 `string` 返回，导致发送前回读时 `includes` 在运行时抛错（表现为 `setup_failed`），把「输入未落进编辑器」误报成基础设施失败。
+- **工作目录绑定失败被落成「非硬失败的 `setup_failed`」**（`src/agents/opendesign/run.ts`）：这类结果编排器会当成 agent 普通失败，用户既看不到可操作提示、也无法 `continue_task` 续跑；现一律转 `needs_user`（`system_permission` 或 `setup_recovery`），与计划决策 12「失败重试一次后交用户」一致。
+- **布局守卫键收敛**（`src/agents/opendesign/selectors.ts`）：守卫只保留首页**无条件存在**的 `title / composer / inputBox / sendButton` 四个锚点；工作目录 / 模型 / 设计系统 / 设计方向触发器由用户配置与页面形态决定是否渲染，缺失属「该能力不可用」而非「页面结构漂移」，改为在**各自步骤**内单独校验并给出精确原因（原先放在守卫里会造成大面积假阻塞）。
+
+### 测试
+
+- 新增 **32** 个用例（4 文件）：
+  - `test/integration/opendesign-flow.test.ts`（11）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 7 条 fail-closed 路径（非法方向在入口拒绝、模型未命中回显候选、版本不匹配、布局漂移、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`），并断言事件流（`task_dispatched` / `file_modification_started`）与 `guiStop` 如实回报；
+  - `test/unit/opendesign-menu.test.ts`（8）：复用分支、触发器不唯一、菜单未出现、同名多命中、未命中回显候选、点中但回读不一致、搜索过滤路径、回读轮询；
+  - `test/unit/opendesign-send.test.ts`（6）：确认判据真值表（清空单独不算成功）与 `input_mismatch` / `send_failed` / 成功 / `send_unknown`（只点一次）；
+  - `test/unit/opendesign-transport.test.ts`（7）：目标枚举快/慢/全失败三条路径，以及会话路由（页面级带 `sessionId`、`Target.*` 不带）与未连接时的明确报错。
+- 测试桩扩展（`test/fake-cdp.ts`）：新增 Open Design 页面桩（`od:*` 标记分发 + 内存状态 + 坐标点击解释），语义键由注册表自身反查，选择器漂移时桩会一起失败而非「假装还能用」。
+- 全部用例**不依赖本机安装 Open Design**（走注入与临时目录），也不联网。
+
+### 真机取证
+
+- 版本：Open Design 0.24.1（`resources/open-design-config.json` 的 `appVersion`），命名空间 `release-stable-win`；Windows 10 19045。
+- 新发现并已写入文档：浏览器进程 `/json/version` 可用而 `/json` 挂起 → 传输层双路径（见上）。
+- 仍未完成任务：`scripts/probe-opendesign.mjs` 的**全锚点实际命中清单**需在**可正常启动 Open Design 的联网终端**上回填 `docs/opendesign-cdp.md` §4 的证据表（本机沙箱内 Open Design 主线程停在启动期，无法完成真实 DOM 采集）。
+
+### 文档
+
+- [docs/opendesign-cdp.md](docs/opendesign-cdp.md) / [.en.md](docs/opendesign-cdp.en.md)：补选择器取证来源与证据表、传输层双路径结论、失败码表补齐。
+- ARCHITECTURE / README / agent-profiles / adapter-matrix / SKILL / usage-examples 双语：状态由「开发中」同步为「已接线」，并补齐新的 `endReason` / `needsUserKind` 取值。
+- 版本：`package.json` 与 `src/version.generated.ts` 同步为 `0.7.1`（按 `+0.0.1` 规则；**尚未打 tag、未发布 npm**）。
+
+## [未发布] — mcp-gui 独立版本线
 
 > 本次变更为**新增独立交付面**：MCP 主包的运行时逻辑（工具契约、任务模型、验收引擎与 `src/**`）**零改动**。
 > **MCP 主包版本保持不变**（仍为 `0.7.0`，尚未发布）；GUI 使用独立版本号（`0.1.0-beta.N`）与独立 tag（`gui-v*`）独立演进。

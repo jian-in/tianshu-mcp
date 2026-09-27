@@ -29,6 +29,10 @@ import {
 } from "../verify/dry-run.js";
 import { writeRepairPlan } from "./repair-plan.js";
 import { writeCodexFixPlan } from "../agents/codex/fixplan.js";
+import {
+  buildOpenDesignFixPrompt,
+  writeOpenDesignFixPlan,
+} from "../agents/opendesign/fixplan.js";
 import { buildFixPrompt } from "../agents/codex/input.js";
 import { extractFailureEvidence } from "../agents/codex/verify.js";
 import {
@@ -161,6 +165,40 @@ export class TaskOrchestrator {
         const planText = await readTextSafe(plan.taskPath);
         if (planText == null) return this.finish("failed", "internal", "Qoder 返修计划不可读，拒绝发送。");
         feedback = `${buildFixFeedback(meta.task, report.message, meta.reportMd, plan.taskPath)}\n\n修复计划全文（${plan.fileName}）：\n${planText}`;
+      }
+
+      if (meta.agentId === "opendesign" && round > 0 && meta.continueMessage === undefined) {
+        // 手动返修同样要先落「项目内」的计划文档再发送（Open Design 读不到任务数据目录）。
+        const report = meta.reportJson ? await readJsonSafe<VerifyReport>(meta.reportJson) : null;
+        if (!report || report.taskId !== meta.taskId) {
+          return this.finish(
+            "failed",
+            "internal",
+            "Open Design 原验收报告不可读，无法生成返修计划，拒绝发送。",
+          );
+        }
+        const plan = await writeOpenDesignFixPlan({
+          taskId: meta.taskId,
+          round: round - 1,
+          projectPath: meta.projectPath,
+          displayPath: meta.displayPath,
+          taskText: meta.task,
+          report,
+          planDir: resolved.profile.opendesign?.planDir,
+          logger,
+        });
+        const userNote = feedback?.trim();
+        feedback = [
+          buildOpenDesignFixPrompt({
+            summary: report.message,
+            planRelPath: plan.relPath,
+            reportPath: meta.reportMd,
+            evidence: visualEvidence(report),
+          }),
+          userNote ? `【用户追加返修要求】\n${userNote}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
       }
 
       for (;;) {
@@ -404,6 +442,32 @@ export class TaskOrchestrator {
               directives: verdict.report.repairDirectives,
             });
             logger.info(`[codex] 第 ${roundNo} 轮返修指令已引用修复计划 ${plan.relPath}`);
+            continue;
+          }
+
+          if (meta.agentId === "opendesign") {
+            // Open Design 的修复计划必须落在**项目根内**（默认 `.opendesign/plans/`）：
+            // Open Design 只能读它「工作目录」白名单内的文件，写进任务数据目录会导致
+            // 「我让你看计划，你说读不到」。计划文件名含轮次号，不覆盖历史。
+            const plan = await writeOpenDesignFixPlan({
+              taskId: meta.taskId,
+              round: round - 1,
+              projectPath: meta.projectPath,
+              displayPath: meta.displayPath,
+              taskText: meta.task,
+              report: verdict.report,
+              planDir: resolved.profile.opendesign?.planDir,
+              logger,
+            });
+            feedback = buildOpenDesignFixPrompt({
+              summary: verdict.summary,
+              planRelPath: plan.relPath,
+              reportPath: verdict.mdPath,
+              evidence: visualEvidence(verdict.report),
+            });
+            logger.info(
+              `[opendesign] 第 ${round} 轮返修指令已引用修复计划 ${plan.relPath}（项目内，供 Open Design 读取）`,
+            );
             continue;
           }
 

@@ -583,7 +583,7 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
 > 取消只停**已绑定的原会话**（`stopQoder` 连续两次观测到非运行才认 `idle`），未确认时保留实例并阻止重派。
 > macOS 为 `research` 且禁止派发。
 
-**Open Design**（CDP 驱动，**产物信号**，开发中：P0/P1 与 P2/P5/P6 判定层已交付、界面接线待选择器采集）：
+**Open Design**（CDP 驱动，**产物信号**，界面驱动已接线；Windows 真机取证，macOS 为 `research` 且 fail-closed）：
 
 ```text
 环境净化后启动/复用 CDP 实例（清 ELECTRON_RUN_AS_NODE 等；已有非 CDP 实例 → needs_user(close_existing_instance)）
@@ -602,9 +602,16 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
 > 2. 启动器是「**分离子进程形态**」：接受端口后打印 `DevTools listening on …` 并**自行以 0 退出**，
 >    真正的 Electron 主进程是它 spawn 的分离子进程。**退出码 0 绝不等于失败**，必须从 stderr 解析宣告端口继续轮询。
 >
+> **CDP 传输层是两条路径**（`transport.ts`）：`/json/version` 正常，但 `/json`（Target 枚举）走 UI 线程，
+> 产品启动期主线程被自身计费/遥测请求占住会**挂起**。故先走 HTTP `/json`，超时/失败即回退到浏览器级 WebSocket 的
+> `Target.getTargets` + `Target.attachToTarget(flatten)` 拿 `sessionId` 继续。
+>
 > **它是唯一带「产物信号」的 driver**：Open Design 生成设计稿时会长时间不刷对话却持续写文件，
 > 只看对话文本会把这类正常工作判成「空闲完成」。因此静止判据要求**文本与产物双稳定**。
-> **绑定成功 = 回读一致**（不是「原生对话框关掉了」）；选择器未采集时派活**硬失败 `selector_drift`** 并列出缺失键，
+> **界面驱动已全部接线**：`selectors.ts` 的 `primary` 全部落地（证据取自产品自身 Web 前端产物里的 `data-testid` 钩子，**不是截图目测**），
+> 12 步执行链与验收-返修闭环均已接通；通用构件为 `menu.ts`（触发 → 精确匹配 → 回读的菜单选择）、
+> `send.ts`（输入与发送确认，只点一次、绝不重发）与 `recovery.ts`（按步预算），失败计划由 `src/loop/fix-loop.ts` 落项目根。
+> **绑定成功 = 回读一致**（不是「原生对话框关掉了」）；选择器漂移时仍**硬失败 `selector_drift`** 并列出缺失键，
 > 绝不盲点坐标。版本门禁判据是安装目录 `resources/open-design-config.json` 的 `appVersion`（**不是** CDP 的 Electron 版本）。
 > 详见 [opendesign-cdp.md](docs/opendesign-cdp.md)。
 
@@ -654,30 +661,39 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 > Qoder CN 把具体失败原因写在 `error` 文本里（`qoder_model_ambiguous` / `qoder_workspace_mismatch` /
 > `qoder_question_*` / `qoder_session_lost` 等），`endReason` 统一为 `qoder_error`。
 
-**Open Design**（开发中：界面接线未完成，故当前只产出下列取值；接线后补齐 `reply_stable` / `idle_timeout` 等）：
+**Open Design**（界面驱动已接线，实际产出的取值）：
 
 | `endReason` | 触发 |
 |---|---|
-| `selector_drift` | 关键选择器未采集，或页面锚点未命中 —— **在任何坐标点击之前**硬失败并列出缺失键 |
+| `reply_stable` | 对话文本与产物指纹双稳定（成功完成） |
 | `version_mismatch` | 安装配置 `appVersion` 不在 `opendesign.supportedVersions` 内 |
-| `setup_failed` | 入口校验失败（设计方向非法 / 任务书为空 / 未找到可执行 / 启动失败） |
-| `not_implemented` | 门禁通过但界面驱动尚未接线（当前阶段） |
-| `needs_user` | 已有实例未开调试端口（`close_existing_instance`） |
+| `selector_drift` | 关键选择器未命中或页面锚点漂移 —— **在任何坐标点击之前**硬失败并列出缺失键 |
+| `model_unavailable` | 目标模型未出现在面板中（错误文本回显可见候选） |
+| `model_mismatch` | 模型回读与期望不符 |
+| `design_system_mismatch` | 设计系统搜索/点选后回读不一致 |
+| `input_mismatch` | 任务书输入回读缺少标记（输入未确认） |
+| `send_unknown` | 发送结果无法确认（**绝不自动重发**） |
+| `session_lost` | 已连接的主窗口/会话丢失 |
+| `idle_timeout` | 长时间无运行信号且无完成证据（异常结束，保留实例） |
+| `task_timeout` | 任务级超时 |
 | `aborted` | 取消（`cancel_task` / server 退出） |
+| `setup_failed` | 入口校验失败（设计方向非法 / 任务书为空 / 未找到可执行 / 启动失败） |
+| `needs_user` | 需人工介入（如已有实例未开调试端口 `close_existing_instance`） |
 
 `needsUserKind`（联合类型共 6 种，各 driver 实际产出的子集不同）：
 
 | 取值 | 含义 | 产出方 |
 |---|---|---|
 | `agent_question` | agent 在 UI 里向用户提问 | ZCode、Kimi Code（需配置 `gui.selectors.userGate` 才启用启发式提问检测）、Qoder CN（专用答题控件） |
-| `user_confirmation` | 停在等待用户确认的界面 | Codex、Kimi Code、Qoder CN |
-| `login_required` | 需要登录 | Codex、ZCode、Kimi Code、Qoder CN |
+| `user_confirmation` | 停在等待用户确认的界面 | Codex、Kimi Code、Qoder CN、**Open Design** |
+| `login_required` | 需要登录 | Codex、ZCode、Kimi Code、Qoder CN、**Open Design** |
 | `close_existing_instance` | 已有实例未开 CDP 端口，需用户关闭 | ZCode、Kimi Code、Qoder CN、**Open Design**（**Codex 不产出**：其 `ensureInstance` 声明了 `needsClose` 却从不返回 true） |
-| `system_permission` | 系统权限不足（如 macOS 辅助功能） | ZCode、Kimi Code |
-| `setup_recovery` | 自动恢复预算耗尽 / 发送结果不确定，需人工介入 | ZCode、Kimi Code、Qoder CN |
+| `system_permission` | 系统权限不足（如 macOS 辅助功能） | ZCode、Kimi Code、**Open Design** |
+| `setup_recovery` | 自动恢复预算耗尽 / 发送结果不确定，需人工介入 | ZCode、Kimi Code、Qoder CN、**Open Design** |
 
 > **Qoder CN 是唯一能产出全部 6 种 kind 的适配器**（`pause(kind, …)` 把 kind 同时当作 `endReason`）。
-> **Open Design 当前只产出 `close_existing_instance`**（后续会补 `system_permission`——原生「选择文件夹」对话框归属不明时）。
+> **Open Design 产出 5 种 kind**（`login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance`），
+> 唯独不产出 `agent_question`（它的「向用户提问」不表现为可回填的答题控件）。
 > TraeWork 不产出 `needsUserKind`：它的「向用户提问」被当作正常结束（`ask_user`）并释放实例，且**完全不读 `ctx.resume`**——所以 `continue_task` 对它无意义。
 
 ### 8.5 注册表与可执行探测（`src/agents/registry.ts`）
@@ -689,7 +705,7 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
   - `ready` → 顺序为「显式绝对路径 → 发现目录扫描 → PATH（`where` / `which`）」；占位符命令（`<...>`）被拒绝。
 - 特殊探测分支：`codex-gui` 走 `discoverCodex`（Appx 查询 + 扫盘），`kimicode-gui` 走 `discoverKimicode`（盘根相对路径 + 标准目录 + macOS bundle），`qoder-gui` 走 `discoverQoder`，`traework-gui` 走 `discoverTraework`（二者均**额外要求 `process.platform === "win32"`**——非 Windows 直接 `ok:false`，即使探测到安装也不允许派发）。四个 `discovery.ts` 共用同一顺序骨架：显式路径 → 固定盘相对路径（`preferredDrives` 优先）→ 注册表 `InstallLocation` → 快捷键（qoder/traework）→ 标准目录（含 macOS bundle）→ PATH。
 - `profile.adapter` 显式判别优先于 `driver`：`driver:"spawn"` + `adapter:"codex-gui"` 仍会换装 GUI 实现。`ensureAdapterFor` 只在**实现类变化**时重建，因此 ad hoc 换装不会打断正在运行的任务。
-- 选择器覆盖机制：TraeWork / ZCode / Codex / Kimi Code / **Qoder CN** 均为「**覆盖优先 → primary → 回退链**」（Kimi Code 的 overlay 选择器用 `overlay.<key>` 命名空间）。Qoder CN 自 v0.6.2 起由单值覆盖升级为与 Codex 同构的分层结构（`QoderSelectorSpec`：`primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion`），`QoderCdpClient` 的 `selector()` 仍返回字符串首选以保持既有语义，另增 `candidates()/existsKey()/clickKey()` 按候选顺序「先探测后点击」。
+- 选择器覆盖机制：TraeWork / ZCode / Codex / Kimi Code / Qoder CN / **Open Design** 均为「**覆盖优先 → primary → 回退链**」（Kimi Code 的 overlay 选择器用 `overlay.<key>` 命名空间）。Qoder CN 自 v0.6.2 起由单值覆盖升级为与 Codex 同构的分层结构（`QoderSelectorSpec`：`primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion`），`QoderCdpClient` 的 `selector()` 仍返回字符串首选以保持既有语义，另增 `candidates()/existsKey()/clickKey()` 按候选顺序「先探测后点击」。
 - 选择器漂移诊断（v0.6.2，issue #23）：`src/agents/gui-diagnostics.ts` 提供 `visibleLabelsExpr()`（页面内表达式，收集可见候选 aria-label / 短文本）与 `withDiagnostics()`（幂等追加「页面可见候选=[…]」后缀）。codex / qoder / traework 三者在选择器解析失败时统一附上该信息，便于一步定位漂移；各 agent 的 `selectors.ts` 以 `verifiedVersion` 记录实测版本。
 - 目录扫描按深度 6 内查找候选，跳过 `node_modules` 与点目录，**取 mtime 最新者**。
 - profile 热加载靠 sha256 内容指纹（不是 mtime），因此同一时间戳内的修改也能被感知。

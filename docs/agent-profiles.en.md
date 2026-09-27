@@ -283,7 +283,7 @@ Per-agent applicability and semantics:
 > An invalid explicit `gui.exePath` fails loudly instead of silently falling back to another installation; an existing instance without usable CDP is preserved in place and turned into `needs_user` — it is never closed or restarted. An unregistered directory is imported through New Task → Workspace → New Workspace → Add Read/Write Folder.
 > Thinking tiers are saved in Model Management as a **global preference** (not restored afterwards) and the permission mode is retained. Details: [qoder-cdp.en.md](qoder-cdp.en.md).
 
-### Open Design (GUI driver, in development: decision layer delivered, UI wiring awaits selector capture)
+### Open Design (GUI driver, UI wiring complete; Windows machine-verified, macOS `research`)
 
 ```json
 {
@@ -338,10 +338,15 @@ Per-agent applicability and semantics:
 > - An existing instance without a debug port yields `needs_user(close_existing_instance)`; user processes are
 >   **never** killed.
 >
-> **Current progress**: P0 (discovery / takeover / CDP), P1 (selector and expression layer, layout guard) and the
-> **decision layer** of P2/P5/P6 (native dialog, three-signal run detection, repair plans, visual page-source
-> derivation) are delivered; UI wiring awaits real-machine selector capture. While selectors are missing,
-> dispatching **hard-fails with `selector_drift`** listing the missing keys — it never clicks blindly.
+> **The UI driver is now wired up**: every `primary` in `selectors.ts` has landed, with evidence drawn from the
+> **product's own web-frontend artifacts** (the `data-testid` hooks inside
+> `resources/open-design-web-standalone/apps/web/.next/static/chunks/*.js`), **not from eyeballing screenshots**;
+> the 12-step execution chain after handshake (takeover → connect the main window → version gate → layout guard →
+> bind the working directory → model → design system → design direction → type the task → send → three-signal polling →
+> terminal state) and the acceptance/rework loop are all connected.
+> Windows machine-verified; macOS remains `research` (no machine evidence, so the registry refuses dispatch).
+> Still fail-closed: on selector drift, dispatching **hard-fails with `selector_drift`** listing the missing keys — it never clicks blindly.
+> `gui.selectors` supports **hot overrides keyed by semantic name** (a minor UI change needs no release).
 
 ### Historical: Codex kernel CLI (`codex exec`, superseded by the GUI driver)
 

@@ -8,6 +8,13 @@
  * 通过 advance() 模拟 TraeWork 生成回复（逐步写入消息容器）。
  */
 
+import {
+  cssCandidates,
+  OPEN_DESIGN_LAYOUT_GUARD_KEYS,
+  OPEN_DESIGN_SELECTORS,
+  type OpenDesignSelectorKey,
+} from "../src/agents/opendesign/selectors.js";
+
 export interface FakeDomState {
   /** 输入框当前文本 */
   inputText: string;
@@ -908,4 +915,482 @@ export function makeKimicodeTargets(
     states,
     createClient: (role) => (role === "overlay" ? overlay : main),
   };
+}
+
+/* ============================ Open Design 场景 ============================ */
+
+/**
+ * Open Design 页面桩：内存状态 + 按 `od:*` 标记分发。
+ *
+ * 与真机的对齐点（都是 `selectors.ts` 里取证得到的真实钩子）：
+ * - 单页应用：首页 hero（工作目录 / 模型 / 设计系统 / 设计方向触发器 + 输入框 + 提交按钮）；
+ *   提交后进入会话页（`chat-log` 出现、`chat-send` / 停止按钮出现）。
+ * - 菜单/面板都是**同一文档内的浮层**，用「可见性」开关表达；选中项按**归一化后的全等文本**判定，
+ *   与页面内 `__opendesignResolve` 的判据一致（绝不模糊匹配）。
+ * - 停止按钮与发送按钮互斥出现；`chat-send` 的 `aria-busy`/`disabled` 表达「受理中」。
+ *
+ * 表达式语义键由**注册表自身**推导（`cssCandidates` 的 primary 与表达式文本匹配），
+ * 因此选择器漂移时这里会一起暴露，而不是「桩假装还能用」。
+ */
+export interface FakeOpenDesignState {
+  /** 是否在首页 hero（提交后进入会话页） */
+  onHome: boolean;
+  /** 输入框文本 */
+  inputText: string;
+  /** 会话正文（chat-log） */
+  conversation: string;
+  /** 已绑定的工作目录（触发器文本；null = 未绑定） */
+  workingDir: string | null;
+  /** 工作目录面板是否展开 */
+  workDirPanelOpen: boolean;
+  /** 原生「选择文件夹」对话框被点了几次 */
+  nativeDialogCalls: number;
+  /** 当前模型（触发器文本；null = 未指定） */
+  model: string | null;
+  /** 模型菜单是否展开 */
+  modelMenuOpen: boolean;
+  /** 可选模型 */
+  models: string[];
+  /** 当前设计系统 */
+  designSystem: string | null;
+  /** 设计系统面板是否展开 */
+  dsMenuOpen: boolean;
+  /** 设计系统搜索框当前输入 */
+  dsSearch: string;
+  /** 可选设计系统 */
+  designSystems: string[];
+  /** 当前设计方向 */
+  direction: string | null;
+  /** 设计方向菜单是否展开 */
+  directionMenuOpen: boolean;
+  /** 可选设计方向（含产品策略不允许的项，用于验证 fail-closed） */
+  directions: string[];
+  /** 权威运行信号 */
+  stopVisible: boolean;
+  /** 受理中（chat-send 不可用） */
+  sendStarting: boolean;
+  /** 发送按钮被点击次数（断言「绝不重发」） */
+  sendClicks: number;
+  /** 发送被吞：不产生任何确认证据 */
+  sendSwallowed: boolean;
+  /** 页面是否被隐藏（节流） */
+  pageHidden: boolean;
+  /** 点击记录（语义标签） */
+  clicks: string[];
+  /** 额外声明「多命中」的语义键（复刻 UI 渲染出重复控件的情形） */
+  duplicatedKeys?: string[];
+  /** 发送后消耗的运行状态脚本（用脚本而非定时器，避免与轮询抢跑） */
+  pollScript?: Array<Partial<FakeOpenDesignState>>;
+  /** 原生对话框路径（dialog 桩用它回写工作目录） */
+  nativeDialogPath?: string;
+  /** 原生对话框失败（fail-closed 路径） */
+  nativeDialogFails?: boolean;
+  /** 首页入口也不可见（复刻「页面完全漂移、连切回首页都做不到」） */
+  noHomeEntry?: boolean;
+  /** 会话容器缺失（复刻「当前不在会话页」，用于验证返修轮 fail-closed） */
+  conversationMissing?: boolean;
+  /** 指定语义键不可见（复刻局部锚点漂移，用于验证布局守卫） */
+  missingAnchors?: string[];
+}
+
+export function makeOpenDesignFakeState(
+  over: Partial<FakeOpenDesignState> = {},
+): FakeOpenDesignState {
+  return {
+    onHome: true,
+    inputText: "",
+    conversation: "",
+    workingDir: null,
+    workDirPanelOpen: false,
+    nativeDialogCalls: 0,
+    model: "deepseek-v4.1-flash",
+    modelMenuOpen: false,
+    models: ["deepseek-v4.1-flash", "deepseek-v4-pro", "claude-fable-5"],
+    designSystem: null,
+    dsMenuOpen: false,
+    dsSearch: "",
+    designSystems: ["Claude (Anthropic)", "Linear", "Vercel"],
+    direction: null,
+    directionMenuOpen: false,
+    directions: ["原型", "文档", "网站复刻", "幻灯片"],
+    stopVisible: false,
+    sendStarting: false,
+    sendClicks: 0,
+    sendSwallowed: false,
+    pageHidden: false,
+    clicks: [],
+    ...over,
+  };
+}
+
+/** 每个语义键的固定坐标（与真机无关，只用于让「坐标点击」可被桩解释） */
+const OD_POINTS: Record<string, { x: number; y: number }> = {
+  title: { x: 10, y: 10 },
+  composer: { x: 20, y: 20 },
+  inputBox: { x: 30, y: 30 },
+  workingDirTrigger: { x: 40, y: 40 },
+  selectDirItem: { x: 50, y: 50 },
+  workingDirValue: { x: 41, y: 41 },
+  modelTrigger: { x: 60, y: 60 },
+  modelMenuItem: { x: 70, y: 70 },
+  designSystemTrigger: { x: 80, y: 80 },
+  designSystemSearch: { x: 90, y: 90 },
+  designSystemItem: { x: 100, y: 100 },
+  designDirectionTrigger: { x: 110, y: 110 },
+  designDirectionItem: { x: 120, y: 120 },
+  sendButton: { x: 130, y: 130 },
+  stopButton: { x: 140, y: 140 },
+  conversationText: { x: 150, y: 150 },
+};
+
+/** 菜单项索引 → y（与 `OD_POINTS` 的基数错开，避免与「触发器」坐标混淆） */
+function odItemY(base: number, index: number): number {
+  return base + 200 + index * 10;
+}
+function odItemIndex(base: number, y: number): number {
+  return Math.round((y - (base + 200)) / 10);
+}
+
+/** 归一化（与页面内 odNorm 同义）：NFKC + 折叠空白 + 大小写不敏感 */
+function odNorm(value: string | undefined | null): string {
+  return (value ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+/** 三个菜单项语义键共用同一 CSS（`role="option"`，产品里同一时刻只开一个 listbox）。
+ *  桩按「当前展开的是哪个菜单」把它收敛到具体键——这正是真机的并集语义。 */
+const OD_OPTION_KEYS = new Set(["modelMenuItem", "designSystemItem", "designDirectionItem"]);
+
+function odKeyOf(expression: string): string {
+  // 只看**标记之后**的部分：`resolveFnSource()` 的公共扫描列表里硬编码了
+  // `[role="option"]` 等候选，若整段比对，任何表达式都会先命中 `modelMenuItem`
+  // （真机上没这问题——那里的 spec 是结构化参数，不是字符串搜索）。
+  const marker = /\/\*od:[a-z-]+\*\//.exec(expression);
+  const body = marker ? expression.slice(marker.index) : expression;
+  // 表达式里的 spec 是 JSON 字符串，内层引号被转义；比对前先还原
+  const flat = body.replace(/\\"/g, '"');
+  // 取**出现位置最靠前**的候选：spec 是 [primary, ...fallbacks]，所以被测键的 primary 必然
+  // 排在最前；若改成「注册表顺序优先」，`inputBox` 的 fallback 里含 `composer` 的 primary
+  // 就会把它误判成 composer（真机上 spec 是结构化参数，不存在这个歧义）。
+  let best: { index: number; key: string } | null = null;
+  for (const [css, key] of OD_KEY_BY_CSS) {
+    const index = flat.indexOf(css);
+    if (index < 0) continue;
+    if (!best || index < best.index) best = { index, key };
+  }
+  if (!best) return "";
+  return OD_OPTION_KEYS.has(best.key) ? "menuItem" : best.key;
+}
+
+const OD_KEY_BY_CSS: Array<[string, string]> = (
+  Object.keys(OPEN_DESIGN_SELECTORS) as OpenDesignSelectorKey[]
+).map((key) => [cssCandidates(OPEN_DESIGN_SELECTORS[key])[0] ?? "", key as string]);
+
+/** 页面级 Open Design 桩 */
+export class FakeOpenDesignPage {
+  readonly connected = true;
+  readonly alive = true;
+  constructor(private readonly state: FakeOpenDesignState) {}
+
+  async connect(): Promise<void> {
+    /* no-op */
+  }
+  disconnect(): void {
+    /* no-op */
+  }
+
+  async evaluate<T = unknown>(expression: string): Promise<T> {
+    return (await this.resolve(expression)) as T;
+  }
+
+  async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    if (method === "Page.bringToFront" || method === "Runtime.enable") return undefined;
+    if (method === "Input.insertText") {
+      const text = String(params.text ?? "");
+      if (this.state.dsMenuOpen) this.state.dsSearch += text;
+      else this.state.inputText += text;
+      return undefined;
+    }
+    if (method === "Input.dispatchKeyEvent") {
+      if (String(params.key) === "Escape") {
+        this.state.modelMenuOpen = false;
+        this.state.dsMenuOpen = false;
+        this.state.directionMenuOpen = false;
+        this.state.workDirPanelOpen = false;
+      }
+      if (this.state.dsMenuOpen && String(params.key) === "a" && (Number(params.modifiers) & 2) === 2)
+        this.state.dsSearch = "";
+      if (this.state.dsMenuOpen && String(params.key) === "Delete") this.state.dsSearch = "";
+      return undefined;
+    }
+    // 只认 mousePressed，避免 moved/pressed/released 三次重复应用同一效果
+    if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed")
+      this.applyClick(Number(params.x), Number(params.y));
+    return undefined;
+  }
+
+  private s(): FakeOpenDesignState {
+    return this.state;
+  }
+
+  /** 当前展开的菜单（产品里同一时刻最多一个 listbox 处于展开态） */
+  private activeMenu(): "model" | "ds" | "direction" | "" {
+    const s = this.s();
+    if (s.directionMenuOpen) return "direction";
+    if (s.dsMenuOpen) return "ds";
+    if (s.modelMenuOpen) return "model";
+    return "";
+  }
+
+  /** 把「菜单项」这类共用 CSS 的键收敛成当前展开菜单对应的具体键 */
+  private concreteKey(key: string): string {
+    if (key !== "menuItem") return key;
+    const menu = this.activeMenu();
+    return menu === "direction"
+      ? "designDirectionItem"
+      : menu === "ds"
+        ? "designSystemItem"
+        : menu === "model"
+          ? "modelMenuItem"
+          : key;
+  }
+
+  private visible(key: string): boolean {
+    const s = this.s();
+    if (s.missingAnchors?.includes(key)) return false;
+    if (s.duplicatedKeys?.includes(key)) return true;
+    // 「菜单项」是按当前展开的菜单收敛的（`odKeyOf` 已把三个共用 CSS 的键折成 menuItem）
+    if (key === "menuItem") return this.activeMenu() !== "";
+    switch (key) {
+      case "title":
+      case "composer":
+        return s.onHome;
+      // 输入框在首页与会话页都存在（会话页是 chat-composer 内的编辑器），
+      // 只有显式声明 missingAnchors 时才缺席。
+      case "inputBox":
+        return true;
+      case "workingDirTrigger":
+      case "workingDirValue":
+      case "modelTrigger":
+      case "designSystemTrigger":
+      case "designDirectionTrigger":
+        return s.onHome;
+      // 发送按钮两种形态都存在（首页 home-hero-submit / 会话页 chat-send）
+      case "sendButton":
+        return true;
+      case "selectDirItem":
+        return s.onHome && s.workDirPanelOpen;
+      case "modelMenuItem":
+        return s.onHome && s.modelMenuOpen;
+      case "designSystemItem":
+      case "designSystemSearch":
+        return s.onHome && s.dsMenuOpen;
+      case "designDirectionItem":
+        return s.onHome && s.directionMenuOpen;
+      case "stopButton":
+        return s.stopVisible || s.sendStarting;
+      case "conversationText":
+        return !s.conversationMissing;
+      default:
+        return false;
+    }
+  }
+
+  private textOf(key: string): string {
+    const s = this.s();
+    switch (key) {
+      case "title":
+        return s.onHome ? "Open Design" : "";
+      case "workingDirTrigger":
+      case "workingDirValue":
+        return s.workingDir ?? "选择工作目录";
+      case "modelTrigger":
+        return s.model ?? "";
+      case "designSystemTrigger":
+        return s.designSystem ?? "";
+      case "designDirectionTrigger":
+        return s.direction ?? "创建类型";
+      case "conversationText":
+        return s.conversation;
+      case "inputBox":
+        return s.inputText;
+      case "sendButton":
+        return "发送";
+      default:
+        return "";
+    }
+  }
+
+  /** 计数：多命中声明只对触发器/菜单项生效（复刻 UI 渲染重复控件） */
+  private countOf(key: string): number {
+    if (!this.visible(key)) return 0;
+    return this.s().duplicatedKeys?.includes(key) ? 2 : 1;
+  }
+
+  /** 菜单项候选（按语义键；设计系统受搜索框过滤） */
+  private itemsOf(rawKey: string): string[] {
+    const s = this.s();
+    const key = this.concreteKey(rawKey);
+    if (key === "modelMenuItem") return s.models;
+    if (key === "designDirectionItem") return s.directions;
+    // 「选择目录」是工作目录面板里的唯一项（真机上文本随绑定状态变化，这里用产品默认文案）
+    if (key === "selectDirItem") return ["选择目录"];
+    if (key === "designSystemItem") {
+      const q = odNorm(s.dsSearch);
+      return q ? s.designSystems.filter((n) => odNorm(n).includes(q)) : s.designSystems;
+    }
+    return [];
+  }
+
+  private pointOf(rawKey: string): { x: number; y: number } | null {
+    if (!this.visible(rawKey)) return null;
+    const base = OD_POINTS[this.concreteKey(rawKey)];
+    return base ? { x: base.x, y: base.y } : null;
+  }
+
+  private async resolve(expression: string): Promise<unknown> {
+    const s = this.s();
+    if (expression.includes("od:poll")) {
+      if (s.pollScript?.length && s.sendClicks > 0 && !s.sendSwallowed)
+        Object.assign(s, s.pollScript.shift());
+      return {
+        stopVisible: s.stopVisible,
+        sendStarting: s.sendStarting,
+        conversationText: s.conversation,
+        inputText: s.inputText,
+        pageHidden: s.pageHidden,
+      };
+    }
+    if (expression.includes("od:layout-probe")) {
+      // 桩按**状态**计算守卫锚点命中数；返回结构与真机 layoutProbeExpression 一致。
+      const anchors = OPEN_DESIGN_LAYOUT_GUARD_KEYS.map((key) => ({
+        key,
+        count: this.countOf(key),
+      }));
+      return {
+        url: "od://app/",
+        title: "Open Design",
+        anchors,
+        bodyTextLength: (s.conversation || s.direction || "Open Design").length,
+      };
+    }
+    if (expression.includes("od:exists")) return this.countOf(odKeyOf(expression)) > 0;
+    if (expression.includes("od:count")) return this.countOf(odKeyOf(expression));
+    if (expression.includes("od:text") || expression.includes("od:trigger-text"))
+      return this.textOf(odKeyOf(expression));
+    if (expression.includes("od:input-value"))
+      return { found: this.countOf("inputBox"), value: s.inputText, length: s.inputText.length };
+    if (expression.includes("od:conversation-text")) return s.conversation;
+    if (expression.includes("od:labels")) return this.itemsOf(odKeyOf(expression));
+    if (expression.includes("od:dismiss")) {
+      const openBefore = this.countOf("modelMenuItem");
+      this.state.modelMenuOpen = false;
+      this.state.dsMenuOpen = false;
+      this.state.directionMenuOpen = false;
+      this.state.workDirPanelOpen = false;
+      return { openBefore };
+    }
+    if (expression.includes("od:exact-point")) {
+      const key = odKeyOf(expression) || (expression.includes("working-dir-pick") ? "selectDirItem" : "");
+      const target = JSON.parse(
+        /odNorm\(("(?:[^"\\]|\\.)*")\)/.exec(expression)?.[1] ?? '""',
+      ) as string;
+      const available = this.itemsOf(key);
+      const matches = available.filter((label) => odNorm(label) === odNorm(target));
+      if (matches.length !== 1) return { count: matches.length, available };
+      const index = available.indexOf(matches[0]!);
+      const base = OD_POINTS[this.concreteKey(key)];
+      if (!base) return { count: 0, available };
+      return { count: 1, available, point: { x: base.x, y: odItemY(base.y, index) } };
+    }
+    if (expression.includes("od:first-point") || expression.includes("od:point")) {
+      const key = odKeyOf(expression);
+      if (this.s().duplicatedKeys?.includes(key)) return { count: 2 };
+      const point = this.pointOf(key);
+      return point ? { count: 1, point } : { count: 0 };
+    }
+    if (expression.includes("od:raw-point")) {
+      // 首页入口：仅在**不在首页**时可见（复刻「从会话页切回首页」）
+      if (s.noHomeEntry) return { count: 0 };
+      return s.onHome ? { count: 0 } : { count: 1, point: { x: 5, y: 5 } };
+    }
+    return "";
+  }
+
+  private applyClick(x: number, y: number): void {
+    const s = this.s();
+    if (x === 5) {
+      // 首页入口
+      s.clicks.push("home-entry");
+      s.onHome = true;
+      return;
+    }
+    if (x === 40) {
+      s.clicks.push("working-dir-trigger");
+      s.workDirPanelOpen = !s.workDirPanelOpen;
+      return;
+    }
+    if (x === 50) {
+      s.clicks.push("select-dir-item");
+      s.nativeDialogCalls += 1;
+      return;
+    }
+    if (x === 60) {
+      s.clicks.push("model-trigger");
+      s.modelMenuOpen = !s.modelMenuOpen;
+      return;
+    }
+    if (x === 70) {
+      const index = odItemIndex(70, y);
+      s.clicks.push(`model-item:${index}`);
+      const picked = s.models[index];
+      if (picked) s.model = picked;
+      s.modelMenuOpen = false;
+      return;
+    }
+    if (x === 80) {
+      s.clicks.push("ds-trigger");
+      s.dsMenuOpen = !s.dsMenuOpen;
+      return;
+    }
+    if (x === 100) {
+      const index = odItemIndex(100, y);
+      const available = this.itemsOf("designSystemItem");
+      s.clicks.push(`ds-item:${index}`);
+      const picked = available[index];
+      if (picked) s.designSystem = picked;
+      s.dsMenuOpen = false;
+      s.dsSearch = "";
+      return;
+    }
+    if (x === 110) {
+      s.clicks.push("direction-trigger");
+      s.directionMenuOpen = !s.directionMenuOpen;
+      return;
+    }
+    if (x === 120) {
+      const index = odItemIndex(120, y);
+      s.clicks.push(`direction-item:${index}`);
+      const picked = s.directions[index];
+      if (picked) s.direction = picked;
+      s.directionMenuOpen = false;
+      return;
+    }
+    if (x === 130) {
+      // 发送：真机上「用户消息落地 + 输入框清空 + 进入会话页 + 运行信号出现」同现
+      s.clicks.push("send");
+      s.sendClicks += 1;
+      if (s.sendSwallowed) return;
+      s.conversation = `${s.conversation}\n${s.inputText}`;
+      s.inputText = "";
+      s.onHome = false;
+      s.stopVisible = true;
+      s.sendStarting = true;
+      return;
+    }
+    if (x === 140) {
+      s.clicks.push("stop-button");
+      s.stopVisible = false;
+      s.sendStarting = false;
+      return;
+    }
+  }
 }

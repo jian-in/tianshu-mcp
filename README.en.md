@@ -12,7 +12,7 @@ Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.
 
 **Tianshu × AI-Agent orchestration MCP server**
 
-Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN, ZCode, Kimi Code and Qoder CN, all driven through their desktop UIs over CDP; the Open Design adapter is in development) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
+Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN, ZCode, Kimi Code, Qoder CN and Open Design, all driven through their desktop UIs over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
 
 > Official Tianshu repository: [github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) — a harness-engineering terminal coding-agent runtime (TUI × GUI); this MCP plugs into it as an MCP server.
 
@@ -268,7 +268,7 @@ On stderr, `INFO` means skipped/installed; `WARN` means a stale copy was upgrade
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
 | [docs/qoder-cdp.en.md](docs/qoder-cdp.en.md) | Qoder CN GUI driver: installation discovery and instance reuse, full-path workspaces with native import, `modelSource` and global Model Management reasoning tiers, send/answer checkpoints, liveness judging and same-session repair, hardware evidence and uncovered items |
-| [docs/opendesign-cdp.en.md](docs/opendesign-cdp.en.md) | Open Design GUI driver (phase P0): install discovery and data-directory derivation, the truth about the single-instance lock and `--user-data-dir`, sidecar root-process determination, CDP product validation and port ranges, UI anchor candidates and the selector-capture workflow, failure codes |
+| [docs/opendesign-cdp.en.md](docs/opendesign-cdp.en.md) | Open Design GUI driver: install discovery and data-directory derivation, the truth about the single-instance lock and `--user-data-dir`, sidecar root-process determination, CDP product validation and port ranges, the **selector evidence table (product-artifact `data-testid`) and the twelve-step chain**, the two-path transport (`/json` hangs → browser-level WS fallback), failure codes |
 | [docs/gui-log-viewer.en.md](docs/gui-log-viewer.en.md) | **Log viewer GUI (`mcp-gui/`)**: read-only local viewer for the four log types and task artifacts, data-home configuration, search/export, dual-source (Gitee/GitHub) auto-update and recovery, local development vs. CI build boundary |
 | [docs/issue-25-gui-real-machine-record.md](docs/issue-25-gui-real-machine-record.md) | Real-machine acceptance record for the log viewer GUI (CI artifacts as the vehicle) and the dual-source update checklist (issue #25) |
 | [docs/release-v0.5.10.en.md](<docs/release-v0.5.10.en.md>) | v0.5.10 release notes (`run_task` / `verify_task` idempotency keys: TTL replay, in-progress answer, fail-closed on same key with different arguments, the persisted `idempotency.json`, and the `idempotentHint` annotation; issue #15) |
