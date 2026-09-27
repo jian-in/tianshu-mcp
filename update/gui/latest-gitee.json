@@ -1,0 +1,19 @@
+{
+  "version": "0.1.0-beta.1",
+  "notes": "Tianshu-mcp 日志台 0.1.0-beta.1（测试版）",
+  "pub_date": "2026-09-27T02:15:56Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTSUhhandxWENqeUkwRWd1T1VyVmdxOFltcFlCNTBSV0Z0YXdXNHdzaHV4VHdrODM2NnRMeHhPb2pEU0dGT2pJTkJiaENYRUYwMFhqczl0WVdVK2dXRHlPbjJRSU9NeGdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDc1Mjc4CWZpbGU6VGlhbnNodS1tY3AtTG9ncy5hcHAudGFyLmd6CXZlcnNpb246MC4xLjAtYmV0YS4xCi9kVmtmT0lyYUxhV0FxR3ZtaGgrWVUzZVhOeUFOZlN1YTREVkxzRFJDa3BmVFZIUG1aK0xwWEE3SmVtWWlmWmtiRWZFZnpYanVERDRDZHNNQXVIcUJRPT0K",
+      "url": "https://gitee.com/lan0811/tianshu-mcp/releases/download/gui-v0.1.0-beta.1/Tianshu-mcp-Logs_darwin-aarch64.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTSUhhandxWENqeUdwMWZGZHNKQ1ovTjZOTmZHRDkra1hhaUVuVTlOY1pib0YrRzFpbjRGOGsrcEY3c2dhcGlJSGdxTzdQclpLQ0NWcnRaQWdwTldZb3R1V2czbUlQcXdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDc1MzQ1CWZpbGU6VGlhbnNodS1tY3AtTG9ncy5hcHAudGFyLmd6CXZlcnNpb246MC4xLjAtYmV0YS4xCjl3eVcxRHJPaytMS0VzbHNTVE9xZ2NONUN0TnIwRW4vUkxCeW9iN2QrRFR1VHZzMi9aVU1nMXpDUVNjOEpQeUR6SHEzVDIvSk00dk02VDNVTzk0VEJBPT0K",
+      "url": "https://gitee.com/lan0811/tianshu-mcp/releases/download/gui-v0.1.0-beta.1/Tianshu-mcp-Logs_darwin-x86_64.app.tar.gz"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTSUhhandxWENqeUpoRHVKUXZoQW0xM1dhRjZ4OVpjaElXVGdWaXNzSXJ2RUtTUlVBTVpPdDB2R3orQTNjODRLUnJiUkEvbjhoRHNENWRrUTRqRUZSMzdhaGh3UGc5ZkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNDc1MDE4CWZpbGU6VGlhbnNodS1tY3AtTG9nc18wLjEuMC1iZXRhLjFfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMS4wLWJldGEuMQoyNjQ4d002MUlTdjZpTmdDVzY4eG9DOThYbGgzQmo4Wk1ybWxmOUtUTHJhTUNQWmhlSjh0NlcwYmhIYjUyODg5QTA4czBVcUtkOFhXWFFrMFpLM1pDUT09Cg==",
+      "url": "https://gitee.com/lan0811/tianshu-mcp/releases/download/gui-v0.1.0-beta.1/Tianshu-mcp-Logs_0.1.0-beta.1_x64-setup.exe"
+    }
+  }
+}
