@@ -18,6 +18,7 @@ import {
   listOpenDesignProcessesAsync,
   OPEN_DESIGN_ENV_DENYLIST,
   parseProcessRows,
+  pickOpenDesignPort,
   probeOpenDesignPort,
   remoteDebugPort,
   rootOpenDesignProcesses,
@@ -332,6 +333,30 @@ describe("Open Design 进程枚举与产品校验", () => {
     expect(remoteDebugPort('"Open Design.exe" --remote-debugging-port=9777')).toBe(9777);
     expect(remoteDebugPort('"Open Design.exe" --remote-debugging-port 9778')).toBe(9778);
     expect(remoteDebugPort('"Open Design.exe"')).toBeNull();
+  });
+
+  it("端口避让：基准端口被占时在区段内前移，取首个可用端口", async () => {
+    const busy = new Set([9889, 9890]);
+    const picked = await pickOpenDesignPort(
+      { cdpPort: 9889, cdpPortAuto: true, cdpPortRange: 10 },
+      async (p) => !busy.has(p),
+    );
+    expect(picked).toBe(9891);
+  });
+
+  it("端口段全被占 → 硬失败并回显**尝试过的端口范围**（计划 §5）", async () => {
+    await expect(
+      pickOpenDesignPort({ cdpPort: 9889, cdpPortAuto: true, cdpPortRange: 3 }, async () => false),
+    ).rejects.toThrow(/端口范围不可用：9889-9891/);
+  });
+
+  it("关闭自动避让时只认基准端口：被占即硬失败并回显端口号", async () => {
+    await expect(
+      pickOpenDesignPort({ cdpPort: 9889, cdpPortAuto: false, cdpPortRange: 10 }, async () => false),
+    ).rejects.toThrow(/端口 9889 已被占用/);
+    await expect(
+      pickOpenDesignPort({ cdpPort: 9889, cdpPortAuto: false, cdpPortRange: 10 }, async () => true),
+    ).resolves.toBe(9889);
   });
 
   it("产品校验：UA 含 electron 且存在本产品页面才算就绪", async () => {

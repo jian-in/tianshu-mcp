@@ -44,7 +44,8 @@
 
 ### 测试
 
-- 新增 **54** 个用例（6 文件）：
+- 新增 **57** 个用例（6 文件 + `opendesign-discovery.test.ts` 扩充）：
+  - `test/unit/opendesign-discovery.test.ts`（30 → **33**）：新增**端口避让**用例——基准端口被占时在区段内前移取首个可用端口、整段不可用即硬失败并**回显尝试过的范围**、关闭自动避让时只认基准端口（被占即硬失败并回显端口号）。为此把端口选择抽成可注入的 `pickOpenDesignPort`（不占端口、不启进程即可固化计划 §5 的该条失败模式）。
   - `test/integration/opendesign-flow.test.ts`（12）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 8 条 fail-closed 路径（非法方向在入口拒绝、模型未命中回显候选、版本不匹配、宿主平台未取证不拦截、布局漂移（含页面文本片段诊断）、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`），并断言事件流（`task_dispatched` / `file_modification_started`）与 `guiStop` 如实回报；
   - `test/integration/opendesign-rework-loop.test.ts`（5）：编排级返修闭环——计划落**项目根**且返修指令只带**相对路径**、计划含视觉差异表与定向修复要求、轮次封顶转 `needs_attention` 且每轮独立不覆盖、无验收报告时手动返修 fail-closed、有报告时把用户追加要求并入指令；
   - `test/unit/opendesign-menu.test.ts`（8）：复用分支、触发器不唯一、菜单未出现、同名多命中、未命中回显候选、点中但回读不一致、搜索过滤路径、回读轮询；

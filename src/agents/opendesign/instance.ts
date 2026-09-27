@@ -201,6 +201,30 @@ function freePort(port: number): Promise<boolean> {
   });
 }
 
+/**
+ * 选一个可用的 CDP 端口。
+ *
+ * 计划 §5 要求「端口段全被占 → 硬失败并**回显尝试过的端口范围**」——把它抽成可注入的纯函数，
+ * 才能在不真的占用端口、也不启动进程的前提下把这条失败模式固化下来
+ * （`isFree` 注入即免去真实网络探测）。
+ */
+export async function pickOpenDesignPort(
+  gui: Pick<GuiProfile, "cdpPort" | "cdpPortAuto" | "cdpPortRange">,
+  isFree: (port: number) => Promise<boolean> = freePort,
+): Promise<number> {
+  if (gui.cdpPortAuto) {
+    for (let i = 0; i < gui.cdpPortRange; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await isFree(gui.cdpPort + i)) return gui.cdpPort + i;
+    }
+    throw new Error(
+      `Open Design CDP 端口范围不可用：${gui.cdpPort}-${gui.cdpPort + gui.cdpPortRange - 1}`,
+    );
+  }
+  if (!(await isFree(gui.cdpPort))) throw new Error(`Open Design CDP 端口 ${gui.cdpPort} 已被占用`);
+  return gui.cdpPort;
+}
+
 interface CdpPageTargetLike {
   type?: string;
   title?: string;
@@ -380,22 +404,9 @@ export async function ensureOpenDesignInstance(
     throw new Error(`等待既有 Open Design CDP 页面就绪超时（${gui.launchTimeoutMs}ms）`);
   }
   options.signal?.throwIfAborted();
-  let port = gui.cdpPort;
-  if (gui.cdpPortAuto) {
-    let found = false;
-    for (let i = 0; i < gui.cdpPortRange; i++) {
-      // eslint-disable-next-line no-await-in-loop
-      if (await freePort(gui.cdpPort + i)) {
-        port = gui.cdpPort + i;
-        found = true;
-        break;
-      }
-    }
-    if (!found)
-      throw new Error(
-        `Open Design CDP 端口范围不可用：${gui.cdpPort}-${gui.cdpPort + gui.cdpPortRange - 1}`,
-      );
-  } else if (!(await freePort(port))) throw new Error(`Open Design CDP 端口 ${port} 已被占用`);
+  // 端口避让：基准端口被占时在区段内自动前移；整段不可用即硬失败并回显**尝试过的范围**
+  // （计划 §5）。逻辑抽在 pickOpenDesignPort 里，便于单测注入「哪些端口可用」。
+  const port = await pickOpenDesignPort(gui);
   const args = gui.exeArgs.map((arg) => arg.replaceAll("<port>", String(port)));
   options.signal?.throwIfAborted();
   // 桌面实例必须 detached：不变量与实测依据见 guiInstanceSpawnOptions。
