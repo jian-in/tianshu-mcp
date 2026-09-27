@@ -111,6 +111,14 @@ function buildFragment(args) {
   const artifact = qualifyArtifactName(found, platform);
   const sigFile = `${artifact}.sig`;
   const filename = path.basename(artifact);
+  // GitHub 会**重命名**含特殊字符/非字母数字字符的发行资产名（空格 → 点），Gitee 则原样保留；
+  // 两端命名不一致会让更新清单里的下载地址失效（且是静默失效）。故载体名必须是 URL 安全字符集。
+  if (!/^[A-Za-z0-9._-]+$/.test(filename)) {
+    throw new Error(
+      `更新载体名「${filename}」含 URL 不安全字符（仅允许 [A-Za-z0-9._-]）：` +
+        "GitHub 会重命名这类资产名（空格→点）而 Gitee 不会，会导致两端下载地址不一致。请修正 bundle.productName。",
+    );
+  }
   const fragment = {
     platform,
     filename,

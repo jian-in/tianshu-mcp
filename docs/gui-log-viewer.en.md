@@ -27,6 +27,12 @@ Artifacts are produced by CI (the `GUI` GitHub Actions workflow):
 > (`*-setup.exe` + `*-setup.exe.sig`); on macOS it is `.app.tar.gz` + `.sig`.
 > Note that Tauri's macOS payload name carries **no arch**, so the two architectures would collide and overwrite each
 > other; CI therefore **renames it per platform** before publishing to keep the names unique.
+>
+> The artifact base name comes from `bundle.productName`; this project deliberately uses the **space-free**
+> `Tianshu-mcp-Logs` (the in-app display name stays "Tianshu-mcp 日志台 / Tianshu-mcp Logs"). GitHub **renames**
+> release assets containing spaces or other non-alphanumeric characters (space → dot) while Gitee keeps them as-is,
+> and that mismatch would break the download URLs inside the update manifests. CI also asserts that payload names use
+> only `[A-Za-z0-9._-]` and fails otherwise.
 
 > **macOS builds are not code-signed or notarized by Apple**: the first launch may require manual approval under
 > System Settings → Privacy & Security. This does not affect functionality or auto-update — update integrity is

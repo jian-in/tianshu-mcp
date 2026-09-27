@@ -276,24 +276,21 @@ jobs:
           TAG="${{ github.ref_name }}"
           TITLE="Tianshu-mcp 日志台 $TAG（测试版）"
           NOTES="本地只读查看天枢 MCP 的运行日志与任务产物（Tauri 2.x + Vue 3）。测试版通道，与 MCP 主包发版互不干扰。文档见 docs/gui-log-viewer.md / .en.md。"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            # 幂等重跑：先更新元信息，再清空旧资产后重传。
-            # 必须清空——旧一轮可能残留「同名但内容属于另一架构」的载体（macOS 两架构早期同名相互覆盖）。
-            echo "发行版已存在，改为更新并重置资产：$TAG"
-            gh release edit "$TAG" --prerelease --title "$TITLE" --notes "$NOTES"
-            while IFS= read -r name; do
-              if [ -n "$name" ]; then
-                gh release delete-asset "$TAG" "$name" -y
+          # 幂等重跑：先删掉该 tag 的历史发行版，再以当前构建产物全新创建。
+          # 必须按 API 列表删除（而非 `gh release view <tag>`）：tag 被删除时 GitHub 会把已发布
+          # 发行版**自动转为 draft**，而 draft 无法按 tag 查到，会残留旧资产（可能属于另一架构）。
+          gh api "repos/${{ github.repository }}/releases?per_page=100" --paginate \
+            --jq ".[] | select(.tag_name==\"$TAG\") | .id" | while read -r id; do
+              if [ -n "$id" ]; then
+                gh api -X DELETE "repos/${{ github.repository }}/releases/$id"
+                echo "已删除历史发行版 id=$id"
               fi
-            done < <(gh release view "$TAG" --json assets --jq '.assets[].name')
-            gh release upload "$TAG" release/*
-          else
-            gh release create "$TAG" \
-              --prerelease \
-              --title "$TITLE" \
-              --notes "$NOTES" \
-              release/*
-          fi
+            done
+          gh release create "$TAG" \
+            --prerelease \
+            --title "$TITLE" \
+            --notes "$NOTES" \
+            release/*
 
       - name: Publish Gitee pre-release with attachments + write Gitee manifest
         if: steps.manifest.outputs.built == 'true'
@@ -304,12 +301,22 @@ jobs:
           TAG="${{ github.ref_name }}"
           VER="${TAG#gui-v}"
           FILES=$(ls release/* | paste -sd, -)
-          node scripts/gitee-gui-release.mjs \
+          echo "release 目录："; ls -la release
+          # 公开仓的 job 日志下载需 admin（403），失败时把原因写成**注解**（公开可读）便于排障
+          set +e
+          OUT=$(node scripts/gitee-gui-release.mjs \
             --version "$VER" \
             --tag "$TAG" \
             --files "$FILES" \
             --github-manifest latest.json \
-            --out-manifest latest-gitee.json
+            --out-manifest latest-gitee.json 2>&1)
+          CODE=$?
+          set -e
+          printf '%s\n' "$OUT"
+          if [ "$CODE" -ne 0 ]; then
+            echo "::error::Gitee 发布失败（exit $CODE）：$(printf '%s' "$OUT" | tr '\n' '|' | cut -c1-3000)"
+            exit "$CODE"
+          fi
 
       - name: Commit GitHub manifest (update/gui/latest.json)
         if: steps.manifest.outputs.built == 'true'

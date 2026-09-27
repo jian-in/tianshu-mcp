@@ -48,6 +48,8 @@
   ② Gitee Contents API **新建文件必须 `POST`、更新才用 `PUT`**，脚本对首次发布的不存在文件发了 `PUT` → 被拒；
   ③ 发布步骤非幂等，tag 重跑时 `gh release create` 报「已存在」。
   修法：macOS 载体按平台重命名（幂等）；Gitee 按 `sha` 选择 `POST`/`PUT` 并清理旧附件；GitHub 发布改为「已存在则 edit + delete-asset + upload」。
+  另外两个**静默缺陷**一并修掉：③ `bundle.productName` 含空格 → GitHub 会把发行资产名里的空格归一化成点、Gitee 原样保留，两端不一致会让清单下载地址失效（改为无空格 `Tianshu-mcp-Logs`，界面显示名不变，并加「载体名必须是 `[A-Za-z0-9._-]`」的断言）；
+  ④ Gitee 清单在缺附件时只 warn 并沿用 GitHub 地址（中国大陆不可达 = 更新不可用却不报错）→ 改为 fail-closed。Gitee 附件上传另加指数退避重试（仅 5xx/429/网络错误）与失败注解。
   **教训**：`Build updater manifest fragment` 与发布步骤只在 **tag 运行**时执行，非 tag 的 push / 手动触发一律跳过 → 「构建全绿」不等于「发布链路可用」。
 - **Tauri 2 异步命令规则（本次踩坑）**：`async fn` 命令**只要含借用输入**（如 `State<'_, T>`）就**必须返回 `Result<_, _>`**，
   否则编译报 `E0277 async commands that contain references as inputs must return a Result` +

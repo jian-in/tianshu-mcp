@@ -117,6 +117,9 @@
 | 2-a | macOS 载体**同名覆盖**（发布前即已发生，不在 CI 报错） | Tauri 产出的 macOS 更新载体名为 `{productName}.app.tar.gz`，**不含架构**；`darwin-aarch64` 与 `darwin-x86_64` 同名，发布脚本 `cp -n` 只留先到的一个 → 其中一个架构会拿到**错误架构**的包（实测 GitHub / Gitee 发行版均只剩 1 个 `.app.tar.gz`） | 清单脚本在 fragment 阶段**按平台重命名**为 `*_<platform>.app.tar.gz`（含 `.sig`，幂等）；已本地验证两架构名唯一、重跑不叠加后缀 |
 | 2-b | `Publish Gitee pre-release with attachments + write Gitee manifest` | Gitee Contents API 与 GitHub 不同：**新建文件用 `POST`、更新才用 `PUT`**；脚本对首次发布的**不存在**文件发了 `PUT` → 被拒（发行版与附件其实都已建好，只差清单写入） | 按 `sha` 是否存在选择 `POST` / `PUT`，并把 `access_token` 同时放入 query；同时**清理上一轮残留旧附件**（仅限本管道管理的安装包/载体后缀，best-effort 不中断） |
 | 2-c | 重跑时 `gh release create` 报「已存在」 | 发布步骤非幂等：tag 重跑（本计划明确支持的恢复路径）会直接失败 | 改为幂等：发行版已存在则 `gh release edit` 更新元信息 + `delete-asset` 清空旧资产 + `upload` 重传 |
+| 2-d | （静默缺陷）产物名含空格 | `bundle.productName` 为 `Tianshu-mcp Logs`，Tauri 产物名因此含空格。**GitHub 会重命名含空格等非字母数字字符的发行资产名（空格→点），Gitee 却原样保留**（实测 GitHub 资产为 `Tianshu-mcp.Logs_*.exe`、Gitee 为 `Tianshu-mcp Logs_*.exe`）→ 两端命名不一致，更新清单里的下载地址会失效 | `productName` 改为无空格的 `Tianshu-mcp-Logs`（界面显示名不变）；CI 增加断言：载体名含非 `[A-Za-z0-9._-]` 字符即失败 |
+| 2-e | Gitee 附件上传中断 | 本次 `Publish Gitee` 在**第 5 个附件**（首个 `.app.tar.gz`）上传时中断（前 4 个已成功落库，与文件名/大小无关，指向瞬时故障）；且公开仓 job 日志需 admin（403），拿不到原文 | 附件上传/清单写入增加**指数退避重试**（仅对 5xx / 429 / 网络错误重试，4xx 立即失败）；Gitee 步骤失败时把 `node` 输出转为 **`::error::` 注解**（公开可读）便于下次直接定位 |
+| 2-f | （静默降级）Gitee 清单可能指向 GitHub | 某平台在 Gitee 找不到附件时仅 `warn` 并沿用 GitHub 地址 —— 中国大陆网络下 GitHub 通常不可达，等于自动更新不可用，却不报错 | 改为 **fail-closed**：任一平台缺 Gitee 附件即拒绝生成清单并报错 |
 
 > 教训：**「构建全绿」不等于「发布链路可用」**——`Build updater manifest fragment` 与 `publish` 里的发布步骤都只在 **tag 运行**时才执行，
 > 非 tag 的 push / 手动触发一律跳过；因此首次打 tag 才会把这些问题一次性暴露出来。

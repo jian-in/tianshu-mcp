@@ -26,6 +26,10 @@ Tianshu-mcp 日志台（英文名 **Tianshu-mcp Logs**）是一个**本地只读
 > Windows 侧不额外打包 `.nsis.zip`，而是直接复用 NSIS 安装器（`*-setup.exe` + `*-setup.exe.sig`）；
 > macOS 侧为 `.app.tar.gz` + `.sig`。
 > 注意 Tauri 产出的 macOS 载体名**不含架构**，两个架构会同名相互覆盖，故发布前由 CI **按平台重命名**以保证唯一。
+>
+> 产物基名取自 `bundle.productName`，本项目刻意使用 **无空格** 的 `Tianshu-mcp-Logs`（界面显示名仍是「Tianshu-mcp 日志台 / Tianshu-mcp Logs」）：
+> GitHub 会**重命名**含空格等非字母数字字符的发行资产名（空格→点），而 Gitee 原样保留，两端不一致会让更新清单里的下载地址失效。
+> CI 另有一道断言，产物名含非 `[A-Za-z0-9._-]` 字符即直接失败。
 
 > **macOS 未做 Apple 代码签名与公证**：首次打开可能需要在「系统设置 → 隐私与安全性」中手动允许。
 > 这不影响功能，也不影响自动更新——更新包的完整性由 minisign 签名校验保证。

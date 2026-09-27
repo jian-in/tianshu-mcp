@@ -159,8 +159,35 @@ async function uploadAttachment(releaseId, filePath) {
     body: form,
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`上传附件 ${filename} 失败 HTTP ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) {
+    const err = new Error(`上传附件 ${filename} 失败 HTTP ${res.status}: ${text.slice(0, 300)}`);
+    err.status = res.status;
+    throw err;
+  }
   return JSON.parse(text);
+}
+
+/**
+ * 瞬时故障重试：Gitee 上传大附件偶发 5xx / 429 / 网络中断。
+ * **只对可恢复错误重试**（无状态码的网络错误、5xx、429）；4xx 属于确定性拒绝，
+ * 立即失败并把响应体带出来，避免把「参数/命名问题」误当成抖动反复重试。
+ */
+async function withRetry(label, fn, attempts = 4) {
+  let lastErr;
+  for (let i = 1; i <= attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = err.status;
+      const retryable = status === undefined || status === 429 || status >= 500;
+      if (!retryable || i === attempts) break;
+      const waitMs = 1000 * 2 ** (i - 1);
+      console.warn(`${label} 第 ${i}/${attempts} 次失败（${err.message}），${waitMs}ms 后重试`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+  throw lastErr;
 }
 
 async function deleteAttachment(releaseId, attachFileId) {
@@ -211,9 +238,11 @@ async function putRepoFile(repoPath, content) {
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(
+    const err = new Error(
       `${sha ? "更新" : "新建"}仓内文件 ${repoPath} 失败 HTTP ${res.status}: ${text.slice(0, 300)}`,
     );
+    err.status = res.status;
+    throw err;
   }
 }
 
@@ -234,7 +263,9 @@ async function main() {
       console.log(`附件已存在，跳过上传：${filename}`);
       continue;
     }
-    const uploaded = await uploadAttachment(release.id, file);
+    const uploaded = await withRetry(`上传 ${filename}`, () =>
+      uploadAttachment(release.id, file),
+    );
     const url = attachmentUrl(uploaded);
     if (!url) {
       throw new Error(`上传 ${filename} 成功但未返回下载地址，无法生成更新清单`);
@@ -274,14 +305,18 @@ async function main() {
     platforms[platform] = { signature: entry.signature, url };
   }
   if (missing.length > 0) {
-    console.warn(`以下平台未在 Gitee 找到对应附件，沿用 GitHub 地址：${missing.join(", ")}`);
+    // fail-closed：Gitee 清单必须指向 Gitee 附件，否则「双源」名存实亡
+    // （中国大陆网络下 GitHub 地址通常不可达，等于自动更新不可用）。
+    throw new Error(`以下平台在 Gitee 未找到对应附件，拒绝生成残缺清单：${missing.join(", ")}`);
   }
 
   const manifest = { ...gh, platforms };
   writeFileSync(path.resolve(outManifest), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   console.log(`已生成 Gitee 清单：${outManifest}（平台 ${Object.keys(platforms).join(", ")}）`);
 
-  await putRepoFile(MANIFEST_REPO_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
+  await withRetry("写入 Gitee 仓内清单", () =>
+    putRepoFile(MANIFEST_REPO_PATH, `${JSON.stringify(manifest, null, 2)}\n`),
+  );
   console.log(`已写入 Gitee 仓内清单：${MANIFEST_REPO_PATH}`);
 }
 
