@@ -13,8 +13,8 @@
 | 事件 | 含义 | 何时上报 |
 |---|---|---|
 | `task_dispatched` | 指令已确认送达 agent | codex：发送确认循环通过后；traework：`typeAndSend` 返回后 |
-| `confirmation_dialog_detected` | 检测到确认类对话框 | codex：清理残留原生弹窗、唤起原生「选择文件夹」时；traework：项目绑定经原生「选择文件夹」对话框时 |
-| `awaiting_user_authorization` | 等待用户授权 / 登录 / 确认 | codex：`loginIndicator` 可见、`needs_login`、`needs_user` 判定；traework：`ask_user` 挂起 |
+| `confirmation_dialog_detected` | 检测到确认类对话框 | codex：清理残留原生弹窗、唤起原生「选择文件夹」时；traework：项目绑定经原生「选择文件夹」对话框时；opendesign：清理残留原生对话框、经原生「选择文件夹」绑定工作目录时 |
+| `awaiting_user_authorization` | 等待用户授权 / 登录 / 确认 | codex：`loginIndicator` 可见、`needs_login`、`needs_user` 判定；traework：`ask_user` 挂起；opendesign：既有实例无法接管、停在登录/引导页、工作目录绑定失败、停止按钮久亮转人工确认、初始化阶段环境不可自愈 |
 | `file_modification_started` | agent 开始执行 | codex / traework：运行信号（停止按钮）**首次**出现时，每轮只报一次 |
 | `rework_triggered` | 验收失败后进入返修 | 引擎侧统一上报：自动返修 `mode:"auto"`，手动 `rework_task` `mode:"manual"` |
 
@@ -81,5 +81,8 @@ async function runXxxTask(args: RunXxxArgs): Promise<AgentRunResult> {
    事件上报属观测能力，**绝不能影响任务本体**。
 3. 无需修改 `AgentProfileSchema`。「可选」由调用侧 `opts.onEvent?.(…)` 与 `makeEmitter` 共同表达，
    未实现的适配器**一个字节都不用改**。
-4. 当前真正上报事件的内置适配器：**codex**、**traework**（issue #18 的验收范围）。
+4. 当前真正上报事件的内置适配器：**codex**、**traework**（issue #18 的验收范围）与 **opendesign**
+   （`task_dispatched` / `file_modification_started`；并在接管失败、停在登录/引导页、工作目录绑定失败、
+   停止按钮久亮转人工确认、初始化阶段环境不可自愈这五处上报 `awaiting_user_authorization`，
+   清理残留原生对话框与经原生「选择文件夹」绑定目录时上报 `confirmation_dialog_detected`）。
    zcode / kimicode / qoder 与全部 CLI 适配器保留接口、暂不上报。

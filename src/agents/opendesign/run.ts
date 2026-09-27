@@ -419,7 +419,12 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
         await deps.sleep(500 * (attempt + 1));
       }
     }
-    if (inst.needsClose)
+    if (inst.needsClose) {
+      await emit(
+        "awaiting_user_authorization",
+        "既有 Open Design 实例未开启 CDP 调试端口，等待用户关闭该实例后继续",
+        { round: ctx.round },
+      );
       return result({
         endReason: "needs_user",
         needsUserKind: "close_existing_instance",
@@ -428,6 +433,7 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
           "请先手动关闭该 Open Design 窗口（不要 kill 其他无关进程），然后调用 continue_task 继续。",
         progressSummary: "Open Design 已在运行但未开启调试端口，等待用户关闭后重试",
       });
+    }
     if (!inst.ready) return hardFail("Open Design 实例未就绪", "setup_failed");
     const ready: OpenDesignReady = inst.ready;
     logger.info(`[opendesign] 已接管实例：port=${ready.port} title=${ready.title ?? "(未知)"}`);
@@ -442,6 +448,12 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
           const closed = await deps.closeDialogs(pids);
           logger.warn(
             `[opendesign] 清理残留原生对话框 ${closed}/${strays.length} 个：${strays.join("；")}`,
+          );
+          // 事件流（issue #18 词表）：残留模态框属于「需要人工知情的确认类对话框」——它会吞掉主窗口点击
+          await emit(
+            "confirmation_dialog_detected",
+            `清理了 ${closed}/${strays.length} 个残留原生对话框（模态框会吞掉主窗口合成点击）`,
+            { round: ctx.round },
           );
         }
       }
@@ -470,6 +482,11 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
     rawClient = client;
     const conn = await connectStable(client, gui, baseDeps.sleep);
     if (!conn.ok) {
+      await emit(
+        "awaiting_user_authorization",
+        "Open Design 主窗口可读但任务输入框始终未出现（通常停在登录/引导页），等待用户完成登录",
+        { round: ctx.round },
+      );
       return result({
         endReason: "needs_user",
         needsUserKind: "login_required",
@@ -585,6 +602,12 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
         logger.warn(
           `[opendesign] 工作目录绑定失败：reason=${bound.reason ?? "unknown"}；${bound.message ?? ""}`,
         );
+        // 事件流：需要人工介入（授权/环境）——任务卡在这里等人处理
+        await emit(
+          "awaiting_user_authorization",
+          `工作目录绑定失败（${bound.reason ?? "unknown"}）：${bound.message ?? ""}`,
+          { round: ctx.round },
+        );
         return result({
           endReason: "needs_user",
           needsUserKind: needsPermission ? "system_permission" : "setup_recovery",
@@ -598,6 +621,14 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
         });
       }
       logger.info(`[opendesign] 工作目录绑定回读通过：${bound.shown ?? ctx.projectPath}`);
+      if (bound.native) {
+        // 事件流（issue #18 词表）：本次经 Windows 原生「选择文件夹」对话框完成绑定
+        await emit(
+          "confirmation_dialog_detected",
+          `经原生「选择文件夹」对话框绑定工作目录：${bound.shown ?? ctx.projectPath}`,
+          { round: ctx.round },
+        );
+      }
     } else if (initialDispatch) {
       logger.info("[opendesign] 未提供 projectPath：跳过工作目录绑定（沿用当前目录）");
     }
@@ -729,13 +760,18 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
       if (e.reason === "task_timeout")
         return result({ timeout: true, endReason: "task_timeout", error: msg });
     }
-    if (e instanceof OpenDesignSetupPause || (e instanceof OpenDesignBudgetError && budget.settingUp))
+    if (e instanceof OpenDesignSetupPause || (e instanceof OpenDesignBudgetError && budget.settingUp)) {
+      // 事件流（issue #18 词表）：环境/权限类等待同样是「卡在等人」，要让 query_task 看得见
+      await emit("awaiting_user_authorization", `Open Design 初始化阶段等待人工介入：${msg}`, {
+        round: ctx.round,
+      });
       return result({
         endReason: "needs_user",
         needsUserKind: e instanceof OpenDesignSetupPause && e.needsPermission ? "system_permission" : "setup_recovery",
         pendingQuestion: `${msg}。请在 Open Design 中确认环境后调用 continue_task 继续。`,
         progressSummary: "等待 Open Design 环境恢复",
       });
+    }
     logger.error(`[opendesign] 执行失败：${msg}`);
     return hardFail(msg, "setup_failed");
   } finally {
@@ -886,6 +922,12 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
     if (verdict.kind === "needs_user") {
       const question = verdict.question?.trim();
       // stall 判定 = turn 仍在跑但全静止 → 转 needs_user，交用户确认后重连观察
+      // 事件流（issue #18 词表）：这是「卡在等人」，必须让 query_task 看得见
+      await args.emit(
+        "awaiting_user_authorization",
+        `Open Design 停止按钮持续可见且对话与产物静止（${verdict.evidence}），转人工确认`,
+        { round: ctx.round },
+      );
       return result({
         endReason: "needs_user",
         needsUserKind: "user_confirmation",

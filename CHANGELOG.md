@@ -30,6 +30,7 @@
 - **探针也改用适配器同一套传输层**（`scripts/probe-opendesign.mjs` 的 `cdp` / `anchors`）：原先只走 HTTP `/json` 的旧客户端在真机上会**卡住**，与适配器行为不一致会让真机取证得出误导性结论（「探针读不到」被当成「适配器也读不到」）。现统一走 `OpenDesignTransport`（`/json` → 浏览器级 WS 双路径）。
 - **探针支持 `--save` 落盘真机证据**（`scripts/probe-opendesign.mjs`）：把本次全部输出写进 `docs/opendesign-evidence/`（文件名含时间戳，**成败都写**——失败现场本身就是证据）；新增该目录的**双语 README**，写清采集命令、要回填哪张表、命名约定与「先热覆盖后改源码」的处置顺序。真机验收解锁时，一条命令即可产出计划 §3.7 要求的证据。
 - **新增 `endReason`**：`version_mismatch`、`selector_drift`、`model_unavailable`、`model_mismatch`、`design_system_mismatch`、`input_mismatch`、`send_unknown`、`session_lost`、`reply_stable`、`idle_timeout`、`task_timeout`、`aborted`、`setup_failed`。
+- **细粒度事件流上报补齐（对齐 issue #18 词表）**（`src/agents/opendesign/run.ts`）：除既有的 `task_dispatched` / `file_modification_started`，opendesign 现在在**全部「卡在等人」的出口**上报事件——既有实例无法接管（`close_existing_instance`）、停在登录/引导页（`login_required`）、工作目录绑定失败（`system_permission` / `setup_recovery`）、停止按钮久亮且对话与产物全静止转人工确认（`user_confirmation`）、初始化阶段环境不可自愈，五处统一上报 `awaiting_user_authorization`；清理残留原生对话框与经原生「选择文件夹」绑定工作目录时上报 `confirmation_dialog_detected`。`query_task` 的 `recentEvents` 因此能区分「agent 正在正常工作」与「agent 已卡死等人」。
 - **新增 `needsUserKind`**：`login_required`、`system_permission`、`setup_recovery`、`user_confirmation`（`close_existing_instance` 保持）。
 
 ### 修复
@@ -46,9 +47,9 @@
 
 ### 测试
 
-- 新增 **59** 个用例（6 文件 + `opendesign-discovery.test.ts` 扩充）：
+- 新增 **63** 个用例（6 文件 + `opendesign-discovery.test.ts` 扩充）：
   - `test/unit/opendesign-discovery.test.ts`（30 → **33**）：新增**端口避让**用例——基准端口被占时在区段内前移取首个可用端口、整段不可用即硬失败并**回显尝试过的范围**、关闭自动避让时只认基准端口（被占即硬失败并回显端口号）。为此把端口选择抽成可注入的 `pickOpenDesignPort`（不占端口、不启进程即可固化计划 §5 的该条失败模式）。
-  - `test/integration/opendesign-flow.test.ts`（14）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 10 条 fail-closed/边界路径（非法方向在入口拒绝、无 `projectPath` 跳过目录绑定与视觉验收且终态文案如实说明、`user_confirmation` 恢复只重连观察且**一个字都不发**、模型未命中回显候选、版本不匹配、宿主平台未取证不拦截、布局漂移（含页面文本片段诊断）、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`），并断言事件流（`task_dispatched` / `file_modification_started`）与 `guiStop` 如实回报；
+  - `test/integration/opendesign-flow.test.ts`（14 → **18**）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 14 条 fail-closed/边界路径（非法方向在入口拒绝、无 `projectPath` 跳过目录绑定与视觉验收且终态文案如实说明、`user_confirmation` 恢复只重连观察且**一个字都不发**、模型未命中回显候选、版本不匹配、宿主平台未取证不拦截、布局漂移（含页面文本片段诊断）、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`、清理残留原生对话框、停在登录/引导页输入框缺席、停止按钮久亮转人工确认、初始化阶段环境不可自愈），并断言事件流（`task_dispatched` / `file_modification_started` / `awaiting_user_authorization` / `confirmation_dialog_detected`）与 `guiStop` 如实回报；
   - `test/integration/opendesign-rework-loop.test.ts`（5，**仅 Windows 执行**：`resolveProfile` 对 `opendesign-gui` 有平台门禁，非 win32 一律禁止派发——这是产品规则，故编排级返修闭环只在允许派发的平台验证）：计划落**项目根**且返修指令只带**相对路径**、计划含视觉差异表与定向修复要求、轮次封顶转 `needs_attention` 且每轮独立不覆盖、无验收报告时手动返修 fail-closed、有报告时把用户追加要求并入指令；
   - `test/unit/opendesign-menu.test.ts`（8）：复用分支、触发器不唯一、菜单未出现、同名多命中、未命中回显候选、点中但回读不一致、搜索过滤路径、回读轮询；
   - `test/unit/opendesign-send.test.ts`（8）：确认判据真值表（清空单独不算成功）、`input_mismatch`、编辑器晚一拍的重读、发送按钮前一次不可用的重试、始终不可用（含重试共 2 次尝试）、`send_unknown`（点击次数恒为 1）；

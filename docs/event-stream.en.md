@@ -15,8 +15,8 @@ returns the most recent N of them.
 | Event | Meaning | Emitted when |
 |---|---|---|
 | `task_dispatched` | Instruction confirmed delivered to the agent | codex: after the send-confirmation loop passes; traework: after `typeAndSend` returns |
-| `confirmation_dialog_detected` | A confirmation dialog was detected | codex: clearing stale native dialogs, or raising the native "select folder" dialog; traework: project binding went through the native "select folder" dialog |
-| `awaiting_user_authorization` | Waiting for the user to authorize / log in / confirm | codex: `loginIndicator` visible, `needs_login`, `needs_user` verdict; traework: `ask_user` suspension |
+| `confirmation_dialog_detected` | A confirmation dialog was detected | codex: clearing stale native dialogs, or raising the native "select folder" dialog; traework: project binding went through the native "select folder" dialog; opendesign: clearing stale native dialogs, or binding the working directory through the native "select folder" dialog |
+| `awaiting_user_authorization` | Waiting for the user to authorize / log in / confirm | codex: `loginIndicator` visible, `needs_login`, `needs_user` verdict; traework: `ask_user` suspension; opendesign: an existing instance cannot be adopted, stuck on the login/onboarding page, working-directory bind failed, stop button lit while everything is idle, or the setup phase cannot self-heal |
 | `file_modification_started` | The agent started executing | codex / traework: the **first** time the running signal (stop button) appears; reported once per round |
 | `rework_triggered` | Entering rework after acceptance failed | Emitted engine-side: automatic rework `mode:"auto"`, manual `rework_task` `mode:"manual"` |
 
@@ -92,5 +92,10 @@ Key points:
 3. No change to `AgentProfileSchema` is needed. "Optional" is expressed by `opts.onEvent?.(…)` on the
    calling side together with `makeEmitter`; adapters that don't implement it **need not change a
    single byte**.
-4. Built-in adapters that actually report events today: **codex** and **traework** (the scope of
-   issue #18). zcode / kimicode / qoder and all CLI adapters keep the interface but do not report yet.
+4. Built-in adapters that actually report events today: **codex**, **traework** (the scope of
+   issue #18) and **opendesign** (`task_dispatched` / `file_modification_started`; it reports
+   `awaiting_user_authorization` at five points — an existing instance that cannot be adopted, stuck
+   on the login/onboarding page, a working-directory bind failure, the stop button staying lit while
+   everything is idle, and a setup phase that cannot self-heal — and `confirmation_dialog_detected`
+   when it clears stale native dialogs or binds the working directory through the native dialog).
+   zcode / kimicode / qoder and all CLI adapters keep the interface but do not report yet.

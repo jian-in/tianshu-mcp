@@ -34,9 +34,13 @@
   → 输入任务书（可信输入 + 回读含标记）→ 发送（**只点一次、绝不重发**、三证据有界确认）→ 三信号轮询（停止按钮 / 对话文本哈希 / 产物文件指纹）→ 终态。
 - **验收-返修闭环**：`fix-loop.ts` 在 opendesign 验收失败时生成**项目根** `.opendesign/plans/opendesign-fix-r<N>.md`
   （Open Design 只能读它工作目录白名单内的文件），并同会话发送返修指令；`continue_task` / `rework_task` 已支持 opendesign。
+- **细粒度事件流（对齐 issue #18 词表）**：除 `task_dispatched` / `file_modification_started`，**全部「卡在等人」的出口**都上报
+  `awaiting_user_authorization`（既有实例无法接管 / 停在登录引导页 / 工作目录绑定失败 / 停止按钮久亮且对话与产物全静止转人工确认 / 初始化阶段环境不可自愈），
+  清理残留原生对话框与经原生「选择文件夹」绑定目录时上报 `confirmation_dialog_detected` —— `query_task` 的 `recentEvents` 因此能看见「卡死等人」，
+  不必再靠盲等或超时判断。
 - **本轮修掉的两个真实缺陷**：① `inputText()` 曾把 `{found,value,length}` 当 `string` 返回 → 发送前回读抛错、被误报 `setup_failed`；
   ② 工作目录绑定失败曾落成「非硬失败的 `setup_failed`」→ 编排器按普通失败处理、用户无法 `continue_task`，现一律转 `needs_user`。
-- **测试**：新增 **59** 用例（集成 `opendesign-flow` 14 + `opendesign-rework-loop` 5（仅 Windows：派发本身有平台门禁）；单测 `opendesign-{menu,send,transport,recovery}` 8/8/7/14；`opendesign-discovery` 扩到 33，含端口避让），
+- **测试**：新增 **63** 用例（集成 `opendesign-flow` 14 → **18** + `opendesign-rework-loop` 5（仅 Windows：派发本身有平台门禁）；单测 `opendesign-{menu,send,transport,recovery}` 8/8/7/14；`opendesign-discovery` 扩到 33，含端口避让），
   桩扩展在 `test/fake-cdp.ts`（Open Design 页面桩，语义键由注册表自身反查，选择器漂移时桩会一起失败）。全部**不依赖本机安装 Open Design**、不联网。
 - **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**未打 tag、未发 npm**；
   `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。

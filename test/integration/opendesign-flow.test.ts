@@ -17,6 +17,7 @@ import {
   type FakeOpenDesignState,
 } from "../fake-cdp.js";
 import { runOpenDesignTask, type OpenDesignRunDeps } from "../../src/agents/opendesign/run.js";
+import { OpenDesignSetupPause } from "../../src/agents/opendesign/recovery.js";
 import { BUILTIN_PROFILES } from "../../src/agents/builtin.js";
 import type { AgentRunLogger, ResolvedAgent, TaskContext } from "../../src/agents/adapter.js";
 
@@ -212,9 +213,12 @@ describe("Open Design GUI 驱动（假 CDP）", () => {
     // 只点一次发送；任务书带标记进了对话
     expect(state.sendClicks).toBe(1);
     expect(state.conversation).toContain("【tianshu:tsk_od:r0:initial】");
-    // 事件流：派发 + 运行中（启发式）
+    // 事件流：派发 + 运行中（启发式）+ 经原生「选择文件夹」绑定工作目录
     expect(events).toContain("task_dispatched");
     expect(events).toContain("file_modification_started");
+    expect(events).toContain("confirmation_dialog_detected");
+    // 全链路顺利时不应误报「等待用户授权」
+    expect(events).not.toContain("awaiting_user_authorization");
   });
 
   it("无 projectPath：跳过目录绑定与视觉验收，终态文案如实说明（计划 §4）", async () => {
@@ -303,12 +307,14 @@ describe("Open Design GUI 驱动（假 CDP）", () => {
 
   it("既有实例未开 CDP → needs_user(close_existing_instance)，绝不 kill 用户进程", async () => {
     const state = makeOpenDesignFakeState();
-    const { res } = await run(state, {
+    const { res, events } = await run(state, {
       deps: { ensureInstance: async () => ({ needsClose: true }) },
     });
     expect(res.endReason).toBe("needs_user");
     expect(res.needsUserKind).toBe("close_existing_instance");
     expect(res.hardFailure).toBeFalsy();
+    // 事件流：这是「等人工介入」而非派发失败，必须如实上报
+    expect(events).toEqual(["awaiting_user_authorization"]);
   });
 
   it("发送结果无法确认 → send_unknown 且只点过一次发送（绝不重发）", async () => {
@@ -322,12 +328,85 @@ describe("Open Design GUI 驱动（假 CDP）", () => {
 
   it("原生对话框未完成路径提交 → 转 needs_user（可 continue_task 续跑），不派发", async () => {
     const state = makeOpenDesignFakeState({ nativeDialogFails: true });
-    const { res } = await run(state);
+    const { res, events } = await run(state);
     expect(res.hardFailure).toBeFalsy();
     expect(res.endReason).toBe("needs_user");
     expect(res.needsUserKind).toBe("setup_recovery");
     expect(res.pendingQuestion ?? "").toContain("工作目录绑定失败");
     expect(state.sendClicks).toBe(0);
+    // 事件流：绑定卡在人工介入上，必须让 query_task 能看见
+    expect(events).toContain("awaiting_user_authorization");
+    expect(events).not.toContain("task_dispatched");
+  });
+
+  it("清理残留原生对话框 → 上报 confirmation_dialog_detected（模态框会吞掉主窗口合成点击）", async () => {
+    const state = makeOpenDesignFakeState({
+      pollScript: [
+        { stopVisible: true, sendStarting: true },
+        { stopVisible: false, sendStarting: false },
+      ],
+    });
+    const { res, events } = await run(state, {
+      deps: {
+        // 残留清理只在「枚举到根进程」时才做，故这里必须给出一个根进程行
+        listProcesses: async () => [
+          {
+            pid: 4242,
+            commandLine: '"C:\\Open Design\\Open Design.exe" --remote-debugging-port=9889',
+          },
+        ],
+        listDialogs: async () => ["文件夹选择（残留，测试桩）"],
+        closeDialogs: async () => 1,
+      },
+    });
+    expect(res.endReason).toBe("reply_stable");
+    expect(events.filter((k) => k === "confirmation_dialog_detected").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("主窗口可读但输入框始终不出现（登录/引导页）→ needs_user(login_required) 并上报等待授权", async () => {
+    // inputBox 缺席 = 页面可读但任务输入区未渲染（复刻停在登录/引导页）
+    const state = makeOpenDesignFakeState({ missingAnchors: ["inputBox"] });
+    const { res, events } = await run(state);
+
+    expect(res.hardFailure).toBeFalsy();
+    expect(res.endReason).toBe("needs_user");
+    expect(res.needsUserKind).toBe("login_required");
+    expect(state.sendClicks).toBe(0);
+    expect(events).toEqual(["awaiting_user_authorization"]);
+  });
+
+  it("运行信号久亮且对话与产物全静止（stall）→ needs_user(user_confirmation) 并上报等待授权", async () => {
+    // 单拍脚本：此后 stopVisible 保持 true，对话与产物不再变化 → 复刻「turn 仍在跑但全静止」
+    const state = makeOpenDesignFakeState({
+      pollScript: [{ stopVisible: true, sendStarting: true }],
+    });
+    const { res, events } = await run(state);
+
+    expect(res.hardFailure).toBeFalsy();
+    expect(res.endReason).toBe("needs_user");
+    expect(res.needsUserKind).toBe("user_confirmation");
+    expect(state.sendClicks).toBe(1);
+    expect(events).toContain("file_modification_started");
+    // 事件流：停止按钮久亮 = 卡在等人，必须让 query_task 看得见（否则调用方只能盲等）
+    expect(events.filter((k) => k === "awaiting_user_authorization")).toHaveLength(1);
+  });
+
+  it("初始化阶段环境不可自愈（OpenDesignSetupPause）→ needs_user 并上报等待授权", async () => {
+    const state = makeOpenDesignFakeState();
+    const { res, events } = await run(state, {
+      deps: {
+        ensureInstance: async () => {
+          throw new OpenDesignSetupPause("实例连接尚未恢复（测试桩）");
+        },
+      },
+    });
+
+    expect(res.hardFailure).toBeFalsy();
+    expect(res.endReason).toBe("needs_user");
+    expect(res.needsUserKind).toBe("setup_recovery");
+    expect(state.sendClicks).toBe(0);
+    // 事件流：环境类等待同样是「卡在等人」，不得静默
+    expect(events).toEqual(["awaiting_user_authorization"]);
   });
 
   it("取消：尽力点停止按钮并如实回报 guiStop（idle=true 才算已停止）", async () => {
