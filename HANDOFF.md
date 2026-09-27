@@ -70,8 +70,9 @@
   发布后两仓各多一个机器人提交（GitHub `1f4415b` / Gitee `4f18879`），已合并为 `af22ce2` 并回推两端收敛。
 - **本机历史残留已清除**：用旧安装自带的卸载器把 `Tianshu-mcp Logs`（0.1.0-beta.1，`D:\Tianshu-mcp Logs`）卸载，并补删静默卸载不会清的 `HKCU\Software\tianshu\Tianshu-mcp Logs`（值为旧 `$INSTDIR`）；
   「应用和功能」恢复为单条记录。旁证：同 publisher 下另有一个**完全无关**的 `Tianshu`（3.26.0）条目 —— 正好说明钩子「只清精确旧键、不做 publisher 扫描」是必要的。
-- **待办**：真机端到端复现（装 `0.1.0-beta.1` 造出旧条目 → 再装 `0.1.0-beta.4`，确认旧条目/旧目录/旧快捷方式被钩子清掉）待执行，
-  完成后按 `docs/issue-25-gui-real-machine-record.md` §2.4 回填；该文件已补 §3.4 记录本次发布全绿。
+- **真机端到端复现（2026-09-27）✅ 通过**：因最初的 pre-fix 安装包已随 beta.1 发行版重建而消失，复现方式为「用 beta.1 安装包以 `/D=D:\Tianshu-mcp Logs` 安装 → 把安装状态还原成旧命名（卸载项键/DisplayName/`Software\tianshu` 下同名键/两个快捷方式）→ 静默运行 beta.4 安装包」。
+  结果：**旧条目、旧目录、两个旧快捷方式、`Software\tianshu\Tianshu-mcp Logs` 全部消失**，只剩 `Tianshu-mcp-Logs 0.1.0-beta.4` 一条；exe `FileVersion=0.1.0-beta.4`；`com.tianshu.mcp.logs` 与 `~/.tianshu-mcp` 数据完好。
+  同时验证了带引号 `UninstallString`（路径含空格）能被正确执行。边界如实写在 `docs/issue-25-gui-real-machine-record.md` §2.4。
 
 ### 独立交付面 · 日志台 GUI **布局范式重写**（`mcp-gui/`，`0.1.0-beta.3`，2026-09-27）
 

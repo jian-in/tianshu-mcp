@@ -74,7 +74,9 @@
 | 修法 | 新增 `mcp-gui/src-tauri/windows/installer-hooks.nsh`，经 `bundle.windows.nsis.installerHooks` 挂载：`NSIS_HOOK_PREINSTALL` 读到旧名称的 `UninstallString` 时静默运行它自己的卸载器（`/S`），随后兜底删除残留的卸载项注册表键、`Software\tianshu\Tianshu-mcp Logs` 与旧快捷方式；**旧条目不存在则完全不动作** |
 | 边界 | 静默卸载**不删用户数据**（「Delete app data」只在交互模式置位；两端 BUNDLEID 相同、数据目录共用）；旧卸载器中途 `Abort` 时其注册表键由本钩子无条件删除；**不对旧 `$INSTDIR` 做 `RmDir /r`**（旧位置由用户在旧安装器里自选，本机即 `D:\Tianshu-mcp Logs`） |
 | 本机验证（不涉及 Rust） | 用 Tauri 同款 **NSIS 3.11** 工具链，按模板真实顺序（`!include` 钩子在前、`!define MANUFACTURER/PRODUCTNAME` 在后）编译等价 harness 通过（`makensis` exit 0），同时证明宏体内引用模板变量成立 |
-| 真机待验 | 下一次真实升级（beta.3 → beta.4）后：「应用和功能」**只剩一条**记录，旧目录与旧快捷方式被清除 —— **待测**（发布侧证据见 §3.4） |
+| 真机复现（2026-09-27，Windows 10） | **✅ 通过**。复现方式：① 用 beta.1 安装包以 `/D=D:\Tianshu-mcp Logs` 静默安装（`/S`）；② 把安装状态**还原成旧命名**（卸载项键与 `DisplayName` 改为 `Tianshu-mcp Logs`、`Software\tianshu` 下同名键、开始菜单与桌面快捷方式改名为 `Tianshu-mcp Logs.lnk`）—— 与事故现场一致：旧命名条目 + 含空格的安装路径 + **真实可用的卸载器**；③ 静默运行 `Tianshu-mcp-Logs_0.1.0-beta.4_x64-setup.exe`。 |
+| 真机复现结果 | 运行前：旧条目 / 旧目录 `D:\Tianshu-mcp Logs` / 旧开始菜单与桌面快捷方式**均在**。运行后：**旧条目、旧目录、两个旧快捷方式、`Software\tianshu\Tianshu-mcp Logs` 全部消失**；「应用和功能」只剩 `Tianshu-mcp-Logs 0.1.0-beta.4`（`%LOCALAPPDATA%\Tianshu-mcp-Logs`）一条（另有一个同 publisher 的无关产品 `Tianshu 3.26.0`，见 §2.4 边界）；安装出的 exe `FileVersion=0.1.0-beta.4`；`%APPDATA%` 与 `%LOCALAPPDATA%` 下的 `com.tianshu.mcp.logs`、以及 `~/.tianshu-mcp` **数据完好** —— 静默卸载「不删用户数据」的设计得到实机验证。 |
+| 复现的边界（如实标注） | 最初的 pre-fix 安装包（productName 含空格）已随 beta.1 发行版「按 tag 清理后重建」而消失（两端资产现均为无空格的 `Tianshu-mcp-Logs_0.1.0-beta.1_x64-setup.exe`），故旧状态由上述「安装 + 还原命名」合成。合成的旧卸载器内部 `PRODUCTNAME` 已是新名，**旧目录被完整删除**证明「钩子调用旧卸载器」的**主路径确实生效**（且路径含空格，验证了带引号 `UninstallString` 的解析），而注册表键与快捷方式的清理实际来自**钩子的兜底分支**；真实现场的旧卸载器会自行完成其中一部分，两条路径最终状态一致。 |
 
 ---
 
@@ -148,7 +150,7 @@
 | 两端清单 | `update/gui/latest.json` 与 `latest-gitee.json` 均指向 `0.1.0-beta.4`（`pub_date=2026-09-27T10:28:54Z`）；**6 个下载地址实测 HEAD 200**（GitHub×3 + Gitee×3） |
 | 发版隔离 | 该 tag 只触发 `GUI`（及 master 的 `CI`），**无 `Release` workflow** |
 | 新钩子确实进了包 | Windows 腿的 `tauri build` 成功即证明 `bundle.windows.nsis.installerHooks` → `windows/installer-hooks.nsh` 被 makensis **真正 include 并编译进** `-setup.exe`（路径写错或宏语法错误都会让该腿失败）；产物带 `.sig`，说明签名路径同样正常 |
-| 真机待验 | 「装 `0.1.0-beta.1` 造出旧条目 → 再装 `0.1.0-beta.4`」的端到端复现**待执行**（见 §2.4） |
+| 真机端到端复现 | **✅ 通过（2026-09-27）**：旧命名条目 / 旧目录 / 旧快捷方式被钩子全部清除，仅剩 `Tianshu-mcp-Logs 0.1.0-beta.4` 一条，用户数据完好 —— 复现步骤、结果与「合成旧状态」的边界见 §2.4 |
 
 ---
 
@@ -162,9 +164,12 @@ GitHub 与 Gitee **双端 pre-release 均已创建**，各自附齐 8 个产物�
 `gui-v*` 未触发 `release.yml`（见 U2）。
 
 **`gui-v0.1.0-beta.4`（升级路径修复）的发布同样已跑通**（2026-09-27）：三平台构建 + 双端 pre-release + 两端清单**全绿**，
-且新钩子确认已随 Windows 安装包一起编译进 `-setup.exe`（见 §3.4）。本机原有的那条历史残留
-（旧命名安装 `Tianshu-mcp Logs` 0.1.0-beta.1，装在 `D:\Tianshu-mcp Logs`）已用其自带卸载器清除，
-「应用和功能」恢复为单条记录（`Tianshu-mcp-Logs`）。
+且新钩子确认已随 Windows 安装包一起编译进 `-setup.exe`（见 §3.4）。
+
+**§2.4 的真机端到端复现已通过**（2026-09-27）：制造出旧命名安装状态后静默运行 beta.4 安装包，
+**旧条目 / 旧目录 / 旧快捷方式全部被钩子清除**，「应用和功能」只剩 `Tianshu-mcp-Logs 0.1.0-beta.4` 一条，
+用户数据（`com.tianshu.mcp.logs` 与 `~/.tianshu-mcp`）完好；本机现运行 `0.1.0-beta.4`。
+本机原有的那条历史残留（`Tianshu-mcp Logs` 0.1.0-beta.1，装在 `D:\Tianshu-mcp Logs`）在复现前已用其自带卸载器清除。
 
 **§2.3 打包与隔离（P1~P4）已在本机验证通过**（纯 Node 检查，不涉及 Rust 侧，见上表）。
 
