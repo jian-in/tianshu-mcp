@@ -6,19 +6,16 @@ name: GUI
 #   - 不碰 MCP 主包的测试与发版链路，避免「GUI 发版影响 MCP 发版」；
 #   - tag 形如 `gui-v0.1.0-beta.1`，**不以 `v` 开头**，因此不会命中 release.yml 的 `v*`。
 #
-# 触发：
-#   - push 到 master 且 mcp-gui/**（或两个词表真源）有变更 → 构建 + artifact（编译验证，不发布）；
-#   - push tag `gui-v*-beta.*` → 构建 + 签名 + 双端 pre-release 发布 + 更新清单；
-#   - PR 且 mcp-gui/** 有变更 → 构建验证。
+# 触发与变更过滤（注意：push 上**不写 `paths`**）：
+#   - `push.paths` 与 `push.tags` 同时存在时，tag 推送可能根本不触发工作流（首次发版会空跑）；
+#     因此变更过滤统一交给 `schema-parity` 里的 `changed` 步骤：
+#       · push tag `gui-v*-beta.*` → **无条件构建** + 签名 + 双端 pre-release + 更新清单；
+#       · `workflow_dispatch`（手动） → **无条件构建**；
+#       · push 到 master/main、PR → 只有真的改了 `mcp-gui/**`、两个词表真源或 `gui.yml` 自身才构建（省 runner）。
 
 on:
   push:
     branches: [master, main]
-    paths:
-      - "mcp-gui/**"
-      - "src/tasks/task.ts"
-      - "src/agents/agent-events.ts"
-      - ".github/workflows/gui.yml"  # 工作流自身改动也要复验（否则改完 CI 配置无从验证）
     tags:
       - "gui-v*-beta.*"
   pull_request:
