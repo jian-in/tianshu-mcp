@@ -59,8 +59,13 @@
   1. ~~配置 Secrets~~ **✅ 已完成并验证生效（2026-09-27）**：`UPDATER_PUBKEY` / `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（私钥带密码，三项已成套）+ `GITEE_TOKEN`；
      配置后重新构建，`Detect signing capability` 不再输出「未配置」告警 → **签名路径已启用**（产物含更新包）；
      密钥对由 `npx tauri signer generate -w ~/.tauri/tianshu-gui.key` 在本机生成（私钥**不入库**，请离线备份 —— 更换密钥会让已发布版本的自动更新验签失败）；
-  2. 首次发布打 `gui-v0.1.0-beta.1` tag，并按 [issue-25 真机记录](docs/issue-25-gui-real-machine-record.md) 的清单用 **CI 产物**完成真机验收（其中 §2.3 P1~P4 已在本机验证通过）；
-  3. 本机 `gh` CLI 不可用，Actions artifact 需经浏览器下载。
+  2. ~~首次发布打 `gui-v0.1.0-beta.1` tag~~ **✅ 已完成（2026-09-27）**：`GUI` workflow 全绿（三平台构建 + 发布），
+     GitHub 与 Gitee **双端 pre-release 均已创建**并各附 8 个产物，两端更新清单已落库、清单内 6 个下载地址实测 HTTP 200，
+     `gui-v*` **未触发** `release.yml`；
+     剩余：按 [issue-25 真机记录](docs/issue-25-gui-real-machine-record.md) 用 **CI 产物**在 Windows 10 完成 §2.1（F1~F12）与 §2.2（U4~U8）真机验收（其中 §2.3 P1~P4 已在本机验证通过）；
+  3. 本机 `gh` CLI 不可用，Actions artifact 需经浏览器下载；
+  4. **每次发布后两仓 master 会短暂各多一个机器人提交**（GitHub 侧 `latest.json` 走 `git commit`、Gitee 侧 `latest-gitee.json` 走 Contents API）——
+     推送到另一仓若被拒（non-fast-forward），先 `git fetch gitee master` 合并即可。
 - **文档**：`docs/gui-log-viewer.md` / `.en.md`、`docs/issue-25-gui-real-machine-record.md`；
   README / ARCHITECTURE / CHANGELOG 双语已同步（ARCHITECTURE 新增「第 16 节 独立交付面」）。
 - **不涉及 MCP 主包版本迭代**：主包仍为 `0.7.0`（**尚未发布**，Open Design 调用尚未开发完），本次未改动任何主包运行时逻辑与版本号。

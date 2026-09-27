@@ -46,9 +46,9 @@
 
 | # | 步骤 | 期望 | 结果 |
 |---|---|---|---|
-| U1 | 打 `gui-v0.1.0-beta.1` tag | GitHub 与 Gitee **均为 pre-release**，各附 Windows + macOS 包 | 待测 |
-| U2 | 校验 `gui-v*` 未连带触发 `release.yml` | MCP 发版链路未被触发 | 待测 |
-| U3 | `update/gui/latest.json` 与 `latest-gitee.json` | 两端清单可被 updater 正确读取 | 待测 |
+| U1 | 打 `gui-v0.1.0-beta.1` tag | GitHub 与 Gitee **均为 pre-release**，各附 Windows + macOS 包 | ✅ **通过**（2026-09-27）：GitHub `prerelease=true / draft=false`，8 个资产（2 dmg + NSIS `-setup.exe` + `.exe.sig` + 2 个按架构区分的 `.app.tar.gz` + 2 个 `.sig`）；Gitee `prerelease=true`，8 个附件同名（另有 Gitee 自动生成的两个源码归档） |
+| U2 | 校验 `gui-v*` 未连带触发 `release.yml` | MCP 发版链路未被触发 | ✅ **通过**：tag 推送后 Actions 只出现 `GUI`（+ push master 的 `CI`），**无 `Release` workflow**；`Schema parity` job 内的隔离断言步骤亦 success |
+| U3 | `update/gui/latest.json` 与 `latest-gitee.json` | 两端清单可被 updater 正确读取 | ✅ **通过**：两端清单结构符合 Tauri updater 规范（`version` / `notes` / `pub_date` / `platforms` 三平台），**签名两源一致**、仅 `url` 指向各自附件；清单内 6 个下载地址（GitHub×3 + Gitee×3）实测 **HTTP 200** 且字节数与发布资产一致 |
 | U4 | 模拟中国大陆网络检查更新 | 命中 **Gitee** | 待测 |
 | U5 | 模拟境外 / VPN（含中国香港、中国台湾）网络检查更新 | 命中 **GitHub** | 待测 |
 | U6 | 三态开关 | 自动 / 强制 Gitee / 强制 GitHub 均生效 | 待测 |
@@ -131,11 +131,19 @@
 **CI 侧已跑通**（2026-09-27）：`GUI` workflow 的 `schema-parity` 与三平台 `cargo fmt` / `clippy -D warnings` / `cargo test` 全绿，
 且 **三个平台（windows-x86_64 / darwin-x86_64 / darwin-aarch64）全部 success**，均完成 `tauri build` 打包并上传产物。
 
+**发布链路已跑通**（2026-09-27，`GUI` run 全绿）：`Publish beta pre-release` job 的 13 个步骤全部 success ——
+GitHub 与 Gitee **双端 pre-release 均已创建**，各自附齐 8 个产物；两端更新清单均已落库且**下载地址实测可达**（见 §2.2 U1~U3）。
+`gui-v*` 未触发 `release.yml`（见 U2）。
+
 **§2.3 打包与隔离（P1~P4）已在本机验证通过**（纯 Node 检查，不涉及 Rust 侧，见上表）。
 
-**§2.1 功能（F1~F12）与 §2.2 更新（U1~U8）仍需维护者用 CI 产物在真机上逐项验收**——
+**§2.1 功能（F1~F12）与 §2.2 的 U4~U8 仍需维护者用 CI 产物在真机上逐项验收**——
 本机按 issue #25 的硬约束不跑 Rust 侧，也不具备双系统的真机点击条件；产物到位后按清单填写即可。
-其中 U1/U3 需先打 `gui-v0.1.0-beta.1` tag 才会走到发布链路。
+
+> **双仓 master 存在「各自一份机器人提交」的设计事实**：GitHub 侧清单由 workflow `git commit`（带 `[skip ci]`）写入
+> `update/gui/latest.json`，Gitee 侧清单由脚本经 **Contents API** 写入 `update/gui/latest-gitee.json`（避免依赖 Gitee git 凭据）。
+> 因此每次发布后两仓 master 会各自多出一个提交而**短暂分叉**；本次已把两者合并回同一提交并推送到两仓（两仓现各含两份清单）。
+> 后续每次发布后如遇 `git push` 被拒（non-fast-forward），先 `git fetch gitee master` 再合并即可。
 
 已知限制（已在 `docs/gui-log-viewer.md` 如实披露）：
 
@@ -143,5 +151,5 @@
 2. 未提供 MSI（Windows 仅 NSIS）；
 3. 未构建 Linux 版本；
 4. 无任务写操作、无本地全文索引；
-5. macOS 侧仅保证 CI 构建通过。
+5. macOS 侧仅保证 CI 构建通过（**更新载体已按架构重命名去重，但 macOS 自动更新的真机链路未验证**）；
 6. 签名 Secret 未配置前，产物不含更新清单（自动更新不可用，安装包本身可正常使用）。
