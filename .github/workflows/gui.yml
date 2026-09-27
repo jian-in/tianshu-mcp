@@ -333,7 +333,22 @@ jobs:
           else
             # [skip ci]：避免清单提交再触发一次主 CI（GUI 发版与 MCP 发版互不干扰）
             git commit -m "chore(gui): 发布 ${TAG} 并更新更新清单 [skip ci]"
-            git push origin HEAD:master
+            # 发版期间 master 可能被其它提交推进（本 job 的检出点是启动时的 master），
+            # 直接 push 会因 non-fast-forward 被拒并使整条发布流水线失败。
+            # 这里失败即拉取最新 master 变基后重推；连续失败才判定为真故障。
+            for attempt in 1 2 3; do
+              if git push origin HEAD:master; then
+                echo "更新清单已推送（第 ${attempt} 次尝试）"
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "::error::更新清单推送连续 ${attempt} 次失败，请检查 master 上的并发提交"
+                exit 1
+              fi
+              echo "::warning::推送被拒（master 已前进），拉取最新 master 后重试（第 ${attempt} 次）"
+              git fetch origin master
+              git rebase origin/master
+            done
           fi
 
       - name: Summary
