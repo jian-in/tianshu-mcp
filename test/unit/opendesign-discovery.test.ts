@@ -121,8 +121,12 @@ function toHostPath(p: string): string {
 /**
  * 注入给 `discoverOpenDesign` 的探测原语：让 win32 目标路径在 POSIX 宿主上也能"存在"。
  * 只做只读映射，不写盘。
+ *
+ * **必须同时注入 `readFile`**：版本回读取的是 `<安装目录>/resources/open-design-config.json`，
+ * 目标平台是 win32 时该路径含反斜杠，POSIX 宿主上真实 `fs.readFileSync` 必然 ENOENT →
+ * `version` 恒为空。只注入 `statFile` 会让「并回读版本」这类断言在 CI 的非 Windows 腿必挂。
  */
-function makeProbe(): { statFile: (p: string) => boolean } {
+function makeProbe(): { statFile: (p: string) => boolean; readFile: (p: string) => string } {
   return {
     statFile: (p: string) => {
       try {
@@ -131,6 +135,7 @@ function makeProbe(): { statFile: (p: string) => boolean } {
         return false;
       }
     },
+    readFile: (p: string) => fs.readFileSync(toHostPath(p), "utf8"),
   };
 }
 
@@ -184,7 +189,7 @@ describe("Open Design 安装发现", () => {
   });
 
   it("优先探测 preferredDrives 里的相对路径（D 盘安装），并回读版本", async () => {
-    const exe = makeInstall();
+    makeInstall();
     const candidate = await discoverOpenDesign(BUILTIN_PROFILES.opendesign!, {
       platform: "win32",
       driveRoots: { "D:": tmpRoot },
@@ -194,7 +199,9 @@ describe("Open Design 安装发现", () => {
     });
     expect(candidate).not.toBeNull();
     expect(candidate!.source).toBe("fixed-drive");
-    expect(candidate!.path).toBe(exe);
+    // 目标平台是 win32 → 期望值必须按 win32 拼（`makeInstall` 返回的是**宿主**形态路径，
+    // 拿它直接比对会在 POSIX 宿主上必然不等——这正是 CI ubuntu/macos 腿长期红的原因）。
+    expect(candidate!.path).toBe(win(tmpRoot, "Open Design", "Open Design.exe"));
     expect(candidate!.version).toBe("0.24.1");
   });
 
@@ -209,7 +216,8 @@ describe("Open Design 安装发现", () => {
       registryDirs: [registryDir],
     });
     expect(candidate?.source).toBe("registry");
-    expect(candidate?.path).toBe(exe);
+    // 同上：按 win32 拼期望值（registryDirs 给的是宿主形态目录，代码会用目标平台 path 再拼一次）
+    expect(candidate?.path).toBe(win(tmpRoot, "Open Design", "Open Design.exe"));
   });
 
   it("注册表脏数据（含同名但非可执行的目录）不会误判", async () => {
@@ -256,7 +264,7 @@ describe("Open Design 安装发现", () => {
     // 这是 CI ubuntu/macos 腿失败的根因：platform 是注入参数，但候选路径曾用宿主 path.join，
     // 于是「生产用反斜杠」与「夹具用正斜杠」在非 Windows 上对不上。
     // 断言本身与宿主平台无关：只要目标平台是 win32，候选就必须是 `D:\...\Open Design.exe`。
-    const exe = makeInstall();
+    makeInstall();
     const profile = AgentProfileSchema.parse({
       driver: "gui",
       adapter: "opendesign-gui",
@@ -276,7 +284,8 @@ describe("Open Design 安装发现", () => {
     // win32 目标 → 路径必然含反斜杠，且不含正斜杠（宿主是 POSIX 时这一点最容易破）
     expect(found!.path).toContain("\\");
     expect(found!.path).not.toContain("/");
-    expect(found!.path).toBe(exe);
+    // 期望值同样按 win32 拼（不能拿宿主形态的 `exe` 比对，否则非 Windows 腿必然红）
+    expect(found!.path).toBe(win(tmpRoot, "Open Design", "Open Design.exe"));
     expect(found!.source).toBe("fixed-drive");
   });
 });

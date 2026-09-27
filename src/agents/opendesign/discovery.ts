@@ -200,10 +200,20 @@ export async function discoverOpenDesign(
      * 正是 CI ubuntu/macos 腿长期红的原因。测试注入此函数即可让断言与宿主无关。
      */
     statFile?: StatFileFn;
+    /**
+     * 安装配置读取（注入点，与 `statFile` 同因）。
+     * 版本回读取 `resources/open-design-config.json`，目标平台是 win32 时路径含反斜杠，
+     * POSIX 宿主上真实 `fs.readFileSync` 必然 ENOENT → `version` 恒为空，
+     * 「并回读版本」这类断言在非 Windows 腿必挂。测试注入映射到宿主路径的读取即可。
+     */
+    readFile?: (p: string) => string;
   } = {},
 ): Promise<OpenDesignCandidate | null> {
   const platform = input.platform ?? process.platform;
   const statFile = input.statFile ?? defaultStatFile;
+  const readFile = input.readFile;
+  const installInfo = (exePath: string): OpenDesignInstallInfo | null =>
+    readFile ? readInstallInfo(exePath, readFile) : readInstallInfo(exePath);
   /**
    * 候选路径必须按**目标平台**拼，不能跟着宿主 `path` 走：
    * `platform` 是注入参数，若仍用宿主 path，跨平台单测只能在 Windows 上通过，
@@ -213,7 +223,7 @@ export async function discoverOpenDesign(
   const explicit = profile.gui?.exePath?.trim() || profile.command?.trim();
   if (explicit) {
     if (!validExecutable(explicit, platform, statFile)) return null;
-    return { path: explicit, source: "explicit", version: readInstallInfo(explicit)?.appVersion };
+    return { path: explicit, source: "explicit", version: installInfo(explicit)?.appVersion };
   }
   const disc = profile.executableDiscovery;
   if (!disc) return null;
@@ -230,7 +240,7 @@ export async function discoverOpenDesign(
         return {
           path: candidate.p,
           source: candidate.source,
-          version: readInstallInfo(candidate.p)?.appVersion,
+          version: installInfo(candidate.p)?.appVersion,
         };
       }
     }

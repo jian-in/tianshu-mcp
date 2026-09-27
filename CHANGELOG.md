@@ -34,6 +34,10 @@
 - **输入框文本读取返回对象而非字符串**（`src/agents/opendesign/cdp.ts`）：`inputValueExpression` 返回 `{found,value,length}`，此前按 `string` 返回，导致发送前回读时 `includes` 在运行时抛错（表现为 `setup_failed`），把「输入未落进编辑器」误报成基础设施失败。
 - **工作目录绑定失败被落成「非硬失败的 `setup_failed`」**（`src/agents/opendesign/run.ts`）：这类结果编排器会当成 agent 普通失败，用户既看不到可操作提示、也无法 `continue_task` 续跑；现一律转 `needs_user`（`system_permission` 或 `setup_recovery`），与计划决策 12「失败重试一次后交用户」一致。
 - **布局守卫键收敛**（`src/agents/opendesign/selectors.ts`）：守卫只保留首页**无条件存在**的 `title / composer / inputBox / sendButton` 四个锚点；工作目录 / 模型 / 设计系统 / 设计方向触发器由用户配置与页面形态决定是否渲染，缺失属「该能力不可用」而非「页面结构漂移」，改为在**各自步骤**内单独校验并给出精确原因（原先放在守卫里会造成大面积假阻塞）。
+- **CI 非 Windows 腿长期红**（`src/agents/opendesign/discovery.ts` + `test/unit/opendesign-discovery.test.ts`）：`platform` 是注入参数，候选路径已按目标平台拼（win32 反斜杠），但两处仍按**宿主**形态比对/读取：
+  ① 断言用 `path.join` 造的期待值与生产产出的 win32 路径在 ubuntu/macos 上必然不等；
+  ② 版本回读取 `<安装目录>/resources/open-design-config.json`，win32 形态路径在 POSIX 宿主上 `fs.readFileSync` 必然 ENOENT，于是 `version` 恒为空。
+  已把期待值改为按目标平台拼，并给 `discoverOpenDesign` 增加 `readFile` 注入点（与既有 `statFile` 同因），测试夹具同时注入映射到宿主路径的读取——断言自此**与宿主平台无关**。
 
 ### 测试
 
@@ -66,12 +70,12 @@
 
 - **日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3，独立版本 `0.1.0-beta.1`）**（issue #25）：与 MCP server **完全解耦**的本地只读桌面应用（纯读文件系统，**不依赖 server 在跑**），把四类日志与任务产物统一到一个界面。
   - **数据目录**：按 `TIANSHU_MCP_HOME` → `~/.tianshu-mcp` 自动探测，支持手动追加 / 移除 / 切换多个目录（追加时校验目录下存在 `logs/` 或 `tasks/`）。
-  - **三栏界面**：任务列表（项目 / Agent / 状态 / 时间范围筛选 + 状态色标 + 轮次）· 内容区 · 详情区（元信息 / 事件属性 / 报告摘要）。
+  - **两态式界面（布局范式）**：**任务概览页**（顶栏 + 四格指标仪（总数 / 进行中 / 已结束 / 已失败）+ 状态圆片 + `[筛选]` 浮层 + 任务卡网格 + 搜索模式）与**全屏工作区**（面包屑 `‹ 任务列表 / <taskId>` + 可展开任务摘要带 + 竖排分区导航 + 内容区；`server.log` 为第二形态）；**没有常驻任务栏、没有常驻详情栏、没有横排标签页**。
   - **四类日志**：`server.log`（级别 / 时间范围过滤 + 关键字高亮）；`task.jsonl`（**区分状态跃迁事件与细粒度 Agent 事件**，`note` 仍为进度 / 审计通道，坏行跳过但计数）；`agent-<轮次>.log` 与 `verify-<轮次>.log`（轮次切换 + 行号 + 自动换行）；`report-<轮次>.{md,json,html}` 与 `dry-run-report-*`（Markdown 渲染 / 结构化卡片 / **sandbox iframe 视觉预览**（注入 CSP + 剥离 `<script>`）/ 干跑与常规分区 / 多轮对比）。
   - **大日志与实时 tail**：首屏只读 64 KiB 尾部窗口 + 向前分块加载 + 「已加载 N / 共 M」；`notify` 驱动增量刷新，**手动上翻自动暂停跟随**、可一键「跳到最新」。
   - **跨任务搜索 / 导出 / 复制**：按需扫描（**不建本地全文索引**）+ 进度反馈 + 可取消；单文件导出 + 任务整包 zip（可排除体积大的原始日志并如实回报排除数）。
   - **体验**：中英双语（默认中文）+ 深色 / 浅色 / 跟随系统（默认跟随）。
-  - **前端设计系统重构（GUI 独立版本 `0.1.0-beta.2`）**：表现层完全重写为自研设计系统（不依赖 UI 组件库 / CSS 框架）——深浅双主题完整对齐、12 级中性灰阶 + **单一钢蓝强调色**（移除蓝紫渐变品牌标与紫色信息色）、**三档纯系统字体**栈（零外链、零字体文件）、数字统一 `tabular-nums`；版式改为顶栏 1px 强调细线 + 任务行状态脊，标签页改**下划线指示器**，报告类型 / 轮次 / 设置改**分段控件**；可访问性补 `role="tablist"` + `aria-selected` + `←/→` 键切换与图标按钮 `aria-label`，并加入 `prefers-reduced-motion` 与 `color-scheme` 支持。**功能、数据层、store API 与 i18n 键零改动**（81 项既有用例全绿）。
+  - **布局范式重写 + 黑曜石终端（GUI 独立版本 `0.1.0-beta.3`）**：推翻原有「顶栏 + 三栏并置 + 横排标签页」骨架重画——把**跨任务搜索上移到概览页**（命中即跳进工作区对应分区）、把**任务元信息改为可展开摘要带**（不再占独立一栏）、`server.log` 作为**工作区第二形态**；视觉重做为自研「**黑曜石终端**」：深色为默认（锂黑 `#0B0D0C` + 荧绿 `#3DFFA0`）、浅色同语言重做，**等宽字体主导**、**方括号状态标签**（`[OK] 已成功`）、任务卡 3px 状态脊 + 标题 `›` 前缀、顶栏与面包屑栏上沿各一条 1px 荧绿细线、面板 4px 硬朗圆角，深色底极淡点阵 / 浅色底极淡网格（**已移除蓝紫渐变与紫色信息色**）；强调色只用于选中 / 主操作 / 焦点 / 面包屑返回项，状态位只用语义色。**功能、数据层与 store API 零改动**；i18n 仅新增 4 个键（中英同步）；新增 `OverviewPage` / `WorkspacePage` / `TaskCard` / `MetricsStrip` / `TaskSummaryBar`，删除 `TaskListPanel.vue` 与 `DetailPanel.vue`（避免两套实现与死代码）
 - **双源（Gitee / GitHub）自动更新**：**主动实测择优**（并发探测两端端点并按时延选择，**不依赖系统区域 / 时区**，VPN 场景下亦正确）+ TTL 缓存 + 三态开关（自动 / 强制 Gitee / 强制 GitHub）+ 两端均不可达时回退上次可用源；两端清单同版本同签名，`tauri-plugin-updater` **验签不通过一律拒绝安装**；任一步失败都**不影响日志查看主流程**（提供「手动下载」兜底）。Windows 更新载体为 NSIS（Tauri updater 不支持 MSI）。
 - **独立 `GUI` workflow**（`.github/workflows/gui.yml`）：`windows-latest` / `macos-15-intel` / `macos-15` 三平台矩阵；push 到 `master` 仅编译验证并上传 artifact，`gui-v*-beta.*` tag 才双端发布 pre-release。`gui-v*` **不以 `v` 开头**，**不触发** MCP 的 `release.yml`（workflow 内含显式断言）。
 - **三方词表一致性门禁**：`mcp-gui/scripts/check-schema-parity.mjs` 比对 **TS 真源（`src/tasks/task.ts` / `src/agents/agent-events.ts`）↔ 前端镜像 ↔ Rust 镜像**，任一漂移即 fail；`GUI` workflow 的触发路径含两个真源文件，故 TS 侧漂移也会被检出。
