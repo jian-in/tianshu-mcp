@@ -44,8 +44,9 @@
 
 ### 测试
 
-- 新增 **49** 个用例（5 文件）：
+- 新增 **54** 个用例（6 文件）：
   - `test/integration/opendesign-flow.test.ts`（12）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 8 条 fail-closed 路径（非法方向在入口拒绝、模型未命中回显候选、版本不匹配、宿主平台未取证不拦截、布局漂移（含页面文本片段诊断）、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`），并断言事件流（`task_dispatched` / `file_modification_started`）与 `guiStop` 如实回报；
+  - `test/integration/opendesign-rework-loop.test.ts`（5）：编排级返修闭环——计划落**项目根**且返修指令只带**相对路径**、计划含视觉差异表与定向修复要求、轮次封顶转 `needs_attention` 且每轮独立不覆盖、无验收报告时手动返修 fail-closed、有报告时把用户追加要求并入指令；
   - `test/unit/opendesign-menu.test.ts`（8）：复用分支、触发器不唯一、菜单未出现、同名多命中、未命中回显候选、点中但回读不一致、搜索过滤路径、回读轮询；
   - `test/unit/opendesign-send.test.ts`（8）：确认判据真值表（清空单独不算成功）、`input_mismatch`、编辑器晚一拍的重读、发送按钮前一次不可用的重试、始终不可用（含重试共 2 次尝试）、`send_unknown`（点击次数恒为 1）；
   - `test/unit/opendesign-transport.test.ts`（7）：目标枚举快/慢/全失败三条路径，以及会话路由（页面级带 `sessionId`、`Target.*` 不带）与未连接时的明确报错；

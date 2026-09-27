@@ -41,8 +41,9 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Tests
 
-- **49** new cases across 5 files:
+- **54** new cases across 6 files:
   - `test/integration/opendesign-flow.test.ts` (12): the full chain over a fake CDP (bind directory → pick model / design system / direction → send → poll to completion) plus eight fail-closed paths (invalid direction rejected at the entry point, model miss echoing candidates, version mismatch, an unconfigured host platform not blocking, layout drift including the page-text snippet diagnostic, an existing instance that cannot be adopted, an unconfirmable send that is never resent, and `session_lost` when the conversation page is missing during a rework round), asserting the event stream (`task_dispatched` / `file_modification_started`) and that `guiStop` is reported truthfully.
+  - `test/integration/opendesign-rework-loop.test.ts` (5): the orchestrator-level rework loop — the plan lands in the **project root** and the rework prompt carries only a **relative path**; the plan includes the visual-diff table and the "targeted fixes only" requirement; the round cap turns into `needs_attention` with per-round plans that never overwrite history; manual rework is fail-closed without a verification report; with a report, the user's extra requirement is merged into the prompt.
   - `test/unit/opendesign-menu.test.ts` (8): the reuse branch, non-unique trigger, menu never appears, duplicate names, miss echoing candidates, clicked-but-readback-mismatch, the search-filter path, and readback polling.
   - `test/unit/opendesign-send.test.ts` (8): the confirmation truth table (clearing alone does not count as success), `input_mismatch`, the one-tick-late editor re-read, the retry when the send button is unavailable on the first attempt, permanent unavailability (two attempts including the retry), and `send_unknown` (click count stays exactly 1).
   - `test/unit/opendesign-transport.test.ts` (7): the fast / slow / both-fail target-enumeration paths, session routing (page-level commands carry `sessionId`, `Target.*` does not), and an explicit error when not connected.
