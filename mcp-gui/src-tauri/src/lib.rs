@@ -500,10 +500,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("启动 Tianshu-mcp 日志台失败");
 
-    app.run(|app_handle, event| {
-        // macOS：关闭到托盘后点 Dock 图标应重新显示窗口
-        if let tauri::RunEvent::Reopen { .. } = event {
-            tray::show_main_window(app_handle);
+    app.run(|_app_handle, _event| {
+        // macOS 专属：窗口收进托盘后，点 Dock 图标应重新显示窗口。
+        // `RunEvent::Reopen` 仅在 macOS 上存在，其他平台必须条件编译，否则编译失败。
+        #[cfg(target_os = "macos")]
+        {
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                tray::show_main_window(_app_handle);
+            }
         }
     });
 }
