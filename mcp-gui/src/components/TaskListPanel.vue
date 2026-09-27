@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 左栏：任务列表（筛选 / 排序 / 状态色标 / 轮次）。
+ * 左栏：任务列表（紧凑筛选条 + 折叠筛选板 / 状态脊 / 轮次）。
  */
 import { computed, ref } from "vue";
 import AppIcon from "./AppIcon.vue";
@@ -8,6 +8,7 @@ import StatusBadge from "./StatusBadge.vue";
 import { useI18n } from "@/i18n";
 import { countByPhase, emptyFilter } from "@/core/filter";
 import { formatDateTime } from "@/core/format";
+import { statusTone } from "@/core/status";
 import { refreshTasks, selectTask, app, taskFacets, visibleTasks } from "@/stores/app";
 import type { SortDir, SortKey } from "@/api/types";
 
@@ -56,74 +57,104 @@ async function onSortChange(key: SortKey, dir: SortDir): Promise<void> {
 </script>
 
 <template>
-  <section class="pane">
+  <section class="pane pane-rail">
     <header class="pane-header">
       <span class="pane-title">{{ t("tasks.title") }}</span>
       <span class="hint">{{ t("tasks.count", { n: app.tasks.length }) }}</span>
       <span class="hint tone-active">{{ t("tasks.activeCount", { n: counts.active }) }}</span>
       <span class="hint">{{ t("tasks.terminalCount", { n: counts.terminal }) }}</span>
       <span class="app-header-spacer" />
-      <button class="btn btn-icon" :title="t('common.refresh')" @click="refreshTasks">
+      <button
+        class="btn btn-icon"
+        :title="t('common.refresh')"
+        :aria-label="t('common.refresh')"
+        @click="refreshTasks"
+      >
         <AppIcon name="refresh" />
       </button>
-      <button class="btn btn-icon" :title="t('tasks.filterKeyword')" @click="showFilters = !showFilters">
-        <AppIcon :name="showFilters ? 'chevronUp' : 'chevronDown'" />
+      <button
+        class="btn btn-icon"
+        :class="{ 'is-on': showFilters }"
+        :title="t('tasks.filterKeyword')"
+        :aria-label="t('tasks.filterKeyword')"
+        :aria-expanded="showFilters"
+        @click="showFilters = !showFilters"
+      >
+        <AppIcon name="filter" />
       </button>
     </header>
 
-    <div v-if="showFilters" class="section" style="border-bottom: 1px solid var(--border)">
-      <div class="field">
-        <input
-          v-model="app.filter.keyword"
-          class="input"
-          :placeholder="t('tasks.filterKeyword')"
-          @keyup.enter="onFilterChange"
-          @change="onFilterChange"
-        />
-      </div>
-      <div class="grid-2" style="margin-top: 8px">
+    <div class="filter-bar">
+      <input
+        v-model="app.filter.keyword"
+        class="input"
+        :placeholder="t('tasks.filterKeyword')"
+        :aria-label="t('tasks.filterKeyword')"
+        @keyup.enter="onFilterChange"
+        @change="onFilterChange"
+      />
+      <select
+        v-model="app.filter.status"
+        class="select"
+        :aria-label="t('tasks.filterStatus')"
+        @change="onFilterChange"
+      >
+        <option :value="null">{{ t("common.all") }}</option>
+        <option v-for="s in facets.statuses" :key="s" :value="s">{{ t(`status.${s}`) }}</option>
+      </select>
+    </div>
+
+    <div v-if="showFilters" class="filter-sheet">
+      <div class="grid-2">
         <div class="field">
           <span class="field-label">{{ t("tasks.filterAgent") }}</span>
-          <select v-model="app.filter.agentId" class="select" @change="onFilterChange">
+          <select
+            v-model="app.filter.agentId"
+            class="select"
+            :aria-label="t('tasks.filterAgent')"
+            @change="onFilterChange"
+          >
             <option :value="null">{{ t("common.all") }}</option>
             <option v-for="a in facets.agents" :key="a" :value="a">{{ a }}</option>
           </select>
         </div>
         <div class="field">
-          <span class="field-label">{{ t("tasks.filterStatus") }}</span>
-          <select v-model="app.filter.status" class="select" @change="onFilterChange">
-            <option :value="null">{{ t("common.all") }}</option>
-            <option v-for="s in facets.statuses" :key="s" :value="s">{{ t(`status.${s}`) }}</option>
-          </select>
+          <span class="field-label">{{ t("tasks.filterFrom") }}</span>
+          <input v-model="fromDate" class="input" type="date" :aria-label="t('tasks.filterFrom')" />
         </div>
       </div>
-      <div class="field" style="margin-top: 8px">
-        <span class="field-label">{{ t("tasks.filterProject") }}</span>
-        <select v-model="app.filter.projectPath" class="select" @change="onFilterChange">
-          <option :value="null">{{ t("common.all") }}</option>
-          <option v-for="p in facets.projects" :key="p" :value="p">{{ p }}</option>
-        </select>
-      </div>
-      <div class="grid-2" style="margin-top: 8px">
+
+      <div class="grid-2">
         <div class="field">
-          <span class="field-label">{{ t("tasks.filterFrom") }}</span>
-          <input v-model="fromDate" class="input" type="date" />
+          <span class="field-label">{{ t("tasks.filterProject") }}</span>
+          <select
+            v-model="app.filter.projectPath"
+            class="select"
+            :aria-label="t('tasks.filterProject')"
+            @change="onFilterChange"
+          >
+            <option :value="null">{{ t("common.all") }}</option>
+            <option v-for="p in facets.projects" :key="p" :value="p">{{ p }}</option>
+          </select>
         </div>
         <div class="field">
           <span class="field-label">{{ t("tasks.filterTo") }}</span>
-          <input v-model="toDate" class="input" type="date" />
+          <input v-model="toDate" class="input" type="date" :aria-label="t('tasks.filterTo')" />
         </div>
       </div>
-      <div class="inline wrap" style="margin-top: 8px">
-        <label class="inline" style="gap: 4px">
+
+      <div class="inline wrap">
+        <label class="check">
           <input v-model="app.filter.onlyActive" type="checkbox" @change="onFilterChange" />
-          <span class="hint">{{ t("tasks.onlyActive") }}</span>
+          <span>{{ t("tasks.onlyActive") }}</span>
         </label>
-        <span class="app-header-spacer" />
+      </div>
+
+      <div class="inline">
         <select
-          class="select"
-          style="max-width: 130px"
+          class="select select-compact"
           :value="app.sortKey"
+          :aria-label="t('tasks.sortBy')"
           @change="onSortChange(($event.target as HTMLSelectElement).value as SortKey, app.sortDir)"
         >
           <option value="updatedAt">{{ t("tasks.sortUpdatedAt") }}</option>
@@ -133,10 +164,12 @@ async function onSortChange(key: SortKey, dir: SortDir): Promise<void> {
         <button
           class="btn btn-icon"
           :title="app.sortDir === 'desc' ? t('tasks.sortDesc') : t('tasks.sortAsc')"
+          :aria-label="app.sortDir === 'desc' ? t('tasks.sortDesc') : t('tasks.sortAsc')"
           @click="onSortChange(app.sortKey, app.sortDir === 'desc' ? 'asc' : 'desc')"
         >
-          <AppIcon :name="app.sortDir === 'desc' ? 'chevronDown' : 'chevronUp'" />
+          <AppIcon :name="app.sortDir === 'desc' ? 'sortDesc' : 'sortAsc'" />
         </button>
+        <span class="app-header-spacer" />
         <button class="btn btn-ghost" @click="resetFilters">{{ t("tasks.resetFilter") }}</button>
       </div>
     </div>
@@ -145,23 +178,26 @@ async function onSortChange(key: SortKey, dir: SortDir): Promise<void> {
       <div v-if="app.tasksLoading" class="empty">{{ t("common.loading") }}</div>
       <div v-else-if="visibleTasks.length === 0" class="empty">
         <div>{{ t("tasks.noTasks") }}</div>
-        <div class="hint" style="margin-top: 4px">{{ t("tasks.noTasksHint") }}</div>
+        <div class="hint empty-sub">{{ t("tasks.noTasksHint") }}</div>
       </div>
-      <div v-else>
+      <template v-else>
         <div
           v-for="task in visibleTasks"
           :key="task.taskId"
           class="task-item"
           :class="{ 'is-selected': task.taskId === app.selectedTaskId }"
+          :data-tone="statusTone(task.status)"
           @click="selectTask(task.taskId)"
         >
           <div class="task-item-top">
             <StatusBadge :status="task.status" />
             <span v-if="task.dryRun" class="badge tone-info">{{ t("tasks.dryRun") }}</span>
             <span class="app-header-spacer" />
-            <span class="hint mono">{{ task.agentId }}</span>
+            <span class="hint mono truncate" :title="task.agentId">{{ task.agentId }}</span>
           </div>
-          <div class="task-item-title" :title="task.task">{{ task.task || task.taskId }}</div>
+          <div class="task-item-title" :title="task.task || task.taskId">
+            {{ task.task || task.taskId }}
+          </div>
           <div class="task-item-meta">
             <span class="mono truncate" :title="task.taskId">{{ task.taskId }}</span>
           </div>
@@ -173,7 +209,7 @@ async function onSortChange(key: SortKey, dir: SortDir): Promise<void> {
             </span>
           </div>
         </div>
-      </div>
+      </template>
     </div>
   </section>
 </template>

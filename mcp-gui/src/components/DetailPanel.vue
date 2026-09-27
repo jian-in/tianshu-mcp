@@ -46,14 +46,15 @@ async function doExportZip(): Promise<void> {
 </script>
 
 <template>
-  <section class="pane">
+  <section class="pane pane-detail">
     <header class="pane-header">
       <span class="pane-title">{{ t("detail.title") }}</span>
       <span class="app-header-spacer" />
       <button
         v-if="task"
         class="btn btn-icon"
-        :title="t('common.refresh')"
+        :title="t('detail.copyPath')"
+        :aria-label="t('detail.copyPath')"
         @click="copy(taskDirAbsolute, 'dir')"
       >
         <AppIcon :name="copiedKey === 'dir' ? 'check' : 'copy'" />
@@ -63,8 +64,8 @@ async function doExportZip(): Promise<void> {
     <div class="pane-body">
       <div v-if="!task" class="empty">{{ t("detail.noSelection") }}</div>
       <template v-else>
-        <div class="section" style="border-bottom: 1px solid var(--border)">
-          <div class="inline" style="margin-bottom: 8px">
+        <div class="section">
+          <div class="inline">
             <StatusBadge :status="task.status" />
             <span v-if="task.dryRun" class="badge tone-info">{{ t("tasks.dryRun") }}</span>
             <span class="app-header-spacer" />
@@ -73,10 +74,12 @@ async function doExportZip(): Promise<void> {
               {{ t("detail.copyTaskId") }}
             </button>
           </div>
-          <div class="task-item-title" style="white-space: normal">{{ task.task || task.taskId }}</div>
+          <p class="detail-summary">{{ task.task || task.taskId }}</p>
         </div>
 
-        <div class="section" style="border-bottom: 1px solid var(--border)">
+        <div class="divider" />
+
+        <div class="section">
           <h3 class="section-title">{{ t("detail.meta") }}</h3>
           <dl class="kv">
             <dt>{{ t("detail.taskId") }}</dt>
@@ -114,24 +117,30 @@ async function doExportZip(): Promise<void> {
           </dl>
         </div>
 
-        <div class="section" style="border-bottom: 1px solid var(--border)">
+        <div class="divider" />
+
+        <div class="section">
           <h3 class="section-title">{{ t("detail.changedFiles") }}</h3>
           <div v-if="task.changedFiles.length === 0" class="hint">{{ t("common.none") }}</div>
-          <div v-for="file in task.changedFiles" :key="file" class="mono truncate" :title="file">
-            {{ file }}
+          <div v-else class="file-list">
+            <span v-for="file in task.changedFiles" :key="file" class="truncate" :title="file">
+              {{ file }}
+            </span>
           </div>
         </div>
 
+        <div class="divider" />
+
         <div class="section">
           <h3 class="section-title">{{ t("export.exportTaskZip") }}</h3>
-          <label class="inline" style="gap: 4px; margin-bottom: 8px">
+          <label class="check">
             <input v-model="excludeHeavyLogs" type="checkbox" />
-            <span class="hint">{{ t("export.excludeHeavyLogs") }}</span>
+            <span>{{ t("export.excludeHeavyLogs") }}</span>
           </label>
-          <button class="btn" @click="doExportZip">
+          <button class="btn export-action" @click="doExportZip">
             <AppIcon name="archive" />{{ t("export.exportTaskZip") }}
           </button>
-          <div v-if="message" class="hint" style="margin-top: 6px">{{ message }}</div>
+          <div v-if="message" class="hint export-message">{{ message }}</div>
         </div>
       </template>
     </div>

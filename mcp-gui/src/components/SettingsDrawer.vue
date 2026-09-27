@@ -43,60 +43,62 @@ function probeText(side: "gitee" | "github"): string {
 
 <template>
   <div class="overlay" @click.self="emit('close')">
-    <aside class="drawer">
+    <aside class="drawer" role="dialog" aria-modal="true" :aria-label="t('settings.title')">
       <header class="drawer-header">
         <AppIcon name="settings" />
-        <strong>{{ t("settings.title") }}</strong>
+        <span class="drawer-title">{{ t("settings.title") }}</span>
         <span v-if="isMockRuntime" class="badge tone-warn">{{ t("runtime.mock") }}</span>
         <span class="app-header-spacer" />
-        <button class="btn btn-icon" @click="emit('close')"><AppIcon name="close" /></button>
+        <button class="btn btn-icon" :aria-label="t('common.close')" @click="emit('close')">
+          <AppIcon name="close" />
+        </button>
       </header>
 
       <div class="drawer-body">
-        <div>
+        <section class="drawer-section">
           <div class="field-label">{{ t("settings.language") }}</div>
-          <div class="inline" style="margin-top: 6px">
+          <div class="segmented">
             <button
               v-for="item in languages"
               :key="item.value"
-              class="tab"
+              class="segment"
               :class="{ 'is-active': preferences.language === item.value }"
               @click="updatePreferences({ language: item.value })"
             >
               {{ item.label }}
             </button>
           </div>
-        </div>
+        </section>
 
-        <div>
+        <section class="drawer-section">
           <div class="field-label">{{ t("settings.theme") }}</div>
-          <div class="inline" style="margin-top: 6px">
+          <div class="segmented">
             <button
               v-for="item in themes"
               :key="item.value"
-              class="tab"
+              class="segment"
               :class="{ 'is-active': preferences.theme === item.value }"
               @click="updatePreferences({ theme: item.value })"
             >
               <AppIcon :name="item.icon" /> {{ item.label }}
             </button>
           </div>
-        </div>
+        </section>
 
-        <div>
+        <section class="drawer-section">
           <div class="field-label">{{ t("settings.updateSource") }}</div>
-          <div class="inline wrap" style="margin-top: 6px">
+          <div class="segmented">
             <button
               v-for="item in sources"
               :key="item.value"
-              class="tab"
+              class="segment"
               :class="{ 'is-active': preferences.updateSource === item.value }"
               @click="updatePreferences({ updateSource: item.value })"
             >
               {{ item.label }}
             </button>
           </div>
-          <div class="inline wrap" style="margin-top: 8px">
+          <div class="inline wrap">
             <button class="btn btn-ghost" @click="probeUpdateSources">
               <AppIcon name="globe" />{{ t("update.probe") }}
             </button>
@@ -105,22 +107,22 @@ function probeText(side: "gitee" | "github"): string {
               {{ t("update.probeGithub") }}: {{ probeText("github") }}
             </span>
           </div>
-          <div v-if="app.update.probe?.degraded" class="notice notice-warn" style="margin-top: 8px">
+          <div v-if="app.update.probe?.degraded" class="notice notice-warn">
             <AppIcon name="alert" />
             <span>{{ t("update.offlineFallback") }}</span>
           </div>
-        </div>
+        </section>
 
         <div class="divider" />
 
-        <div>
-          <h3 class="section-title">{{ t("update.title") }}</h3>
-          <div class="hint" style="margin-bottom: 8px">
+        <section class="drawer-section">
+          <h3 class="section-title flush">{{ t("update.title") }}</h3>
+          <div class="hint">
             {{ t("update.currentVersion", { v: app.update.currentVersion || "—" }) }} ·
             {{ t("update.betaChannel") }}
           </div>
 
-          <div v-if="!app.update.updaterConfigured" class="notice notice-warn" style="margin-bottom: 8px">
+          <div v-if="!app.update.updaterConfigured" class="notice notice-warn">
             <AppIcon name="alert" />
             <span>{{ t("update.pubkeyMissing") }}</span>
           </div>
@@ -154,9 +156,9 @@ function probeText(side: "gitee" | "github"): string {
             </a>
           </div>
 
-          <div v-if="app.update.result" class="notice" style="margin-top: 10px">
+          <div v-if="app.update.result" class="notice">
             <AppIcon name="info" />
-            <div>
+            <div class="grow">
               <div v-if="app.update.result.error" class="tone-fail">
                 {{ t("update.failed", { msg: app.update.result.error }) }}
               </div>
@@ -167,12 +169,12 @@ function probeText(side: "gitee" | "github"): string {
               <div v-if="app.update.result.source" class="hint">
                 {{ t("update.sourceUsed", { s: app.update.result.source }) }}
               </div>
-              <pre v-if="app.update.result.notes" class="check-output" style="max-height: 160px">{{
+              <pre v-if="app.update.result.notes" class="output-block mt-sm">{{
                 app.update.result.notes
               }}</pre>
             </div>
           </div>
-        </div>
+        </section>
       </div>
     </aside>
   </div>

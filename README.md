@@ -472,13 +472,14 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
   - **TraeWork**：新增 `discovery.ts`（固定盘枚举 + 注册表 + 相对路径），修正内置目录（`{APPDATA}/TRAE SOLO CN` 实为**用户数据目录**，非安装位置）；Windows 文件名收窄为只认 `TRAE SOLO CN.exe`（旧清单含 `Trae CN` 会误匹配另一产品 TraeCode CN）；端口未就绪时输出诊断（退出码 / 端口监听者 / 既有实例），**只诊断不改启动策略**
   - **统一诊断**：新增 `src/agents/gui-diagnostics.ts`，三 GUI agent 在选择器解析失败时把「页面可见候选」写进错误，使用者一步定位漂移
   - 详见 [v0.6.2 发布说明](<docs/release-v0.6.2.md>)；验证记录见 [issue-23 记录](docs/issue-23-selector-drift-record.md)
-- **M33 — 日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3）**（2026-09-27）— 新增 81 项前端用例（issue #25；GUI 独立版本 `0.1.0-beta.1`）
+- **M33 — 日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3）**（2026-09-27）— 新增 81 项前端用例（issue #25；GUI 独立版本 `0.1.0-beta.2`）
   - **独立只读桌面应用**：`mcp-gui/` 与 MCP server **完全解耦**（不依赖 MCP 进程在跑，纯读文件系统），把四类日志与任务产物统一到一个界面；对业务数据全程只读，唯一写入是应用自身偏好（系统应用配置目录）
   - **四类日志**：`logs/server.log`（级别/时间范围过滤 + 关键字高亮）、`task.jsonl`（区分状态跃迁 / 细粒度 Agent 事件 / `note` 进度通道，坏行跳过但计数）、`agent-<轮次>.log` 与 `verify-<轮次>.log`（轮次切换 + 行号/换行）、`report-<轮次>.{md,json,html}` 与 `dry-run-report-*`（Markdown 渲染 / 结构化卡片 / **sandbox iframe** 视觉预览 / 干跑与常规分区 / 多轮对比）
   - **大日志与实时 tail**：首屏只读 64 KiB 尾部窗口、向前按块加载并显示「已加载 N / 共 M」；`notify` 文件监听驱动增量刷新，**上翻自动暂停跟随**、可一键「跳到最新」
   - **跨任务搜索 / 导出**：按需扫描（不建本地全文索引）+ 进度 + 可取消，命中按「任务 → 文件 → 行」分组并可跳转；单文件导出与任务整包 zip（可排除体积大的原始日志）
   - **双源自动更新**：**主动实测择优**（不依赖系统区域，VPN 场景下亦正确）+ 三态开关 + TTL 缓存 + 失败回退「上次可用源」；两端清单同版本同签名，**minisign 验签不通过一律拒绝安装**；更新失败不影响日志查看主流程
   - **CI 隔离与门禁**：新增独立 `GUI` workflow（windows / macos-15-intel / macos-15 三平台矩阵），`gui-v*` 不以 `v` 开头故**不触发** MCP 的 `release.yml`；新增 TS 真源 ↔ 前端镜像 ↔ Rust 镜像的**三方词表一致性门禁**（漂移即 fail）；**手动触发（`workflow_dispatch`）无条件构建**（早期版本手动触发会因最近提交未改 `mcp-gui/` 而静默跳过整个矩阵）
+  - **前端设计系统（自研，无 UI 库）**：表现层完全重构为独立的**精密仪器 / 精致中性**设计系统——深浅双主题完整对齐、12 级中性灰阶 + 单一钢蓝强调色（已移除蓝紫渐变与紫色信息色）、三档**纯系统字体**栈（零外链、零字体文件）、数字统一 `tabular-nums`、顶栏 1px 强调细线与任务行状态脊作为视觉记忆点；标签页改下划线指示器，报告类型 / 轮次 / 设置改分段控件；标签栏支持 ←/→ 键切换、图标按钮带 `aria-label`、支持 `prefers-reduced-motion`
   - 使用与开发说明见 [日志台文档](docs/gui-log-viewer.md)，真机记录见 [issue-25 记录](docs/issue-25-gui-real-machine-record.md)；**GUI 版本独立演进，不随 MCP 主包发布**（主包版本与本期无关）
 
 ## Agent 适配现状

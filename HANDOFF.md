@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-27 · 开发版本 `0.7.0`（**尚未发布**）；本次新增独立交付面「日志台 GUI」（`0.1.0-beta.1`，独立 tag `gui-v*`，待发布）。**
+> **交接快照：2026-09-27 · 开发版本 `0.7.0`（**尚未发布**）；本次新增独立交付面「日志台 GUI」（`0.1.0-beta.2`，独立 tag `gui-v*`，独立演进）。**
 > **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包**运行时逻辑零改动、版本号不变**。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
 > **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布），**五个 issue 均已回复并关闭**（2026-09-24）。
 > **#18~#22 的真机记录已全部补齐**（2026-09-25）：见 [issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md) 与 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)；各 issue 另附真机证据补充评论。
@@ -9,6 +9,26 @@
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 独立交付面 · 日志台 GUI 前端设计系统重构（`mcp-gui/`，未发布，2026-09-27）
+
+- **范围**：`mcp-gui/` 前端**表现层完全重构**（`App.vue` + 11 个组件 + 全局样式 + `index.html`），
+  **功能、数据层、store API、i18n 键一律未动**；`src/core/**`、`src/api/**`、`src/stores/**`、`src/i18n/**`、`src/theme/index.ts` 与 Rust 侧**全部零改动**。
+- **设计系统（唯一真源 `mcp-gui/src/styles.css`）**：12 级中性灰阶 + 语义别名（`--bg-*` / `--line-*` / `--fg-*`）；
+  唯一强调色为**钢蓝**（浅色 `#2F5C86` / 深色 `#6FA8DC`，与 `info` 紫明确区分）；原先的**蓝紫渐变品牌标与紫色信息色已移除**；
+  间距阶 4/6/8/12/16/20/24/32、圆角 3/5/8/999、动效 120/180/260ms + 统一缓动、`:focus-visible` 焦点环、`prefers-reduced-motion` 全量降级。
+- **字体：仅系统内置字体**（显示体 / 正文 / 等宽三档栈：Windows `Segoe UI Variable*` + macOS `SF Pro*` / `PingFang SC`），
+  **零新增字体文件、零外链**；所有计数 / 时间 / 行号 / 字节改用 `tabular-nums`。
+- **版式记忆点**：顶栏顶部 1px 强调色细线 + 任务行左侧 3px 状态脊；六标签页由药丸改为**下划线指示器**；
+  报告类型 / 轮次 / 设置三组改用**分段控件**与圆片，层级可辨；事件流改为带表头的四列栅格（`行 / 时间 / 事件 / 详情`，展开 JSON 整行通栏）。
+- **可访问性与主题**：标签栏 `role="tablist" / tab` + `aria-selected` + ←/→ 键切换；图标按钮补 `aria-label`（复用既有 i18n 键，**未新增任何文案键**）；
+  错误条改 `role="alert"`；新增 `color-scheme` 声明让原生 select / 滚动条跟随主题；`index.html` 加**首屏防白闪**内联底色。
+  `<html data-theme="light|dark">` 主题契约不变，深浅两套 token 完整对齐。
+- **本地门禁（全绿）**：`npm run typecheck` / `npm run lint` / `npm run test`（**81 项既有用例零失败**）/ `npm run build`；
+  `npm run dev` 启动后逐模块请求 14 个源文件**均 200**，编译产物 CSS 括号平衡、关键选择器齐备；组件内**零硬编码颜色、零内联结构样式、零 emoji**。
+- **版本**：GUI 独立版本 `0.1.0-beta.1 → 0.1.0-beta.2`（`package.json` / `package-lock.json`（2 处）/ `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 同提交）；
+  **未打 tag、未触发任何发布流程**；按硬约束**本机未执行任何 Rust 构建 / 检查**。
+- **不涉及 MCP 主包**：主包仍为 `0.7.0`（尚未发布），本次零改动。
 
 ### 独立交付面 · 日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3）（未发布，2026-09-27）
 

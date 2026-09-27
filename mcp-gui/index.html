@@ -3,7 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Tianshu-mcp 日志台</title>
+    <style>
+      /* 首屏防白闪：在 styles.css 加载前先给出画布底色（与设计系统 token 同值） */
+      html {
+        background: #f3f4f6;
+      }
+      html[data-theme="dark"] {
+        background: #090b0e;
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>

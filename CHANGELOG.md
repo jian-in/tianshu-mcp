@@ -21,6 +21,7 @@
   - **大日志与实时 tail**：首屏只读 64 KiB 尾部窗口 + 向前分块加载 + 「已加载 N / 共 M」；`notify` 驱动增量刷新，**手动上翻自动暂停跟随**、可一键「跳到最新」。
   - **跨任务搜索 / 导出 / 复制**：按需扫描（**不建本地全文索引**）+ 进度反馈 + 可取消；单文件导出 + 任务整包 zip（可排除体积大的原始日志并如实回报排除数）。
   - **体验**：中英双语（默认中文）+ 深色 / 浅色 / 跟随系统（默认跟随）。
+  - **前端设计系统重构（GUI 独立版本 `0.1.0-beta.2`）**：表现层完全重写为自研设计系统（不依赖 UI 组件库 / CSS 框架）——深浅双主题完整对齐、12 级中性灰阶 + **单一钢蓝强调色**（移除蓝紫渐变品牌标与紫色信息色）、**三档纯系统字体**栈（零外链、零字体文件）、数字统一 `tabular-nums`；版式改为顶栏 1px 强调细线 + 任务行状态脊，标签页改**下划线指示器**，报告类型 / 轮次 / 设置改**分段控件**；可访问性补 `role="tablist"` + `aria-selected` + `←/→` 键切换与图标按钮 `aria-label`，并加入 `prefers-reduced-motion` 与 `color-scheme` 支持。**功能、数据层、store API 与 i18n 键零改动**（81 项既有用例全绿）。
 - **双源（Gitee / GitHub）自动更新**：**主动实测择优**（并发探测两端端点并按时延选择，**不依赖系统区域 / 时区**，VPN 场景下亦正确）+ TTL 缓存 + 三态开关（自动 / 强制 Gitee / 强制 GitHub）+ 两端均不可达时回退上次可用源；两端清单同版本同签名，`tauri-plugin-updater` **验签不通过一律拒绝安装**；任一步失败都**不影响日志查看主流程**（提供「手动下载」兜底）。Windows 更新载体为 NSIS（Tauri updater 不支持 MSI）。
 - **独立 `GUI` workflow**（`.github/workflows/gui.yml`）：`windows-latest` / `macos-15-intel` / `macos-15` 三平台矩阵；push 到 `master` 仅编译验证并上传 artifact，`gui-v*-beta.*` tag 才双端发布 pre-release。`gui-v*` **不以 `v` 开头**，**不触发** MCP 的 `release.yml`（workflow 内含显式断言）。
 - **三方词表一致性门禁**：`mcp-gui/scripts/check-schema-parity.mjs` 比对 **TS 真源（`src/tasks/task.ts` / `src/agents/agent-events.ts`）↔ 前端镜像 ↔ Rust 镜像**，任一漂移即 fail；`GUI` workflow 的触发路径含两个真源文件，故 TS 侧漂移也会被检出。

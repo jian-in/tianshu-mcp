@@ -130,6 +130,15 @@ Task ID, absolute task directory, and the full current log can be copied with on
 - **Chinese / English** switchable, Chinese by default;
 - Theme: **system / light / dark**, system by default.
 
+### 5.1 Design system and layout
+
+- **An in-house design system — no UI component library, CSS framework, or animation library.** The **single source of truth** for colors, fonts, spacing, radii, and motion is `mcp-gui/src/styles.css` (`src/theme/index.ts` only writes the mode to `<html data-theme="light|dark">`).
+- **Color**: a 12-step neutral ramp plus semantic aliases; **a single accent color (steel blue)**, kept strictly separate from the semantic tones (success / failure / caution / needs-human / terminated).
+- **Typography**: **system fonts only**, in three stacks — display / body / mono (Windows `Segoe UI Variable*`, macOS `SF Pro*`, CJK `PingFang SC` / `Microsoft YaHei UI`). **No font is downloaded or linked**, so the app is fully usable offline.
+- **Icons**: all inline SVG (**no emoji**), inheriting the text color.
+- **Layout**: three columns (task list · content · details); the six tabs use an underline indicator; switching and filtering are split into two toolbar levels on the log and report pages; every counter, timestamp, line number, and byte count uses tabular figures (`tabular-nums`) so values do not jitter as they change.
+- **Accessibility**: every interactive element is reachable by `Tab` with a visible focus ring; the tab bar responds to `←` / `→`; the system "reduce motion" setting is honoured.
+
 ---
 
 ## 6. Dual-source auto-update (Gitee / GitHub)

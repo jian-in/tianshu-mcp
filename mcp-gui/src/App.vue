@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /**
- * 应用外壳：顶栏（品牌 / 数据目录 / 设置）+ 三栏（任务列表 · 内容区 · 详情）。
+ * 应用外壳：顶栏（品牌 / 数据目录 / 全局动作）+ 三栏（任务列表 · 内容区 · 详情）。
+ *
+ * 视觉契约：顶部 1px 强调色细线是全局唯一的记忆点；标签栏用下划线指示器而不是药丸。
  */
 import { ref } from "vue";
 import AppIcon from "./components/AppIcon.vue";
@@ -27,13 +29,28 @@ const TABS: { key: TabKey; labelKey: string }[] = [
   { key: "serverLog", labelKey: "tabs.serverLog" },
   { key: "search", labelKey: "tabs.search" },
 ];
+
+/** ←/→ 在标签之间移动焦点并切换（键盘可达性） */
+function onTabKey(event: KeyboardEvent, index: number): void {
+  const delta = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+  if (delta === 0) return;
+  event.preventDefault();
+  const nextIndex = (index + delta + TABS.length) % TABS.length;
+  const next = TABS[nextIndex];
+  if (!next) return;
+  openTab(next.key);
+  const buttons = (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLElement>(
+    '[role="tab"]',
+  );
+  buttons?.[nextIndex]?.focus();
+}
 </script>
 
 <template>
   <div class="app-shell">
     <header class="app-header">
       <div class="app-brand">
-        <span class="brand-mark"><AppIcon name="terminal" size="14" /></span>
+        <span class="brand-mark"><AppIcon name="terminal" size="13" /></span>
         <span>{{ t("app.name") }}</span>
       </div>
       <DataHomeBar />
@@ -41,28 +58,55 @@ const TABS: { key: TabKey; labelKey: string }[] = [
       <span v-if="isMockRuntime" class="badge tone-warn" :title="t('runtime.tauriUnavailable')">
         {{ t("runtime.mock") }}
       </span>
-      <button class="btn btn-icon" :title="t('common.refresh')" @click="refreshTasks">
-        <AppIcon name="refresh" />
-      </button>
-      <button class="btn btn-icon" :title="t('settings.title')" @click="settingsOpen = true">
-        <AppIcon name="settings" />
-      </button>
+      <div class="app-header-actions">
+        <button
+          class="btn btn-icon"
+          :title="t('common.refresh')"
+          :aria-label="t('common.refresh')"
+          @click="refreshTasks"
+        >
+          <AppIcon name="refresh" />
+        </button>
+        <button
+          class="btn btn-icon"
+          :title="t('settings.title')"
+          :aria-label="t('settings.title')"
+          @click="settingsOpen = true"
+        >
+          <AppIcon name="settings" />
+        </button>
+      </div>
     </header>
+
+    <div v-if="app.error" class="notice notice-error app-notice" role="alert">
+      <AppIcon name="alert" />
+      <span class="grow">{{ app.error }}</span>
+      <button class="btn btn-icon" :aria-label="t('common.close')" @click="clearError">
+        <AppIcon name="close" />
+      </button>
+    </div>
 
     <main class="app-body">
       <TaskListPanel />
 
       <section class="pane">
         <header class="pane-header">
-          <button
-            v-for="tab in TABS"
-            :key="tab.key"
-            class="tab"
-            :class="{ 'is-active': app.tab === tab.key }"
-            @click="openTab(tab.key)"
-          >
-            {{ t(tab.labelKey) }}
-          </button>
+          <div class="tabbar" role="tablist">
+            <button
+              v-for="(tab, index) in TABS"
+              :key="tab.key"
+              class="tab"
+              role="tab"
+              type="button"
+              :class="{ 'is-active': app.tab === tab.key }"
+              :aria-selected="app.tab === tab.key"
+              :tabindex="app.tab === tab.key ? 0 : -1"
+              @click="openTab(tab.key)"
+              @keydown="onTabKey($event, index)"
+            >
+              {{ t(tab.labelKey) }}
+            </button>
+          </div>
         </header>
 
         <EventTimeline v-if="app.tab === 'events'" />
@@ -75,12 +119,6 @@ const TABS: { key: TabKey; labelKey: string }[] = [
 
       <DetailPanel />
     </main>
-
-    <div v-if="app.error" class="notice notice-error" style="margin: 0 16px 12px">
-      <AppIcon name="alert" />
-      <span style="flex: 1 1 auto">{{ app.error }}</span>
-      <button class="btn btn-icon" @click="clearError"><AppIcon name="close" /></button>
-    </div>
 
     <SettingsDrawer v-if="settingsOpen" @close="settingsOpen = false" />
   </div>

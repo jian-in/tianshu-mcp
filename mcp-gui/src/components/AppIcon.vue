@@ -36,6 +36,11 @@ const ICON_PATHS: Record<string, string> = {
   info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 11v5M12 8h.01",
   clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2",
   compare: "M8 4v16M16 4v16M4 8h4M16 8h4M4 16h4M16 16h4",
+  filter: "M4 5h16l-6 7v6l-4 2v-8Z",
+  sortAsc: "M4 17h8M4 12h5M4 7h2M17 7v10M14 14l3 3 3-3",
+  sortDesc: "M4 7h8M4 12h5M4 17h2M17 17V7M14 10l3-3 3 3",
+  panelLeft: "M3 5h18v14H3zM9 5v14",
+  listTree: "M4 6h4M4 12h4M4 18h4M11 6h9M11 12h9M11 18h9",
 };
 
 const props = withDefaults(
@@ -57,7 +62,7 @@ const path = computed(() => ICON_PATHS[props.name] ?? "");
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="1.8"
+    stroke-width="1.6"
     stroke-linecap="round"
     stroke-linejoin="round"
     aria-hidden="true"

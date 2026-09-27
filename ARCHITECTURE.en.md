@@ -1054,6 +1054,26 @@ docs-only commit does not spin up the whole three-platform matrix. The three eve
 | `workflow_dispatch` (manual) | **always build** | manually triggering means "build now"; an earlier revision degraded to diffing the last two commits, so if they happened not to touch `mcp-gui/` the whole matrix was **silently skipped** (the manual run did nothing) |
 | push / PR | diff against the previous commit (or the PR base); build only when `mcp-gui/` or `gui.yml` matches | saves runners, while `gui.yml` changes still get re-verified |
 
+### 16.6 Frontend design system and theme contract
+
+The GUI frontend's **presentation layer has its own design system**, decoupled from the MCP package and from the
+website directory. Read this section before changing any UI styling.
+
+| Contract | Rule |
+|---|---|
+| Single source of truth | `mcp-gui/src/styles.css`: colors / fonts / spacing / radii / elevation / motion are defined **here only** (`:root` holds theme-agnostic tokens; `:root[data-theme="light|dark"]` holds one color set each) |
+| Theme mechanism | only `<html data-theme="light|dark">` is written (`src/theme/index.ts`); components and stylesheets **must not contain hard-coded colors** — variable aliases only (`--bg-*` / `--line-*` / `--fg-*`) |
+| Accent color | **exactly one**: steel blue (`#2F5C86` light / `#6FA8DC` dark). Semantic tones `ok / fail / warn / info / muted` never double as the accent; tone classification stays in `src/core/status.ts` (mapping only, no copy) |
+| Typography | **system fonts only**, three stacks: display (`Segoe UI Variable Display` / `SF Pro Display`) / body (`Segoe UI Variable Text` / `SF Pro Text`) / mono (`Cascadia Mono` / `SF Mono`), with `PingFang SC` / `Microsoft YaHei UI` for CJK. **No font files, no external links** |
+| Icons | always the inline SVG path table in `mcp-gui/src/components/AppIcon.vue` (repo rule: **no emoji**); unknown names render empty instead of throwing |
+| Numeric alignment | every number that changes with data (times / line numbers / bytes / rounds / counters / exit codes) must use `font-variant-numeric: tabular-nums`; section titles use an eyebrow style (11px / uppercase / `letter-spacing`) |
+| Accessibility | a shared `:focus-visible` ring; tab bar uses `role="tablist" / tab` + `aria-selected` + ←/→ keys; icon buttons must carry `aria-label` (reusing existing i18n keys — **no copy keys are added for a restyle**); motion collapses under `@media (prefers-reduced-motion: reduce)` |
+| Native controls | `color-scheme: light / dark` keeps native `select` and scrollbars in step with the theme; window chrome stays native — **no custom title bar** |
+
+**Change boundary**: a restyle may touch only `App.vue`, `src/components/**`, `src/styles.css`, and `index.html`.
+`src/core/**`, `src/api/**`, `src/stores/**`, `src/i18n/**`, `src/theme/index.ts`, and `src-tauri/**` (Rust) belong to the
+functional and data layers and **must not be modified** as part of styling work.
+
 ---
 
 ## 17. Further reading

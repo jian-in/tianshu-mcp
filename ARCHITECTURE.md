@@ -1003,6 +1003,24 @@ Rust 侧需要重写一份「状态枚举 / 事件词表」用于事件分类，
 | `workflow_dispatch`（手动） | **无条件构建** | 手动触发的语义就是「我要现在构建」；早期版本会退化成比较最近两次提交，若它们恰好未改 `mcp-gui/`，整个矩阵会被**静默跳过**（手动触发变成"什么都没跑"） |
 | push / PR | 与上一提交（PR 则与 base）做 diff，命中 `mcp-gui/` 或 `gui.yml` 才构建 | 省算力，且 `gui.yml` 自身改动也需复验 |
 
+### 16.6 前端设计系统与主题契约
+
+GUI 前端的**表现层有一份独立的设计系统**，与 MCP 主包、官网目录均无耦合。改任何界面样式之前先读本节。
+
+| 契约 | 约定 |
+|---|---|
+| 唯一真源 | `mcp-gui/src/styles.css`：色值 / 字体 / 间距 / 圆角 / 层次 / 动效**只在这一处定义**（`:root` 放与主题无关的 token，`:root[data-theme="light|dark"]` 各放一套颜色值） |
+| 主题机制 | 只操作 `<html data-theme="light|dark">`（`src/theme/index.ts`）；组件与样式表**不得出现硬编码颜色**，只允许引用变量别名（`--bg-*` / `--line-*` / `--fg-*`） |
+| 强调色 | **只有一个**：钢蓝（浅 `#2F5C86` / 深 `#6FA8DC`）。语义色 `ok / fail / warn / info / muted` 与强调色互不混用，语义分类逻辑仍是 `src/core/status.ts`（只映射，不含文案） |
+| 字体 | **仅系统内置字体**，三档栈：显示体（`Segoe UI Variable Display` / `SF Pro Display`）/ 正文（`Segoe UI Variable Text` / `SF Pro Text`）/ 等宽（`Cascadia Mono` / `SF Mono`），中文回退 `PingFang SC` / `Microsoft YaHei UI`。**不引入任何字体文件与外链** |
+| 图标 | 一律 `mcp-gui/src/components/AppIcon.vue` 的内联 SVG 路径表（仓库规则：**禁 emoji**）；未知名称渲染空、不抛错 |
+| 排版细节 | 所有会随数据跳动的数字（时间 / 行号 / 字节 / 轮次 / 计数 / 退出码）必须 `font-variant-numeric: tabular-nums`；区块标题用 eyebrow（11px / 大写 / `letter-spacing`） |
+| 可访问性 | 交互元素统一 `:focus-visible` 焦点环；标签栏 `role="tablist" / tab` + `aria-selected` + ←/→ 键切换；图标按钮必须有 `aria-label`（复用既有 i18n 键，**不因样式重构新增文案键**）；`@media (prefers-reduced-motion: reduce)` 下动效归零 |
+| 原生控件 | `color-scheme: light / dark` 让原生 `select` / 滚动条跟随主题；窗口边框保持系统原生，**不自绘标题栏** |
+
+**改动边界**：样式重构只允许动 `App.vue`、`src/components/**`、`src/styles.css`、`index.html`。
+`src/core/**`、`src/api/**`、`src/stores/**`、`src/i18n/**`、`src/theme/index.ts` 与 `src-tauri/**`（Rust）属于功能与数据层，样式改动**不得顺带修改**。
+
 ---
 
 ## 17. 延伸阅读

@@ -73,71 +73,92 @@ async function jumpTo(hit: SearchHit): Promise<void> {
     <header class="pane-header">
       <span class="pane-title">{{ t("search.title") }}</span>
       <span class="app-header-spacer" />
-      <span v-if="app.search.running" class="hint">{{ t("search.progress", { n: app.search.scanned }) }}</span>
+      <span v-if="app.search.running" class="hint">
+        {{ t("search.progress", { n: app.search.scanned }) }}
+      </span>
       <span v-else-if="app.search.result" class="hint">
         {{ t("search.scanned", { n: app.search.result.scannedFiles }) }} ·
         {{ t("search.results", { n: app.search.result.totalHits }) }}
       </span>
     </header>
 
-    <div class="section" style="border-bottom: 1px solid var(--border)">
-      <div class="inline">
-        <input
-          v-model="app.search.keyword"
-          class="input"
-          :placeholder="t('search.placeholder')"
-          @keyup.enter="doSearch"
-        />
-        <button class="btn btn-primary" :disabled="!canRun || app.search.running" @click="doSearch">
-          <AppIcon name="search" />{{ t("search.run") }}
-        </button>
-        <button class="btn" :disabled="!app.search.running" @click="cancelSearch">
-          <AppIcon name="close" />{{ t("search.cancel") }}
-        </button>
-      </div>
-      <div class="inline wrap" style="margin-top: 8px">
-        <label class="inline" style="gap: 4px">
-          <input v-model="app.search.caseSensitive" type="checkbox" />
-          <span class="hint">{{ t("search.caseSensitive") }}</span>
-        </label>
-        <span class="hint">{{ t("search.scope") }}:</span>
-        <label class="inline" style="gap: 4px">
-          <input v-model="app.search.scope.eventStream" type="checkbox" />
-          <span class="hint">{{ t("search.scopeEvents") }}</span>
-        </label>
-        <label class="inline" style="gap: 4px">
-          <input v-model="app.search.scope.agentLogs" type="checkbox" />
-          <span class="hint">{{ t("search.scopeAgentLogs") }}</span>
-        </label>
-        <label class="inline" style="gap: 4px">
-          <input v-model="app.search.scope.verifyLogs" type="checkbox" />
-          <span class="hint">{{ t("search.scopeVerifyLogs") }}</span>
-        </label>
-        <label class="inline" style="gap: 4px">
-          <input v-model="app.search.scope.reports" type="checkbox" />
-          <span class="hint">{{ t("search.scopeReports") }}</span>
-        </label>
-        <label class="inline" style="gap: 4px">
-          <input v-model="app.search.scope.serverLog" type="checkbox" />
-          <span class="hint">{{ t("search.scopeServerLog") }}</span>
-        </label>
-      </div>
-      <div v-if="!canRun" class="hint" style="margin-top: 6px">
+    <div class="search-bar">
+      <input
+        v-model="app.search.keyword"
+        class="input grow"
+        :placeholder="t('search.placeholder')"
+        :aria-label="t('search.placeholder')"
+        @keyup.enter="doSearch"
+      />
+      <button class="btn btn-primary" :disabled="!canRun || app.search.running" @click="doSearch">
+        <AppIcon name="search" />{{ t("search.run") }}
+      </button>
+      <button class="btn" :disabled="!app.search.running" @click="cancelSearch">
+        <AppIcon name="close" />{{ t("search.cancel") }}
+      </button>
+    </div>
+
+    <div class="search-scopes">
+      <span class="field-label">{{ t("search.scope") }}</span>
+      <button
+        class="chip"
+        :class="{ 'is-on': app.search.scope.eventStream }"
+        @click="app.search.scope.eventStream = !app.search.scope.eventStream"
+      >
+        {{ t("search.scopeEvents") }}
+      </button>
+      <button
+        class="chip"
+        :class="{ 'is-on': app.search.scope.agentLogs }"
+        @click="app.search.scope.agentLogs = !app.search.scope.agentLogs"
+      >
+        {{ t("search.scopeAgentLogs") }}
+      </button>
+      <button
+        class="chip"
+        :class="{ 'is-on': app.search.scope.verifyLogs }"
+        @click="app.search.scope.verifyLogs = !app.search.scope.verifyLogs"
+      >
+        {{ t("search.scopeVerifyLogs") }}
+      </button>
+      <button
+        class="chip"
+        :class="{ 'is-on': app.search.scope.reports }"
+        @click="app.search.scope.reports = !app.search.scope.reports"
+      >
+        {{ t("search.scopeReports") }}
+      </button>
+      <button
+        class="chip"
+        :class="{ 'is-on': app.search.scope.serverLog }"
+        @click="app.search.scope.serverLog = !app.search.scope.serverLog"
+      >
+        {{ t("search.scopeServerLog") }}
+      </button>
+      <span class="app-header-spacer" />
+      <button
+        class="chip"
+        :class="{ 'is-on': app.search.caseSensitive }"
+        @click="app.search.caseSensitive = !app.search.caseSensitive"
+      >
+        {{ t("search.caseSensitive") }}
+      </button>
+      <span v-if="!canRun" class="hint ml-md">
         {{ app.search.keyword.trim().length === 0 ? t("search.needKeyword") : t("search.needScope") }}
-      </div>
+      </span>
     </div>
 
     <div class="pane-body">
-      <div v-if="app.search.running" class="empty">{{ t("search.progress", { n: app.search.scanned }) }}</div>
+      <div v-if="app.search.running" class="empty">
+        {{ t("search.progress", { n: app.search.scanned }) }}
+      </div>
       <div v-else-if="!app.search.result" class="empty">{{ t("search.placeholder") }}</div>
       <div v-else-if="groups.length === 0" class="empty">{{ t("search.noResults") }}</div>
       <template v-else>
         <div v-for="group in groups" :key="group.relPath">
           <div class="search-group-title">
-            {{ group.relPath }}
-            <span class="hint" style="margin-left: 8px">
-              {{ t("search.results", { n: group.hits.length }) }}
-            </span>
+            <span class="grow truncate" :title="group.relPath">{{ group.relPath }}</span>
+            <span class="hint">{{ t("search.results", { n: group.hits.length }) }}</span>
           </div>
           <div
             v-for="hit in group.hits"
@@ -148,11 +169,13 @@ async function jumpTo(hit: SearchHit): Promise<void> {
             <div class="inline">
               <span class="hint mono">{{ hit.line }}</span>
               <span class="app-header-spacer" />
-              <span class="hint">{{ t("search.jump") }} <AppIcon name="chevronRight" size="12" /></span>
+              <span class="hint">
+                <span class="jump">{{ t("search.jump") }}<AppIcon name="chevronRight" size="12" /></span>
+              </span>
             </div>
             <div class="search-snippet">{{ hit.snippet }}</div>
           </div>
-          <div v-if="group.truncated" class="hint" style="padding: 4px 16px">
+          <div v-if="group.truncated" class="hint search-note">
             {{ t("search.truncated", { n: group.hits.length }) }}
           </div>
         </div>
