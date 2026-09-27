@@ -54,14 +54,19 @@ function buildFragment(args) {
   if (!platform) throw new Error("fragment 模式需要 --platform");
 
   const files = walk(bundleDir);
+  const listFiles = () => files.map((f) => `  ${path.relative(bundleDir, f)}`).join("\n");
   const artifact = files.find((f) => isUpdaterArtifact(path.basename(f)));
   if (!artifact) {
-    throw new Error(`在 ${bundleDir} 未找到更新载体（${UPSTREAM_SUFFIXES.join(" / ")}）`);
+    throw new Error(
+      `在 ${bundleDir} 未找到更新载体（${UPSTREAM_SUFFIXES.join(" / ")}）。\n` +
+        `目录下文件：\n${listFiles() || "  （空）"}`,
+    );
   }
   const sigFile = `${artifact}.sig`;
   if (!files.includes(sigFile)) {
     throw new Error(
-      `缺少签名文件 ${sigFile}：请确认已配置 TAURI_SIGNING_PRIVATE_KEY（签名不通过时必须拒绝安装）`,
+      `缺少签名文件 ${sigFile}：请确认已配置 TAURI_SIGNING_PRIVATE_KEY（签名不通过时必须拒绝安装）。\n` +
+        `目录下文件：\n${listFiles()}`,
     );
   }
   const filename = path.basename(artifact);
