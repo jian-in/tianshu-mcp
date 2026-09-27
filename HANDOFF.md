@@ -39,6 +39,10 @@
 - **手动触发的变更检测陷阱（已修）**：`GUI` workflow 用 `changed` 步骤判定是否真改了 GUI，但 `workflow_dispatch` **不带 `github.event.before`**，
   早期实现会退化成 `git diff HEAD~1 HEAD` —— 若最近两次提交恰好只改文档，整个三平台矩阵会被**静默跳过**（手动触发变成"11 秒 Success 但什么都没跑"）。
   现口径：手动触发**无条件构建**；tag 无条件构建；push / PR 才做 diff 过滤。
+- **首次打 tag 暴露的 Windows 更新载体命名问题（已修）**：`Build updater manifest fragment` 仅在 **tag 运行**时执行，此前非 tag 运行都被跳过，故"全绿"没暴露到。
+  打 `gui-v0.1.0-beta.1` 后该步骤 **Windows 失败、macOS 两平台成功** —— 根因是载体命名取决于 `bundle.createUpdaterArtifacts`：
+  本项目用 **v2 原生 `true`**，Windows **不产出 `.nsis.zip`**，而是**直接复用 NSIS 安装器** `*-setup.exe`（签名 `*-setup.exe.sig`）；只有 `"v1Compatible"` 才产出 `.nsis.zip`；macOS 两种模式都是 `.app.tar.gz`。
+  修法：`mcp-gui/scripts/build-updater-manifest.mjs` 改为**按优先级匹配多后缀**（`.nsis.zip` / `.msi.zip` / `.app.tar.gz` / `.exe` / `.msi`，专用更新包优先于复用安装器），并在找不到载体时列出 bundle 目录全部文件。
 - **Tauri 2 异步命令规则（本次踩坑）**：`async fn` 命令**只要含借用输入**（如 `State<'_, T>`）就**必须返回 `Result<_, _>`**，
   否则编译报 `E0277 async commands that contain references as inputs must return a Result` +
   `E0597 __tauri_message__ does not live long enough`（`get_data_home_state` / `list_tasks` / `read_events` / `get_preferences` 已按此改正）；

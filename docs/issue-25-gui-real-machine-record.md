@@ -96,6 +96,20 @@
 > 排障关键细节（已同步至 `HANDOFF.md`）：**cargo / rustc 输出带 ANSI 颜色码**，解析前必须剥离，否则 `^error` 行匹配不到；
 > Windows runner 上 `rustfmt` 的 diff 表头是 `Diff in <路径>:<行号>:`（非 Unix 的 `at line <行号>`）；注解有「单条 ~4K 字符 + 单步 10 条」上限，故按 2500 字符切块并分多步打印。
 
+### 3.3 首次打 tag 暴露的问题：Windows 更新载体命名（2026-09-27）
+
+打 `gui-v0.1.0-beta.1` tag 后 `GUI` workflow 首次走到 **`Build updater manifest fragment`** 步骤，
+**Windows 失败、macOS 两个平台成功**（`Publish` 因 `needs: build` 失败被跳过）。
+
+| 项 | 内容 |
+|---|---|
+| 失败面 | `Build (windows-x86_64)` → `Build updater manifest fragment`（`tauri build` 本身 success） |
+| 根因 | 更新载体命名取决于 `bundle.createUpdaterArtifacts`：本项目用 **v2 原生 `true`**，Windows 侧**不产出 `.nsis.zip`**，而是**直接复用 NSIS 安装器** `*-setup.exe`（签名 `*-setup.exe.sig`）；只有 `"v1Compatible"` 才产出 `.nsis.zip`。macOS 两种模式都是 `.app.tar.gz`，故仅 Windows 命中 |
+| 为何此前"全绿"没暴露 | 该步骤带 `if: startsWith(github.ref, 'refs/tags/gui-v')`，**仅在 tag 运行时执行**；此前都是 push/手动触发的非 tag 运行，步骤被跳过 |
+| 修法 | `mcp-gui/scripts/build-updater-manifest.mjs` 改为**按优先级匹配多后缀**：`.nsis.zip` / `.msi.zip` / `.app.tar.gz` / `.exe` / `.msi`（专用更新包优先于复用安装器），两套命名同时存在也能选对 |
+| 附带改进 | 找不到载体时**列出 bundle 目录全部文件**，便于按注解定位 |
+| 验证 | 本机对 4 种场景做纯 Node 回归：v1 兼容（zip 与 exe 共存→选 zip）、v2 原生 Windows（→选 exe）、macOS（→选 `.app.tar.gz`）、空目录（→非 0 退出并列出文件） |
+
 ---
 
 ## 四、结论

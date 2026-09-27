@@ -41,10 +41,28 @@ function parseArgs(argv) {
   return args;
 }
 
-const UPSTREAM_SUFFIXES = [".nsis.zip", ".app.tar.gz"];
+/**
+ * 更新载体后缀，**顺序即优先级**。
+ *
+ * Tauri 有两套命名，取决于 `bundle.createUpdaterArtifacts`：
+ *   · `true`（v2 原生，本项目采用）：
+ *       - macOS → `myapp.app.tar.gz`
+ *       - Windows → **直接复用安装器**：`myapp-setup.exe`（NSIS）/ `myapp.msi`
+ *   · `"v1Compatible"`：
+ *       - Windows → 额外打包为 `myapp-setup.nsis.zip` / `myapp.msi.zip`
+ *
+ * 因此不能只认 `.nsis.zip`：v2 原生模式下 Windows 根本没有 zip，只有 `.exe`。
+ * 优先级把「专用更新包（zip / tar.gz）」排在「复用安装器（exe / msi）」之前，
+ * 两套命名同时存在时也能选到语义更明确的那一个。
+ */
+const UPDATER_ARTIFACT_SUFFIXES = [".nsis.zip", ".msi.zip", ".app.tar.gz", ".exe", ".msi"];
 
-function isUpdaterArtifact(name) {
-  return UPSTREAM_SUFFIXES.some((suffix) => name.endsWith(suffix));
+function findUpdaterArtifact(files) {
+  for (const suffix of UPDATER_ARTIFACT_SUFFIXES) {
+    const hit = files.find((f) => path.basename(f).endsWith(suffix));
+    if (hit) return hit;
+  }
+  return undefined;
 }
 
 function buildFragment(args) {
@@ -55,10 +73,10 @@ function buildFragment(args) {
 
   const files = walk(bundleDir);
   const listFiles = () => files.map((f) => `  ${path.relative(bundleDir, f)}`).join("\n");
-  const artifact = files.find((f) => isUpdaterArtifact(path.basename(f)));
+  const artifact = findUpdaterArtifact(files);
   if (!artifact) {
     throw new Error(
-      `在 ${bundleDir} 未找到更新载体（${UPSTREAM_SUFFIXES.join(" / ")}）。\n` +
+      `在 ${bundleDir} 未找到更新载体（${UPDATER_ARTIFACT_SUFFIXES.join(" / ")}）。\n` +
         `目录下文件：\n${listFiles() || "  （空）"}`,
     );
   }
