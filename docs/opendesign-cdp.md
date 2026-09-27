@@ -148,6 +148,7 @@ Open Design 是打包过的 React 应用（`resources/app/prebundled/*` 为压�
 npm run build
 node scripts/probe-opendesign.mjs anchors --no-focus   # 只读盘点；连接不置前
 node scripts/probe-opendesign.mjs all                  # install + process + cdp + appconfig + anchors
+node scripts/probe-opendesign.mjs all --launch --save  # 真机取证：启动实例 + 全部输出落盘到 docs/opendesign-evidence/
 ```
 
 ### 4.1 选择器取证表（`src/agents/opendesign/selectors.ts` 的 `primary`）
@@ -231,7 +232,8 @@ node scripts/probe-opendesign.mjs all                  # install + process + cdp
 ### 4.4 待回填：探针全锚点实际命中清单
 
 `scripts/probe-opendesign.mjs anchors` 会打印每个语义键的**实际命中数与首个文本**。
-本机沙箱内 Open Design 主线程停在启动期（见 §3.1），无法完成真实 DOM 采集，因此下表待**在可联网终端**回填：
+本机沙箱内 Open Design 主线程停在启动期（见 §3.1），无法完成真实 DOM 采集，因此下表待**在可联网终端**回填
+（用 `--save` 跑一次即可直接得到可提交的证据文件，见 [docs/opendesign-evidence/](opendesign-evidence/README.md)）：
 
 | 语义键 | 期望命中数 | 实测命中数 | 实测文本 |
 |---|---|---|---|
@@ -335,12 +337,16 @@ node scripts/probe-opendesign.mjs anchors      # 界面锚点盘点（需实例�
 **采集选择器的完整步骤**（需要外网可达，否则主线程会卡在启动期请求）：
 
 1. 关闭所有 Open Design 窗口（未开调试端口的实例无法接管）；
-2. `node scripts/probe-opendesign.mjs anchors --launch`：启动受管实例 → 打印
-   `/json/version`、page target 拓扑、每个语义键的候选命中数与文本、页面可见文本前 1200 字符；
-3. 把收敛出的稳定 CSS 写回 `src/agents/opendesign/selectors.ts` 的 `primary`
-   （或在 `agent-profiles.json` 的 `gui.selectors` 里按语义键覆盖，不必发版）；
+2. `node scripts/probe-opendesign.mjs all --launch --save`：启动受管实例 → 打印
+   `/json/version`、page target 拓扑、每个语义键的**候选命中数与文本**、页面可见文本前 1200 字符，
+   并把**全部输出落盘**到 [docs/opendesign-evidence/](opendesign-evidence/README.md)（文件名含时间戳）；
+3. 用证据文件里的 `anchors` 段回填本文 §4.4 的表（中英两份）；命中数与期望不符时优先用
+   `agent-profiles.json` 的 `gui.selectors` 按语义键覆盖（**覆盖即权威**，不必发版），必要时再改
+   `src/agents/opendesign/selectors.ts` 的 `primary`；
 4. 重新 `anchors`，确认「布局守卫」一节显示**全部命中**；
-5. 把证据贴进本文 §4 的锚点表。
+5. 把证据贴进本文 §4 的锚点表，并把关键截图与 `agent-0.log` 一并放到 `docs/opendesign-evidence/`。
 
 `--no-focus`：连接后不置前（纯 DOM 读取用）。点击类诊断**必须置前**——
 后台页面会被 Chromium 节流，合成事件不可靠。
+`--save [目录]`：把本次全部输出落盘为可提交证据（默认 `docs/opendesign-evidence/`）；
+**失败也照样落盘**——失败现场本身就是证据。

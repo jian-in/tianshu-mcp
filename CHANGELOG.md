@@ -27,6 +27,7 @@
 - **验收 → 自动返修 → 再验收闭环接线**（`src/loop/fix-loop.ts`）：opendesign 验收失败时生成**项目根内** `.opendesign/plans/opendesign-fix-r<N>.md`（Open Design 只能读它「工作目录」白名单内的文件，写进任务数据目录会导致「我让你看计划，你说读不到」），并把「未通过摘要 + 计划相对路径 + 视觉差异证据」作为同会话返修指令发出；轮数受 `autoFixRounds` 封顶。
 - **`continue_task` / `rework_task` 支持 opendesign**（`src/tasks/task-manager.ts`、`src/mcp/context.ts`）：`agent_question` 把回答发进**当前会话**（适配器发送前确认会话页锚点，不在即 `session_lost`）；`user_confirmation` 只重连观察、**不发送任何消息**；环境类恢复走全新派发并补发完整任务书；手动返修要求已存在验收报告（否则拒绝发送）。
 - **发送段与漂移诊断的可用性收尾**（计划 §5）：发送按钮不可唯一点击时**重试一次**再硬失败（按钮可能刚由未就绪转为可用），输入回读在受控编辑器晚一拍反映 `insertText` 时**重读一次**；`selector_drift` 的诊断补**页面可见文本片段**（截断 300 字），使「缺哪个键 + 页面到底渲染了什么」同时可得，直接支撑修选择器。
+- **探针支持 `--save` 落盘真机证据**（`scripts/probe-opendesign.mjs`）：把本次全部输出写进 `docs/opendesign-evidence/`（文件名含时间戳，**成败都写**——失败现场本身就是证据）；新增该目录的**双语 README**，写清采集命令、要回填哪张表、命名约定与「先热覆盖后改源码」的处置顺序。真机验收解锁时，一条命令即可产出计划 §3.7 要求的证据。
 - **新增 `endReason`**：`version_mismatch`、`selector_drift`、`model_unavailable`、`model_mismatch`、`design_system_mismatch`、`input_mismatch`、`send_unknown`、`session_lost`、`reply_stable`、`idle_timeout`、`task_timeout`、`aborted`、`setup_failed`。
 - **新增 `needsUserKind`**：`login_required`、`system_permission`、`setup_recovery`、`user_confirmation`（`close_existing_instance` 保持）。
 

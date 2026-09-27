@@ -170,6 +170,7 @@ Review entry points (read-only):
 npm run build
 node scripts/probe-opendesign.mjs anchors --no-focus   # read-only survey; connect without focusing
 node scripts/probe-opendesign.mjs all                  # install + process + cdp + appconfig + anchors
+node scripts/probe-opendesign.mjs all --launch --save  # real-machine capture: launch + write all output into docs/opendesign-evidence/
 ```
 
 ### 4.1 Selector evidence table (`primary` values in `src/agents/opendesign/selectors.ts`)
@@ -270,7 +271,8 @@ Design constraints (isomorphic to `kimicode/dom.ts`):
 
 `scripts/probe-opendesign.mjs anchors` prints the **actual hit count and first text** for every semantic key.
 Inside this sandbox Open Design's main thread stalls during startup (see §3.1), so real DOM capture cannot
-complete; the table below awaits capture from a **network-capable terminal**:
+complete; the table below awaits capture from a **network-capable terminal** (one `--save` run produces a
+committable evidence file directly — see [docs/opendesign-evidence/](opendesign-evidence/README.en.md)):
 
 | Semantic key | Expected hits | Measured hits | Measured text |
 |---|---|---|---|
@@ -380,13 +382,19 @@ node scripts/probe-opendesign.mjs anchors      # UI anchor survey (needs an inst
 startup requests):
 
 1. Close every Open Design window (an instance without a debug port cannot be taken over);
-2. `node scripts/probe-opendesign.mjs anchors --launch`: starts a managed instance and prints
+2. `node scripts/probe-opendesign.mjs all --launch --save`: starts a managed instance, prints
    `/json/version`, the page-target topology, the match count and text for every semantic key, and the first
-   1200 characters of visible page text;
-3. Write the converged stable CSS back into `primary` in `src/agents/opendesign/selectors.ts`
-   (or override per semantic key in `agent-profiles.json`'s `gui.selectors` — no release needed);
+   1200 characters of visible page text, and **writes all of that to disk** under
+   [docs/opendesign-evidence/](opendesign-evidence/README.en.md) with a timestamped filename;
+3. Fill the `anchors` section of that file into the §4.4 table (both languages); when a count differs from the
+   expectation, prefer a hot-fix through `agent-profiles.json`'s `gui.selectors` keyed by semantic key
+   (**an override is authoritative** — no release needed), and only then edit the `primary` in
+   `src/agents/opendesign/selectors.ts`;
 4. Re-run `anchors` and confirm the "layout guard" section reports **all anchors matched**;
-5. Paste the evidence into the anchor table in §4.
+5. Paste the evidence into the anchor table in §4 and drop the key screenshots plus `agent-0.log` into
+   `docs/opendesign-evidence/`.
 
 `--no-focus` connects without bringing the window to the front (for pure DOM reads). Click diagnostics
 **must** focus it — background pages are throttled by Chromium and synthetic events become unreliable.
+`--save [dir]` writes all output to disk as committable evidence (default `docs/opendesign-evidence/`);
+**failures are written too** — a failed capture is itself evidence.

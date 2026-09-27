@@ -16,9 +16,11 @@
  *   与合成事件都不可靠）——**例外：`--no-focus` 跳过置前**（纯 DOM 读取不需要前台）。
  *
  * 用法：
- *   node scripts/probe-opendesign.mjs [命令] [--port <n>] [--launch] [--no-focus]
+ *   node scripts/probe-opendesign.mjs [命令] [--port <n>] [--launch] [--no-focus] [--save [目录]]
  */
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
 
 const USAGE = `用法: node scripts/probe-opendesign.mjs [命令] [选项]
 
@@ -34,6 +36,10 @@ const USAGE = `用法: node scripts/probe-opendesign.mjs [命令] [选项]
   --port <n>  CDP 端口（默认 9889）
   --launch    允许在无可用实例时启动 Open Design（默认只读，不启动；会新开一个窗口）
   --no-focus  连接主窗口后不做置前（纯 DOM 读取用；点击类诊断仍需置前）
+  --save [目录]
+              把本次全部输出**落盘**为一份可提交的证据（默认为 docs/opendesign-evidence/，
+              文件名含时间戳）。真机取证（docs/opendesign-cdp.md §4.4 的待回填表）就靠它产出：
+              npm run build && node scripts/probe-opendesign.mjs all --launch --save
   --help      显示本帮助
 
 前置：先执行 npm run build（脚本从 dist/ 动态 import 构建产物）。
@@ -45,15 +51,37 @@ if (argv.includes("--help") || argv.includes("-h")) {
   process.exit(0);
 }
 
-/** 位置参数解析：跳过 --port 的取值，避免把端口号当成子命令 */
+/**
+ * `--save [目录]`：把全部输出落盘为可提交的证据（默认 docs/opendesign-evidence/）。
+ * 取值是可选的，所以「下一个 token 不以 - 开头」才当成目录，避免把子命令吃掉。
+ */
+const saveIndex = argv.indexOf("--save");
+const saveDirArg =
+  saveIndex >= 0 && argv[saveIndex + 1] && !argv[saveIndex + 1].startsWith("-")
+    ? argv[saveIndex + 1]
+    : null;
+const saveDir = saveIndex >= 0 ? (saveDirArg ?? "docs/opendesign-evidence") : null;
+
+/** 位置参数解析：跳过 --port / --save 的取值，避免把端口号或目录当成子命令 */
 const positional = [];
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--port") {
     i++;
     continue;
   }
+  if (saveIndex >= 0 && i === saveIndex + 1 && saveDirArg) continue;
   if (argv[i].startsWith("-")) continue;
   positional.push(argv[i]);
+}
+
+/** `--save` 生效时把所有 console.log 同时收集起来（stdout 行为不变，便于现场阅读） */
+const captured = [];
+if (saveDir) {
+  const original = console.log.bind(console);
+  console.log = (...args) => {
+    captured.push(args.map((a) => String(a)).join(" "));
+    original(...args);
+  };
 }
 const COMMANDS = ["install", "process", "cdp", "anchors", "appconfig", "all"];
 const command = positional[0] ?? "all";
@@ -463,4 +491,32 @@ try {
 } catch (error) {
   process.stderr.write(`探针执行失败：${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
+}
+
+/**
+ * 落盘证据（`--save`）。
+ * 即使某些子命令失败也照样写：**失败现场本身就是证据**（真机取证时最需要的往往是
+ * 「哪一步不可达、报了什么」），比只留下成功的片段有用得多。
+ */
+if (saveDir) {
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const file = path.join(saveDir, `opendesign-probe-${stamp}.md`);
+    const header = [
+      `# Open Design 探针证据（${new Date().toISOString()}）`,
+      "",
+      `- 命令：\`node scripts/probe-opendesign.mjs ${argv.join(" ")}\``,
+      `- 宿主平台：${process.platform} / Node ${process.version}`,
+      `- 说明：本文件由探针自动生成，可直接作为 docs/opendesign-cdp.md §4.4 的证据回填来源。`,
+      "",
+    ].join("\n");
+    fs.mkdirSync(saveDir, { recursive: true });
+    fs.writeFileSync(file, `${header}\n\`\`\`text\n${captured.join("\n")}\n\`\`\`\n`, "utf8");
+    process.stderr.write(`\n探针输出已写入 ${file}\n`);
+  } catch (error) {
+    process.stderr.write(
+      `证据落盘失败：${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  }
 }
