@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * 态二 · 工作区（整页）：面包屑 + 任务摘要带 + 竖排分区导航 + 内容槽。
+ * 态二 · 工作区（内容区整页）：面包屑 + 任务摘要带 + 内容槽。
  *
- * 布局契约：这里只有「导航 + 内容」两块——任务元信息是顶部可展开的摘要带，**不占独立一栏**。
- * 两种形态：`task`（某任务的分区视图）/ `server`（全局 server.log，隐藏导航）。
+ * 布局契约：分区导航（事件流 / Agent 日志 / 验收日志 / 验收报告）**归外壳的常驻侧栏**，
+ * 这里只有「面包屑 + 摘要带 + 内容」一列，自身不占任何独立侧栏。
+ * 两种形态：`task`（某任务的分区视图，摘要带可见）/ `server`（全局 server.log，摘要带让位）。
  */
 import { computed, ref } from "vue";
 import AppIcon from "./AppIcon.vue";
@@ -16,23 +17,12 @@ import {
   loadEvents,
   openLog,
   openReport,
-  openTab,
   selectedTask,
-  type TabKey,
 } from "@/stores/app";
 
 const props = defineProps<{ mode: "task" | "server" }>();
 const emit = defineEmits<{ (e: "back"): void }>();
 const { t } = useI18n();
-
-/** 分区导航：原六个标签页去掉 `search`（搜索已上移到概览页） */
-const NAV: { key: TabKey; labelKey: string }[] = [
-  { key: "events", labelKey: "tabs.events" },
-  { key: "agentLogs", labelKey: "tabs.agentLogs" },
-  { key: "verifyLogs", labelKey: "tabs.verifyLogs" },
-  { key: "reports", labelKey: "tabs.reports" },
-  { key: "serverLog", labelKey: "tabs.serverLog" },
-];
 
 const task = computed(() => selectedTask.value);
 const crumbTitle = computed(() =>
@@ -128,21 +118,8 @@ async function doExport(): Promise<void> {
       @set-exclude="excludeHeavyLogs = $event"
     />
 
-    <div class="split" :class="{ 'is-solo': props.mode === 'server' }">
-      <nav v-if="props.mode === 'task'" class="sidenav">
-        <button
-          v-for="item in NAV"
-          :key="item.key"
-          class="navitem"
-          :class="{ 'is-on': app.tab === item.key }"
-          @click="openTab(item.key)"
-        >
-          {{ t(item.labelKey) }}
-        </button>
-      </nav>
-      <div class="content">
-        <slot />
-      </div>
+    <div class="content">
+      <slot />
     </div>
   </div>
 </template>

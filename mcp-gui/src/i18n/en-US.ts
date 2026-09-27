@@ -93,6 +93,10 @@ export const enUS: Messages = {
     project: "Project workspace",
     default: "No-project workspace",
   },
+  nav: {
+    primary: "Main navigation",
+    sections: "Task sections",
+  },
   tabs: {
     events: "Event stream",
     agentLogs: "Agent logs",

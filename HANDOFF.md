@@ -51,6 +51,20 @@
 
 ---
 
+### 独立交付面 · 日志台 GUI **常驻左侧栏（顶栏改左侧栏）**（`mcp-gui/`，独立版本线未发布）
+
+- **范围**：`mcp-gui/src/App.vue`（外壳重写）、`src/components/{OverviewPage,WorkspacePage,DataHomeBar}.vue`、`src/styles.css`（唯一视觉真源）、`src/i18n/{zh-CN,en-US}.ts`（各 +2 键）。**未改** `src/core/**`、`src/api/**`、`src/stores/**`、`src/theme/index.ts` 与 `src-tauri/**`（符合 `ARCHITECTURE` §16.6 的改动边界）。
+- **为什么改**：`0.1.0-beta.3` 把界面做成「概览页顶栏 + 工作区面包屑/竖排分区导航」两套骨架——概览是横的、工作区是竖的，形态不一致。本轮回正为**一条常驻左侧栏 + 两态内容区**。
+- **新骨架**：`.shell` 由 `flex-direction: column` 改为 `row`，左列 `.rail`（208px）恒在——品牌 → 全局搜索 → 主导航（任务列表 / 运行日志）→ **任务分区导航（事件流 / Agent 日志 / 验收日志 / 验收报告）** → 数据目录 → 刷新 / 设置；右列 `.stage` 承载两态。**工作区的分区导航并入这条侧栏，页面里不再有第二层左栏**；面包屑与任务摘要带仍留在内容区顶部。
+- **两处语义收敛（不是纯样式搬运）**：① `server.log` 形态改由 `app.tab === "serverLog"` 派生，删掉 `workspaceMode` 状态位——原来「任务态下点分区项看 server.log（保留摘要带）」与「概览点运行日志进 server 形态」两条路径并存；② 分区导航由 5 项收敛为 4 项，全局「运行日志」上移到主导航。概览页的搜索模式（`mode`）由 `OverviewPage` 提升到 `App.vue`——侧栏搜索框聚焦即置为 `search`。
+- **布局常量**：新增 `--rail-w: 208px` / `--rail-glow`（原 `--topbar-glow` 的竖排转写，深浅各一套）；删除 `--nav-w` / `--topbar-glow` 与 `.topbar` / `.split` / `.sidenav`；`--topbar-h` 改名 `--panel-head-h`（唯一剩余使用者是设置面板头）。版式记忆点由「顶栏上沿荧绿细线」转为「**侧栏左沿**荧绿细线」，概览页指标仪补上内容区顶沿细线（`box-shadow: inset 0 1px 0 var(--accent-line)`）。
+- **验证（本机实测）**：`vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest`（**81 passed**，8 文件）/ `vite build` 全绿；**headless Edge 真机渲染探针**（`puppeteer-core` + 本机 Edge，dev server `http://localhost:1420`）产出 6 张截图（概览 dark/light、1024×640 窄窗、工作区 dark/light、切到「验收报告」分区），DOM 断言 `leftColumns=1`、`.topbar` / `.split` / `.sidenav` 全不存在、无横向溢出；像素采样确认侧栏左沿荧绿细线（浅色实测 `rgb(152,213,191)`，与 `--accent-line` 42% 叠米白的理论值一致）与选中项 3px 强调脊随点击在侧栏内竖直迁移（y 76→191→299）。
+- **交互回归清单（13 步全过；逐帧核对状态字段，不只看「点击未抛异常」）**：① 初始为概览 · 任务卡网格，侧栏 2 项（任务列表 / 运行日志）、选中「任务列表」→ ② 点侧栏搜索框进入搜索模式（`.searchbar` 出现，此时侧栏无选中项）→ ③ 搜索面板「任务列表」回卡片网格 → ④ 侧栏「运行日志」进 server 形态（面包屑=运行日志、摘要带隐藏、**侧栏只剩 2 项——分区导航正确让位**）→ ⑤ 回概览 → ⑥ 点任务卡进工作区（面包屑=taskId、摘要带出现、**侧栏 6 项、选中「事件流」**）→ ⑦⑧⑨ 分区切到验收报告 / Agent 日志 / 事件流，选中态随之迁移 → ⑩ 刷新按钮无新报错 → ⑪⑫ 设置面板开 / 关 → ⑬ 面包屑返回回概览。全程 `pageerror` 为 0；唯一 console error 是既有 favicon 404（`index.html` 未引用 favicon，已 `curl` 复核，与本次改动无关）。**未实测**：导出 / 复制（需真实文件系统与 Tauri 运行时，mock 下无法触发）、数据目录追加 / 移除（同上）——这三项只做了代码路径核对（`WorkspacePage` 的 crumb 动作与 `DataHomeBar` 的 store 调用均未改动）。
+- **未做**：人工逐张目视（本会话的图片读取工具不支持二进制；6 张 PNG 与两份 JSON 报告归档在 `.rivet/tmp/gui-rail/` 供维护者目视）、Rust 侧构建（按 issue #25 约束不在本机执行）。
+- **版本边界**：未 bump `mcp-gui/package.json`（仍 `0.1.0-beta.5`）、未打 tag、未发版；下次发布 GUI 时需按 `scripts/gitee-gui-release.mjs` / `build-updater-manifest.mjs` 的流程 bump 版本并更新更新清单。
+
+---
+
 ### 独立交付面 · 日志台 GUI **系统托盘 + 「关闭窗口」行为设置**（`mcp-gui/`，`0.1.0-beta.5`，2026-09-27）
 
 - **范围**：`mcp-gui/src-tauri/**`（新增 `tray.rs`、改 `lib.rs` / `models.rs` / `Cargo.toml`）、`mcp-gui/src/**`（`SettingsDrawer.vue` / `AppIcon.vue` / `api/types.ts` / `api/types-lite.ts` / `stores/preferences.ts` / `api/mock.ts` / 两份 i18n 文案包）。**未改 `src/**`（MCP 主包）与 `tianshu-mcp-web/`**。

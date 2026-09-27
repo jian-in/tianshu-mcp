@@ -92,6 +92,10 @@ export const zhCN = {
     project: "项目工作区",
     default: "无项目工作区",
   },
+  nav: {
+    primary: "主导航",
+    sections: "任务分区",
+  },
   tabs: {
     events: "事件流",
     agentLogs: "Agent 日志",

@@ -1,34 +1,31 @@
 <script setup lang="ts">
 /**
- * 态一 · 任务概览（整页）：顶栏 + 指标仪 + 状态圆片 + 筛选浮层 + 任务卡网格 / 搜索模式。
+ * 态一 · 任务概览（内容区整页）：指标仪 + 状态圆片 + 筛选浮层 + 任务卡网格 / 搜索模式。
  *
- * 布局契约：这里**没有**常驻的任务栏与详情栏；任务以卡片网格铺满整页，
- * 点卡片由外壳切到「工作区」整页。
+ * 布局契约：品牌 / 数据目录 / 搜索 / 刷新 / 设置由外壳的**常驻侧栏**承担，本页**没有顶栏**；
+ * 任务以卡片网格铺满本页，点卡片由外壳切到「工作区」整页。
+ * `mode` 由外壳持有（侧栏搜索框聚焦即置为 `search`），本组件经 `v-model:mode` 读写。
  */
 import { computed, ref } from "vue";
 import AppIcon from "./AppIcon.vue";
-import DataHomeBar from "./DataHomeBar.vue";
 import MetricsStrip from "./MetricsStrip.vue";
 import TaskCard from "./TaskCard.vue";
 import SearchPanel from "./SearchPanel.vue";
 import { useI18n } from "@/i18n";
-import { isMockRuntime } from "@/api";
 import { countByPhase, emptyFilter } from "@/core/filter";
 import { statusTone, type StatusTone } from "@/core/status";
 import { app, refreshTasks, taskFacets, visibleTasks } from "@/stores/app";
 import type { SortDir, SortKey } from "@/api/types";
 
+const props = defineProps<{ mode: "tasks" | "search" }>();
+
 const emit = defineEmits<{
   (e: "open-task", taskId: string): void;
-  (e: "open-server-log"): void;
-  (e: "open-settings"): void;
   (e: "navigated"): void;
+  (e: "update:mode", mode: "tasks" | "search"): void;
 }>();
 
 const { t } = useI18n();
-
-/** 概览页的两种模式：任务卡网格 / 跨任务搜索结果 */
-const mode = ref<"tasks" | "search">("tasks");
 /** 状态圆片：纯视图内分组过滤（不改 store 的筛选条件） */
 const statusFilter = ref<StatusTone | null>(null);
 const filterOpen = ref(false);
@@ -97,56 +94,13 @@ async function onSortChange(key: SortKey, dir: SortDir): Promise<void> {
   app.sortDir = dir;
   await refreshTasks();
 }
-
-function enterSearch(): void {
-  mode.value = "search";
-}
 </script>
 
 <template>
   <div class="page">
-    <header class="topbar">
-      <span class="brand"><span class="mark" />{{ t("app.name") }}</span>
-      <DataHomeBar />
-      <span class="grow" />
-      <div class="omni">
-        <AppIcon name="search" size="14" />
-        <input
-          v-model="app.search.keyword"
-          class="omni-input"
-          :placeholder="t('search.title')"
-          :aria-label="t('search.placeholder')"
-          @focus="enterSearch"
-          @keyup.enter="enterSearch"
-        />
-      </div>
-      <span v-if="isMockRuntime" class="tag tone-warn" :title="t('runtime.tauriUnavailable')">
-        {{ t("runtime.mock") }}
-      </span>
-      <button
-        class="ibtn"
-        :title="t('common.refresh')"
-        :aria-label="t('common.refresh')"
-        @click="refreshTasks"
-      >
-        <AppIcon name="refresh" />
-      </button>
-      <button class="tbtn" :title="t('tabs.serverLog')" @click="emit('open-server-log')">
-        <AppIcon name="terminal" />{{ t("tabs.serverLog") }}
-      </button>
-      <button
-        class="ibtn"
-        :title="t('settings.title')"
-        :aria-label="t('settings.title')"
-        @click="emit('open-settings')"
-      >
-        <AppIcon name="settings" />
-      </button>
-    </header>
-
     <MetricsStrip :items="metrics" />
 
-    <template v-if="mode === 'tasks'">
+    <template v-if="props.mode === 'tasks'">
       <div class="chiprow">
         <span class="chiprow-label">{{ t("tasks.count", { n: app.tasks.length }) }}</span>
         <button
@@ -252,6 +206,6 @@ function enterSearch(): void {
       </div>
     </template>
 
-    <SearchPanel v-else @navigated="emit('navigated')" @exit="mode = 'tasks'" />
+    <SearchPanel v-else @navigated="emit('navigated')" @exit="emit('update:mode', 'tasks')" />
   </div>
 </template>

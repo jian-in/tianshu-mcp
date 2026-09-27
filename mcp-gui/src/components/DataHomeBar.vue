@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * 数据目录选择器（概览顶栏内）：自动探测 + 手动多目录切换 / 追加 / 移除。
+ * 数据目录选择器（常驻侧栏内）：自动探测 + 手动多目录切换 / 追加 / 移除。
  *
+ * 侧栏是窄列，故为竖排形态：标签与「加 / 减」按钮同行，路径下拉独占一行。
  * 保留原生 `<select>`：跨 Windows/macOS 的稳定性与可访问性优先，样式由 `.select` 统一提供。
  */
 import { computed } from "vue";
@@ -20,10 +21,30 @@ async function onChange(event: Event): Promise<void> {
 </script>
 
 <template>
-  <div class="inline">
-    <AppIcon name="folder" />
+  <div class="rail-block">
+    <div class="rail-block-head">
+      <span class="field-label">{{ t("dataHome.title") }}</span>
+      <span class="grow" />
+      <button
+        class="ibtn"
+        :title="t('dataHome.add')"
+        :aria-label="t('dataHome.add')"
+        @click="addDataHome"
+      >
+        <AppIcon name="folder" />
+      </button>
+      <button
+        class="ibtn"
+        :title="t('dataHome.remove')"
+        :aria-label="t('dataHome.remove')"
+        :disabled="entries.length <= 1"
+        @click="removeDataHome(app.dataHome.active)"
+      >
+        <AppIcon name="close" />
+      </button>
+    </div>
     <select
-      class="select select-path"
+      class="select"
       :value="app.dataHome.active"
       :title="app.dataHome.active"
       :aria-label="t('dataHome.title')"
@@ -34,22 +55,5 @@ async function onChange(event: Event): Promise<void> {
       </option>
       <option v-if="entries.length === 0" value="">{{ t("dataHome.empty") }}</option>
     </select>
-    <button
-      class="ibtn"
-      :title="t('dataHome.add')"
-      :aria-label="t('dataHome.add')"
-      @click="addDataHome"
-    >
-      <AppIcon name="folder" />
-    </button>
-    <button
-      class="ibtn"
-      :title="t('dataHome.remove')"
-      :aria-label="t('dataHome.remove')"
-      :disabled="entries.length <= 1"
-      @click="removeDataHome(app.dataHome.active)"
-    >
-      <AppIcon name="close" />
-    </button>
   </div>
 </template>

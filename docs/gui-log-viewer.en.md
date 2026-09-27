@@ -57,7 +57,7 @@ On startup the app resolves the default data home with **exactly the same rules 
 1. `TIANSHU_MCP_HOME` (used when non-empty);
 2. otherwise `~/.tianshu-mcp`.
 
-From the top bar you can:
+From the data-home block at the bottom of the sidebar you can:
 
 - **switch** between multiple data homes;
 - **add** a directory (validation: it must contain `logs/` or `tasks/`, otherwise it is rejected with a reason);
@@ -72,14 +72,14 @@ The added directories are persisted in the **system application config directory
 
 | Source | Path (relative to data home) | Where in the UI |
 |---|---|---|
-| Global runtime log | `logs/server.log` | Workspace · server log (entered from the top-bar "Server log" button) |
+| Global runtime log | `logs/server.log` | Workspace · server log (entered from the sidebar "Server log" item) |
 | Task event stream | `tasks/<taskId>/task.jsonl` | Workspace · event stream |
 | Raw execution logs | `tasks/<taskId>/agent-<round>.log`, `verify-<round>.log` | Workspace · agent logs / verify logs |
 | Acceptance reports | `tasks/<taskId>/report-<round>.{md,json,html}`, `dry-run-report-<round>.{md,json}` | Workspace · reports |
 
 ### 3.1 Task overview
 
-- **The UI is two full pages**: a **task overview page** and a **full-page workspace**. The overview runs top-bar → four-cell metrics strip (total / active / finished / failed) → status chip row → task card grid;
+- **The UI is a permanent left sidebar plus two full pages**: a **task overview page** and a **full-page workspace**. The sidebar runs brand → global search → main nav (Tasks / Server log) → task section nav → data home → refresh / settings, while the overview runs four-cell metrics strip (total / active / finished / failed) → status chip row → task card grid;
 - Tasks are shown as **cards**: the left rail carries the status color (semantic tone via `statusTone`), the title has a `›` prefix, and each card shows the status label, `agent · taskId`, `updated · rounds [· report round]` and a dry-run tag;
 - The **status chips** (all / running / succeeded / failed / needs attention / needs human) are **page-level grouping** and do not rewrite the filter conditions;
 - The `[Filter]` popover carries the full set: keyword, agent, status, project, time range, active-only, plus sorting (updated / created / task ID, ascending or descending) and "Reset filters";
@@ -119,7 +119,7 @@ The added directories are persisted in the **system application config directory
 
 ### 4.1 Cross-task search
 
-- **It lives on the overview page**: focusing the top-bar search box switches into **search mode** (the body becomes the result list); the `[Tasks]` button returns to the card grid;
+- **It lives in the sidebar**: focusing the sidebar search box returns to the overview page and switches into **search mode** (the body becomes the result list); the `[Tasks]` button returns to the card grid;
 - Scope is selectable: event streams / agent logs / verify logs / reports / server log (plus a case-sensitivity toggle);
 - Results are grouped as task → file → line with snippets; clicking jumps to the exact view and position (and into that task's **workspace**);
 - **On-demand scanning, no local full-text index**; progress feedback and **cancellable**.
@@ -144,11 +144,11 @@ Task ID (breadcrumb), absolute task directory (expanded summary bar), and the fu
 ### 5.1 Design system and layout
 
 - **An in-house design system, "Obsidian Terminal" — no UI component library, CSS framework, or animation library.** The **single source of truth** for colors, fonts, spacing, radii, motion, and layout constants is `mcp-gui/src/styles.css` (`src/theme/index.ts` only writes the mode to `<html data-theme="light|dark">`).
-- **The layout paradigm is two-state**: a **task overview page** (top bar · metrics strip · status chips · task card grid · search mode) ↔ a **full-page workspace** (breadcrumb · task summary bar · vertical section nav · content), with `server.log` as the workspace's second form. **No permanent task rail, no permanent detail column, no horizontal tab row.**
+- **The layout paradigm is "a permanent left sidebar plus a two-state content area"**: the sidebar (brand · global search · main nav · task section nav · data home · refresh / settings) is always present, while the content area switches between the **task overview page** (metrics strip · status chips · task card grid · search mode) ↔ the **full-page workspace** (breadcrumb · task summary bar · content), with `server.log` as the workspace's second form. **The task section nav shares that one sidebar — there is no second left column; no permanent task rail, no permanent detail column, no horizontal tab row.**
 - **Color**: dark by default (obsidian `#0B0D0C` canvas with a fluorescent-green `#3DFFA0` accent) and a light "paper terminal" rebuilt in the same language. The **accent is reserved for selection, primary actions, focus, and the breadcrumb back affordance**; status positions use semantic tones only (success / failure / caution / needs-human / terminated) — told apart by position and shape, not hue.
 - **Typography**: **system fonts only**, monospace-led (Windows `Cascadia Mono`, macOS `SF Mono`, CJK fallback `PingFang SC` / `Microsoft YaHei UI`). **No font is downloaded or linked**, so the app is fully usable offline.
 - **Icons**: all inline SVG (**no emoji**), inheriting the text color.
-- **Visual signature**: a 1px fluorescent rule along the top of both the top bar and the breadcrumb bar; a 3px status rail plus a `›` prefix on task cards; **bracketed status labels** (`[OK] 已成功`); panel radius 4px, tag and input radius 3px; a faint dot grid on the dark canvas and a faint grid on the light one.
+- **Visual signature**: a 1px fluorescent rule along the left edge of the sidebar and along the top of the breadcrumb bar (the metrics strip on the overview page); a 3px accent rail marking the current sidebar item; a 3px status rail plus a `›` prefix on task cards; **bracketed status labels** (`[OK] 已成功`); panel radius 4px, tag and input radius 3px; a faint dot grid on the dark canvas and a faint grid on the light one.
 - **Readout consistency**: counters, timestamps, line numbers, byte counts, rounds, and exit codes all use tabular figures (`tabular-nums`) so values do not jitter as they change.
 - **Accessibility**: every interactive element is reachable by `Tab` with a visible focus ring (task cards and nav items are native buttons, operable with `Enter` / `Space`); icon buttons carry `aria-label`; the system "reduce motion" setting is honoured.
 
