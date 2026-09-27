@@ -347,6 +347,25 @@ describe("Open Design GUI 驱动（假 CDP）", () => {
     expect(res.keptInstance).toBe(true);
   });
 
+  it("user_confirmation 恢复：只重连观察，**不发送任何消息**（计划 §4 reobserve）", async () => {
+    const state = makeOpenDesignFakeState({
+      onHome: false,
+      conversation: "【tianshu:tsk_od:r0:initial】\n等待用户确认",
+      pollScript: [
+        { stopVisible: true, sendStarting: true },
+        { stopVisible: false, sendStarting: false },
+      ],
+    });
+    const { res } = await run(state, {
+      ctx: { round: 1, resume: { kind: "continue", sendMessage: false, reobserve: true } },
+    });
+
+    expect(res.ok).toBe(true);
+    // 关键：重观察轮**一个字都不发**（用户确认文本绝不发给模型）
+    expect(state.sendClicks).toBe(0);
+    expect(state.conversation).not.toContain("【tianshu:tsk_od:r1");
+  });
+
   it("返修续说：ack 会话页存在后把返修指令发进当前会话（不重绑目录、不重选模型）", async () => {
     const state = makeOpenDesignFakeState({
       onHome: false,
