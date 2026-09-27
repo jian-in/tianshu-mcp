@@ -3,7 +3,7 @@
 > **交接快照：2026-09-27 · 开发版本 `0.7.1`（**尚未打 tag、未发布 npm**）。**
 > **本轮（0.7.0 → 0.7.1）交付**：内置 agent `opendesign`（Open Design 桌面端）**从「开发中」推进到完整可派发**——
 > 选择器按产品产物取证落地、12 步执行链全部接线、并接入验收 → 自动返修 → 再验收闭环。
-> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.5`，独立 tag `gui-v*`，独立演进；最近两轮分别是修掉**「更新后旧版本不消失」**——`productName` 改名导致 NSIS 卸载项注册表键变更，现用 `installerHooks` 做一次性迁移；以及新增**系统托盘 + 「关闭窗口」行为设置**）。
+> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.6`，独立 tag `gui-v*`，独立演进；最近一轮把**顶部导航栏改为常驻左侧栏**——概览页顶栏与工作区竖排分区导航合并为同一条侧栏，页面里不再有第二层左栏，`server.log` 形态改由 `app.tab` 派生）。
 > **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包 GUI 侧零改动。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
 > **issue #25 已按 DoD 全部达成回复并关闭**（2026-09-27）：DoD 2（F1~F12）与 DoD 9（U4~U8）由维护者在 Windows 10 真机逐项验收通过；
 > 验收中发现并修掉「更新后旧版本不消失」（GUI `0.1.0-beta.4`），已发布并完成真机端到端复现——详见下方「升级路径修复」小节与 `docs/issue-25-gui-real-machine-record.md`。
@@ -51,7 +51,7 @@
 
 ---
 
-### 独立交付面 · 日志台 GUI **常驻左侧栏（顶栏改左侧栏）**（`mcp-gui/`，独立版本线未发布）
+### 独立交付面 · 日志台 GUI **常驻左侧栏（顶栏改左侧栏）**（`mcp-gui/`，`0.1.0-beta.6`）
 
 - **范围**：`mcp-gui/src/App.vue`（外壳重写）、`src/components/{OverviewPage,WorkspacePage,DataHomeBar}.vue`、`src/styles.css`（唯一视觉真源）、`src/i18n/{zh-CN,en-US}.ts`（各 +2 键）。**未改** `src/core/**`、`src/api/**`、`src/stores/**`、`src/theme/index.ts` 与 `src-tauri/**`（符合 `ARCHITECTURE` §16.6 的改动边界）。
 - **为什么改**：`0.1.0-beta.3` 把界面做成「概览页顶栏 + 工作区面包屑/竖排分区导航」两套骨架——概览是横的、工作区是竖的，形态不一致。本轮回正为**一条常驻左侧栏 + 两态内容区**。
@@ -61,7 +61,7 @@
 - **验证（本机实测）**：`vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest`（**81 passed**，8 文件）/ `vite build` 全绿；**headless Edge 真机渲染探针**（`puppeteer-core` + 本机 Edge，dev server `http://localhost:1420`）产出 6 张截图（概览 dark/light、1024×640 窄窗、工作区 dark/light、切到「验收报告」分区），DOM 断言 `leftColumns=1`、`.topbar` / `.split` / `.sidenav` 全不存在、无横向溢出；像素采样确认侧栏左沿荧绿细线（浅色实测 `rgb(152,213,191)`，与 `--accent-line` 42% 叠米白的理论值一致）与选中项 3px 强调脊随点击在侧栏内竖直迁移（y 76→191→299）。
 - **交互回归清单（13 步全过；逐帧核对状态字段，不只看「点击未抛异常」）**：① 初始为概览 · 任务卡网格，侧栏 2 项（任务列表 / 运行日志）、选中「任务列表」→ ② 点侧栏搜索框进入搜索模式（`.searchbar` 出现，此时侧栏无选中项）→ ③ 搜索面板「任务列表」回卡片网格 → ④ 侧栏「运行日志」进 server 形态（面包屑=运行日志、摘要带隐藏、**侧栏只剩 2 项——分区导航正确让位**）→ ⑤ 回概览 → ⑥ 点任务卡进工作区（面包屑=taskId、摘要带出现、**侧栏 6 项、选中「事件流」**）→ ⑦⑧⑨ 分区切到验收报告 / Agent 日志 / 事件流，选中态随之迁移 → ⑩ 刷新按钮无新报错 → ⑪⑫ 设置面板开 / 关 → ⑬ 面包屑返回回概览。全程 `pageerror` 为 0；唯一 console error 是既有 favicon 404（`index.html` 未引用 favicon，已 `curl` 复核，与本次改动无关）。**未实测**：导出 / 复制（需真实文件系统与 Tauri 运行时，mock 下无法触发）、数据目录追加 / 移除（同上）——这三项只做了代码路径核对（`WorkspacePage` 的 crumb 动作与 `DataHomeBar` 的 store 调用均未改动）。
 - **未做**：人工逐张目视（本会话的图片读取工具不支持二进制；6 张 PNG 与两份 JSON 报告归档在 `.rivet/tmp/gui-rail/` 供维护者目视）、Rust 侧构建（按 issue #25 约束不在本机执行）。
-- **版本边界**：未 bump `mcp-gui/package.json`（仍 `0.1.0-beta.5`）、未打 tag、未发版；下次发布 GUI 时需按 `scripts/gitee-gui-release.mjs` / `build-updater-manifest.mjs` 的流程 bump 版本并更新更新清单。
+- **版本边界**：`mcp-gui` 四处版本同步 `0.1.0-beta.5 → 0.1.0-beta.6`（`package.json` / `package-lock.json` 两处 / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`），随本版发布 tag `gui-v0.1.0-beta.6`；三平台构建与双端 pre-release 全在 `GUI` workflow，`update/gui/latest.json` 由发布 job 自动生成并提交（`[skip ci]`），本地不跑 Rust。**MCP 主包版本不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。
 
 ---
 
