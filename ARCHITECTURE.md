@@ -1021,21 +1021,23 @@ Rust 侧需要重写一份「状态枚举 / 事件词表」用于事件分类，
 
 ### 16.6 前端设计系统与主题契约
 
-GUI 前端的**表现层有一份独立的设计系统**，与 MCP 主包、官网目录均无耦合。改任何界面样式之前先读本节。
+GUI 前端的**表现层有一份独立的设计系统**（**黑曜石终端 / Obsidian Terminal**），与 MCP 主包、官网目录均无耦合。改任何界面样式之前先读本节。
 
 | 契约 | 约定 |
 |---|---|
-| 唯一真源 | `mcp-gui/src/styles.css`：色值 / 字体 / 间距 / 圆角 / 层次 / 动效**只在这一处定义**（`:root` 放与主题无关的 token，`:root[data-theme="light|dark"]` 各放一套颜色值） |
-| 主题机制 | 只操作 `<html data-theme="light|dark">`（`src/theme/index.ts`）；组件与样式表**不得出现硬编码颜色**，只允许引用变量别名（`--bg-*` / `--line-*` / `--fg-*`） |
-| 强调色 | **只有一个**：钢蓝（浅 `#2F5C86` / 深 `#6FA8DC`）。语义色 `ok / fail / warn / info / muted` 与强调色互不混用，语义分类逻辑仍是 `src/core/status.ts`（只映射，不含文案） |
-| 字体 | **仅系统内置字体**，三档栈：显示体（`Segoe UI Variable Display` / `SF Pro Display`）/ 正文（`Segoe UI Variable Text` / `SF Pro Text`）/ 等宽（`Cascadia Mono` / `SF Mono`），中文回退 `PingFang SC` / `Microsoft YaHei UI`。**不引入任何字体文件与外链** |
+| **布局范式** | **两态式**：态一「任务概览」（顶栏 + 指标仪 + 状态圆片 + 筛选浮层 + 任务卡网格 + 搜索模式）/ 态二「全屏工作区」（面包屑 + 任务摘要带 + 竖排分区导航 + 内容区，`server.log` 为第二形态）。**没有常驻任务栏、没有常驻详情栏、没有横排标签页**；两态切换只用 `App.vue` 的本地 `ref`，**不新增 store 字段** |
+| 唯一真源 | `mcp-gui/src/styles.css`：色值 / 字体 / 间距 / 圆角 / 层次 / 动效 / 布局常量**只在这一处定义**（`:root` 放与主题无关的 token，`:root[data-theme="light\|dark"]` 各放一套颜色值；**深色为默认**） |
+| 主题机制 | 只操作 `<html data-theme="light\|dark">`（`src/theme/index.ts`）；组件与样式表**不得出现硬编码颜色**，只允许引用变量别名（`--bg-*` / `--line-*` / `--fg-*` / `--tone-*`） |
+| 强调色与语义色分工 | `--accent`（荧绿：深 `#3DFFA0` / 浅 `#0E9F6E`）**只**用于选中态 / 主按钮 / 焦点环 / 面包屑返回项 / 状态脊；状态标签与状态圆片**只用** `--tone-*`（`active/ok/fail/warn/info/muted`），两者靠**位置与形状**区分。语义分类逻辑仍是 `src/core/status.ts`（只映射，不含文案） |
+| 字体 | **仅系统内置字体**，等宽主导：等宽（`Cascadia Mono` / `SF Mono` / `JetBrains Mono`）/ 正文（`Segoe UI Variable Text` / `SF Pro Text`）/ 显示体（`Segoe UI Variable Display` / `SF Pro Display`），中文回退 `PingFang SC` / `Microsoft YaHei UI`。**不引入任何字体文件与外链** |
+| 版式记忆点 | 顶栏与面包屑栏上沿各一条 **1px 荧绿细线**；任务卡左侧 **3px 状态脊** + 标题 `›` 前缀；状态用**方括号标签**（`[OK] 已成功`，短码语言无关）；面板圆角 4px / 标签与输入 3px；深色底极淡点阵、浅色底极淡 1px 网格（**禁紫色渐变**） |
 | 图标 | 一律 `mcp-gui/src/components/AppIcon.vue` 的内联 SVG 路径表（仓库规则：**禁 emoji**）；未知名称渲染空、不抛错 |
-| 排版细节 | 所有会随数据跳动的数字（时间 / 行号 / 字节 / 轮次 / 计数 / 退出码）必须 `font-variant-numeric: tabular-nums`；区块标题用 eyebrow（11px / 大写 / `letter-spacing`） |
-| 可访问性 | 交互元素统一 `:focus-visible` 焦点环；标签栏 `role="tablist" / tab` + `aria-selected` + ←/→ 键切换；图标按钮必须有 `aria-label`（复用既有 i18n 键，**不因样式重构新增文案键**）；`@media (prefers-reduced-motion: reduce)` 下动效归零 |
+| 排版细节 | 所有会随数据跳动的数字（时间 / 行号 / 字节 / 轮次 / 计数 / 退出码）必须 `font-variant-numeric: tabular-nums`；区段标题用 eyebrow（11px / 大写 / `letter-spacing`） |
+| 可访问性 | 交互元素统一 `:focus-visible` 焦点环；任务卡与导航项是原生 `<button>`（可键盘触发）；图标按钮必须有 `aria-label`（复用既有 i18n 键）；`@media (prefers-reduced-motion: reduce)` 下动效归零 |
 | 原生控件 | `color-scheme: light / dark` 让原生 `select` / 滚动条跟随主题；窗口边框保持系统原生，**不自绘标题栏** |
 
 **改动边界**：样式重构只允许动 `App.vue`、`src/components/**`、`src/styles.css`、`index.html`。
-`src/core/**`、`src/api/**`、`src/stores/**`、`src/i18n/**`、`src/theme/index.ts` 与 `src-tauri/**`（Rust）属于功能与数据层，样式改动**不得顺带修改**。
+`src/core/**`、`src/api/**`、`src/stores/**`、`src/i18n/**`、`src/theme/index.ts` 与 `src-tauri/**`（Rust）属于功能与数据层，样式改动**不得顺带修改**（i18n 仅允许在**中英双语同时**新增文案键）。
 
 ---
 

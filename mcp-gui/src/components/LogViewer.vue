@@ -1,10 +1,9 @@
 <script setup lang="ts">
 /**
- * 中栏 · 原始日志查看器（agent-<round>.log / verify-<round>.log / logs/server.log）。
+ * 工作区 · 原始日志查看器（agent-<round>.log / verify-<round>.log / logs/server.log）。
  *
  * 大文件策略：首屏只读尾部窗口，向前按块加载；跟随开关关闭时**不把视口强行拉回底部**。
- *
- * 版式：header（标题 + 文件动作）→ toolbar（轮次 / 级别 / 关键字 / 计数 / 加载）→ 日志体 → footer（跟随状态）。
+ * 版式：`view-bar`（标题 + 轮次 + 文件动作）→ 次级工具条（级别 / 关键字 / 计数）→ 终端正文 → `view-foot`。
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
@@ -143,12 +142,24 @@ async function doExport(): Promise<void> {
 </script>
 
 <template>
-  <div class="pane-inner">
-    <header class="pane-header">
-      <span class="pane-title">{{ props.title }}</span>
-      <span class="app-header-spacer" />
+  <div class="view">
+    <div class="view-bar">
+      <span class="view-title">{{ props.title }}</span>
+      <div v-if="!isServerLog && rounds.length > 0" class="segmented">
+        <button
+          v-for="r in rounds"
+          :key="r"
+          class="segment"
+          :class="{ 'is-active': r === activeRound }"
+          @click="openRound(r)"
+        >
+          {{ t("logs.round", { n: r }) }}
+        </button>
+      </div>
+      <span v-else-if="!isServerLog" class="hint">{{ t("common.none") }}</span>
+      <span class="grow" />
       <button
-        class="btn btn-icon"
+        class="ibtn"
         :title="t('common.copy')"
         :aria-label="t('common.copy')"
         @click="copyAll"
@@ -156,31 +167,16 @@ async function doExport(): Promise<void> {
         <AppIcon :name="copied ? 'check' : 'copy'" />
       </button>
       <button
-        class="btn btn-icon"
+        class="ibtn"
         :title="t('export.exportFile')"
         :aria-label="t('export.exportFile')"
         @click="doExport"
       >
         <AppIcon name="download" />
       </button>
-    </header>
+    </div>
 
-    <div class="toolbar">
-      <template v-if="!isServerLog">
-        <div v-if="rounds.length > 0" class="segmented">
-          <button
-            v-for="r in rounds"
-            :key="r"
-            class="segment"
-            :class="{ 'is-active': r === activeRound }"
-            @click="openRound(r)"
-          >
-            {{ t("logs.round", { n: r }) }}
-          </button>
-        </div>
-        <span v-else class="hint">{{ t("common.none") }}</span>
-      </template>
-
+    <div class="view-bar is-sub">
       <template v-if="isServerLog">
         <button
           v-for="level in LOG_LEVELS"
@@ -192,26 +188,21 @@ async function doExport(): Promise<void> {
           <span :class="`tone-${logLevelTone(level)}`">{{ levelLabel(level) }}</span>
         </button>
       </template>
-
       <input
         v-model="app.logFilter.keyword"
         class="input input-compact"
         :placeholder="t('logs.keyword')"
         :aria-label="t('logs.keyword')"
       />
-
       <label class="check">
         <input v-model="app.logShowLineNumbers" type="checkbox" />
         <span>{{ t("logs.lineNumbers") }}</span>
       </label>
-
       <label class="check">
         <input v-model="app.logWrap" type="checkbox" />
         <span>{{ t("logs.wrap") }}</span>
       </label>
-
-      <span class="app-header-spacer" />
-
+      <span class="grow" />
       <span class="hint">
         {{
           t("logs.loadedOf", {
@@ -220,35 +211,35 @@ async function doExport(): Promise<void> {
           })
         }}
       </span>
-
-      <span class="hint">{{ t("logs.filteredHint", { shown: visibleLines.length, total: parsedLines.length }) }}</span>
-
-      <button class="btn" :disabled="!hasMoreBefore || app.logLoading" @click="loadMoreLog">
+      <span class="hint">
+        {{ t("logs.filteredHint", { shown: visibleLines.length, total: parsedLines.length }) }}
+      </span>
+      <button class="tbtn" :disabled="!hasMoreBefore || app.logLoading" @click="loadMoreLog">
         <AppIcon name="chevronUp" />{{ t("logs.loadMore") }}
       </button>
-      <button class="btn" :class="{ 'btn-primary': app.logFollow }" @click="jumpToLatest">
+      <button class="tbtn" :class="{ 'is-primary': app.logFollow }" @click="jumpToLatest">
         <AppIcon name="arrowDown" />{{ t("logs.jumpToLatest") }}
       </button>
     </div>
 
-    <div v-if="exportMessage" class="notice app-notice">
+    <div v-if="exportMessage" class="notice mt-sm">
       <AppIcon name="info" />
       <span class="grow">{{ exportMessage }}</span>
     </div>
 
     <div
       ref="scroller"
-      class="pane-body log-view"
-      :class="{ 'is-wrap': app.logWrap, 'has-gutter': app.logShowLineNumbers }"
+      class="view-body log"
+      :class="{ 'is-wrap': app.logWrap, 'is-nowrap-num': !app.logShowLineNumbers }"
       @scroll="onScroll"
     >
       <div v-if="app.logLoading" class="empty">{{ t("common.loading") }}</div>
       <div v-else-if="parsedLines.length === 0" class="empty">{{ t("logs.empty") }}</div>
       <div v-else-if="visibleLines.length === 0" class="empty">{{ t("search.noResults") }}</div>
       <template v-else>
-        <div v-for="line in visibleLines" :key="line.line" class="log-row">
-          <span v-if="app.logShowLineNumbers" class="log-gutter">{{ line.line }}</span>
-          <span class="log-text">
+        <div v-for="line in visibleLines" :key="line.line" class="lrow">
+          <span v-if="app.logShowLineNumbers" class="lgut">{{ line.line }}</span>
+          <span class="ltext">
             <template v-for="(seg, i) in highlightSegments(line.raw, app.logFilter.keyword)" :key="i">
               <mark v-if="seg.hit">{{ seg.text }}</mark>
               <template v-else>{{ seg.text }}</template>
@@ -258,14 +249,10 @@ async function doExport(): Promise<void> {
       </template>
     </div>
 
-    <footer class="pane-footer">
-      <span v-if="app.logFollow" class="log-state tone-ok">
-        <span class="dot" />{{ t("logs.following") }}
-      </span>
-      <span v-else class="log-state tone-muted">
-        <span class="dot" />{{ t("logs.paused") }}
-      </span>
-      <span v-if="hasMoreBefore" class="hint">{{ t("logs.loadMore") }}…</span>
+    <footer class="view-foot">
+      <span v-if="app.logFollow" class="tone-ok"><span class="dot" />{{ t("logs.following") }}</span>
+      <span v-else class="tone-muted"><span class="dot" />{{ t("logs.paused") }}</span>
+      <span v-if="hasMoreBefore">{{ t("logs.loadMore") }}…</span>
     </footer>
   </div>
 </template>

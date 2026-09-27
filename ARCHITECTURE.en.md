@@ -1074,23 +1074,26 @@ docs-only commit does not spin up the whole three-platform matrix. The three eve
 
 ### 16.6 Frontend design system and theme contract
 
-The GUI frontend's **presentation layer has its own design system**, decoupled from the MCP package and from the
+The GUI frontend's **presentation layer has its own design system** (**Obsidian Terminal**), decoupled from the MCP package and from the
 website directory. Read this section before changing any UI styling.
 
 | Contract | Rule |
 |---|---|
-| Single source of truth | `mcp-gui/src/styles.css`: colors / fonts / spacing / radii / elevation / motion are defined **here only** (`:root` holds theme-agnostic tokens; `:root[data-theme="light|dark"]` holds one color set each) |
-| Theme mechanism | only `<html data-theme="light|dark">` is written (`src/theme/index.ts`); components and stylesheets **must not contain hard-coded colors** — variable aliases only (`--bg-*` / `--line-*` / `--fg-*`) |
-| Accent color | **exactly one**: steel blue (`#2F5C86` light / `#6FA8DC` dark). Semantic tones `ok / fail / warn / info / muted` never double as the accent; tone classification stays in `src/core/status.ts` (mapping only, no copy) |
-| Typography | **system fonts only**, three stacks: display (`Segoe UI Variable Display` / `SF Pro Display`) / body (`Segoe UI Variable Text` / `SF Pro Text`) / mono (`Cascadia Mono` / `SF Mono`), with `PingFang SC` / `Microsoft YaHei UI` for CJK. **No font files, no external links** |
+| **Layout paradigm** | **Two states**: state 1 "task overview" (top bar + metrics strip + status chips + filter popover + task card grid + search mode) / state 2 "full-page workspace" (breadcrumb + task summary bar + vertical section nav + content, with `server.log` as the second form). **No permanent task rail, no permanent detail column, no horizontal tab row**; the switch lives in a local `ref` in `App.vue` and **adds no store fields** |
+| Single source of truth | `mcp-gui/src/styles.css`: colors / fonts / spacing / radii / elevation / motion / layout constants are defined **here only** (`:root` holds theme-agnostic tokens; `:root[data-theme="light\|dark"]` holds one color set each; **dark is the default**) |
+| Theme mechanism | only `<html data-theme="light\|dark">` is written (`src/theme/index.ts`); components and stylesheets **must not contain hard-coded colors** — variable aliases only (`--bg-*` / `--line-*` / `--fg-*` / `--tone-*`) |
+| Accent vs. semantic tones | `--accent` (fluorescent green: `#3DFFA0` dark / `#0E9F6E` light) is used **only** for selection, primary actions, focus rings, the breadcrumb back affordance, and status rails; status labels and chips use **only** `--tone-*` (`active/ok/fail/warn/info/muted`). The two are told apart by **position and shape**, not hue. Tone classification stays in `src/core/status.ts` (mapping only, no copy) |
+| Typography | **system fonts only**, monospace-led: mono (`Cascadia Mono` / `SF Mono` / `JetBrains Mono`) / body (`Segoe UI Variable Text` / `SF Pro Text`) / display (`Segoe UI Variable Display` / `SF Pro Display`), with `PingFang SC` / `Microsoft YaHei UI` for CJK. **No font files, no external links** |
+| Visual signature | a **1px fluorescent rule** along the top of both the top bar and the breadcrumb bar; a **3px status rail** plus a `›` prefix on each task card; **bracketed status labels** (`[OK] 已成功`, codes are language-neutral); panel radius 4px / tag and input radius 3px; a very faint dot grid on the dark canvas and a faint 1px grid on the light one (**no purple gradients**) |
 | Icons | always the inline SVG path table in `mcp-gui/src/components/AppIcon.vue` (repo rule: **no emoji**); unknown names render empty instead of throwing |
 | Numeric alignment | every number that changes with data (times / line numbers / bytes / rounds / counters / exit codes) must use `font-variant-numeric: tabular-nums`; section titles use an eyebrow style (11px / uppercase / `letter-spacing`) |
-| Accessibility | a shared `:focus-visible` ring; tab bar uses `role="tablist" / tab` + `aria-selected` + ←/→ keys; icon buttons must carry `aria-label` (reusing existing i18n keys — **no copy keys are added for a restyle**); motion collapses under `@media (prefers-reduced-motion: reduce)` |
+| Accessibility | a shared `:focus-visible` ring; task cards and nav items are native `<button>` elements (keyboard operable); icon buttons must carry `aria-label` (reusing existing i18n keys); motion collapses under `@media (prefers-reduced-motion: reduce)` |
 | Native controls | `color-scheme: light / dark` keeps native `select` and scrollbars in step with the theme; window chrome stays native — **no custom title bar** |
 
 **Change boundary**: a restyle may touch only `App.vue`, `src/components/**`, `src/styles.css`, and `index.html`.
 `src/core/**`, `src/api/**`, `src/stores/**`, `src/i18n/**`, `src/theme/index.ts`, and `src-tauri/**` (Rust) belong to the
-functional and data layers and **must not be modified** as part of styling work.
+functional and data layers and **must not be modified** as part of styling work (i18n copy keys may be added only when **both**
+language bundles are updated together).
 
 ---
 

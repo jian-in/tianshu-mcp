@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 设置抽屉：界面语言 / 主题 / 更新源三态 + 自动更新（检查 / 安装 / 手动下载）。
+ * 设置面板（右侧全高滑出）：界面语言 / 主题 / 更新源三态 + 自动更新（检查 / 安装 / 手动下载）。
  *
  * 更新失败**不得影响主流程**：这里只展示结果与「手动下载」兜底入口。
  */
@@ -42,20 +42,20 @@ function probeText(side: "gitee" | "github"): string {
 </script>
 
 <template>
-  <div class="overlay" @click.self="emit('close')">
-    <aside class="drawer" role="dialog" aria-modal="true" :aria-label="t('settings.title')">
-      <header class="drawer-header">
+  <div class="poverlay" @click.self="emit('close')">
+    <aside class="panel" role="dialog" aria-modal="true" :aria-label="t('settings.title')">
+      <header class="panel-head">
         <AppIcon name="settings" />
-        <span class="drawer-title">{{ t("settings.title") }}</span>
-        <span v-if="isMockRuntime" class="badge tone-warn">{{ t("runtime.mock") }}</span>
-        <span class="app-header-spacer" />
-        <button class="btn btn-icon" :aria-label="t('common.close')" @click="emit('close')">
+        <span class="panel-title">{{ t("settings.title") }}</span>
+        <span v-if="isMockRuntime" class="tag tone-warn">{{ t("runtime.mock") }}</span>
+        <span class="grow" />
+        <button class="ibtn" :aria-label="t('common.close')" @click="emit('close')">
           <AppIcon name="close" />
         </button>
       </header>
 
-      <div class="drawer-body">
-        <section class="drawer-section">
+      <div class="panel-body">
+        <section class="pblock">
           <div class="field-label">{{ t("settings.language") }}</div>
           <div class="segmented">
             <button
@@ -70,7 +70,7 @@ function probeText(side: "gitee" | "github"): string {
           </div>
         </section>
 
-        <section class="drawer-section">
+        <section class="pblock">
           <div class="field-label">{{ t("settings.theme") }}</div>
           <div class="segmented">
             <button
@@ -80,12 +80,12 @@ function probeText(side: "gitee" | "github"): string {
               :class="{ 'is-active': preferences.theme === item.value }"
               @click="updatePreferences({ theme: item.value })"
             >
-              <AppIcon :name="item.icon" /> {{ item.label }}
+              <AppIcon :name="item.icon" size="14" /> {{ item.label }}
             </button>
           </div>
         </section>
 
-        <section class="drawer-section">
+        <section class="pblock">
           <div class="field-label">{{ t("settings.updateSource") }}</div>
           <div class="segmented">
             <button
@@ -99,7 +99,7 @@ function probeText(side: "gitee" | "github"): string {
             </button>
           </div>
           <div class="inline wrap">
-            <button class="btn btn-ghost" @click="probeUpdateSources">
+            <button class="tbtn" @click="probeUpdateSources">
               <AppIcon name="globe" />{{ t("update.probe") }}
             </button>
             <span class="hint">
@@ -115,7 +115,7 @@ function probeText(side: "gitee" | "github"): string {
 
         <div class="divider" />
 
-        <section class="drawer-section">
+        <section class="pblock">
           <h3 class="section-title flush">{{ t("update.title") }}</h3>
           <div class="hint">
             {{ t("update.currentVersion", { v: app.update.currentVersion || "—" }) }} ·
@@ -129,7 +129,8 @@ function probeText(side: "gitee" | "github"): string {
 
           <div class="inline wrap">
             <button
-              class="btn btn-primary"
+              class="tbtn"
+              :class="{ 'is-primary': !app.update.checking }"
               :disabled="app.update.checking"
               @click="checkUpdate(preferences.updateSource)"
             >
@@ -138,7 +139,7 @@ function probeText(side: "gitee" | "github"): string {
             </button>
             <button
               v-if="app.update.result?.available"
-              class="btn"
+              class="tbtn"
               :disabled="app.update.installing"
               @click="installUpdate(preferences.updateSource)"
             >
@@ -147,7 +148,7 @@ function probeText(side: "gitee" | "github"): string {
             </button>
             <a
               v-if="app.update.result?.manualDownloadUrl"
-              class="btn"
+              class="tbtn"
               :href="app.update.result.manualDownloadUrl"
               target="_blank"
               rel="noreferrer noopener"
@@ -169,7 +170,7 @@ function probeText(side: "gitee" | "github"): string {
               <div v-if="app.update.result.source" class="hint">
                 {{ t("update.sourceUsed", { s: app.update.result.source }) }}
               </div>
-              <pre v-if="app.update.result.notes" class="output-block mt-sm">{{
+              <pre v-if="app.update.result.notes" class="output mt-sm">{{
                 app.update.result.notes
               }}</pre>
             </div>

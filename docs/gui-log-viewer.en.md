@@ -60,20 +60,20 @@ The added directories are persisted in the **system application config directory
 
 ## 3. The four log types
 
-| Source | Path (relative to data home) | UI tab |
+| Source | Path (relative to data home) | Where in the UI |
 |---|---|---|
-| Global runtime log | `logs/server.log` | "Server log" |
-| Task event stream | `tasks/<taskId>/task.jsonl` | "Event stream" |
-| Raw execution logs | `tasks/<taskId>/agent-<round>.log`, `verify-<round>.log` | "Agent logs" / "Verify logs" |
-| Acceptance reports | `tasks/<taskId>/report-<round>.{md,json,html}`, `dry-run-report-<round>.{md,json}` | "Reports" |
+| Global runtime log | `logs/server.log` | Workspace · server log (entered from the top-bar "Server log" button) |
+| Task event stream | `tasks/<taskId>/task.jsonl` | Workspace · event stream |
+| Raw execution logs | `tasks/<taskId>/agent-<round>.log`, `verify-<round>.log` | Workspace · agent logs / verify logs |
+| Acceptance reports | `tasks/<taskId>/report-<round>.{md,json,html}`, `dry-run-report-<round>.{md,json}` | Workspace · reports |
 
-### 3.1 Task list
+### 3.1 Task overview
 
-- Sorted by last update (newest first); filter by **project / agent / status / time range**, sort by
-  updated time, created time or task ID;
-- Status colors: `queued/running/verify_start/fixing` are active, the rest are terminal; rounds used and latest
-  report round are shown;
-- Covers both `tsk_*` (dispatched tasks) and `vfy_*` (standalone path verification records).
+- **The UI is two full pages**: a **task overview page** and a **full-page workspace**. The overview runs top-bar → four-cell metrics strip (total / active / finished / failed) → status chip row → task card grid;
+- Tasks are shown as **cards**: the left rail carries the status color (semantic tone via `statusTone`), the title has a `›` prefix, and each card shows the status label, `agent · taskId`, `updated · rounds [· report round]` and a dry-run tag;
+- The **status chips** (all / running / succeeded / failed / needs attention / needs human) are **page-level grouping** and do not rewrite the filter conditions;
+- The `[Filter]` popover carries the full set: keyword, agent, status, project, time range, active-only, plus sorting (updated / created / task ID, ascending or descending) and "Reset filters";
+- Covers both `tsk_*` (dispatched tasks) and `vfy_*` (standalone path verification records). Clicking a card opens that task's **full-page workspace**.
 
 ### 3.2 Event stream
 
@@ -109,35 +109,38 @@ The added directories are persisted in the **system application config directory
 
 ### 4.1 Cross-task search
 
-- Scope is selectable: event streams / agent logs / verify logs / reports / server log;
-- Results are grouped as task → file → line with snippets; clicking jumps to the exact view and position;
+- **It lives on the overview page**: focusing the top-bar search box switches into **search mode** (the body becomes the result list); the `[Tasks]` button returns to the card grid;
+- Scope is selectable: event streams / agent logs / verify logs / reports / server log (plus a case-sensitivity toggle);
+- Results are grouped as task → file → line with snippets; clicking jumps to the exact view and position (and into that task's **workspace**);
 - **On-demand scanning, no local full-text index**; progress feedback and **cancellable**.
 
 ### 4.2 Export
 
-- **Single file**: export the currently viewed log/report verbatim;
+- **Single file**: export the currently viewed log/report verbatim (the `⇩ Export` button on the workspace breadcrumb);
 - **Task bundle**: zip the whole `<taskId>/` directory, optionally **excluding heavy raw logs**
-  (`agent-*.log` / `verify-*.log`); the number of excluded files is reported honestly.
+  (`agent-*.log` / `verify-*.log`); the number of excluded files is reported honestly. That toggle sits in the expanded **task summary bar**.
 
 ### 4.3 Copy
 
-Task ID, absolute task directory, and the full current log can be copied with one click.
+Task ID (breadcrumb), absolute task directory (expanded summary bar), and the full current log (log toolbar) can each be copied with one click.
 
 ---
 
 ## 5. Language and theme
 
 - **Chinese / English** switchable, Chinese by default;
-- Theme: **system / light / dark**, system by default.
+- Theme: **system / light / dark**, system by default (**dark is the design baseline**).
 
 ### 5.1 Design system and layout
 
-- **An in-house design system — no UI component library, CSS framework, or animation library.** The **single source of truth** for colors, fonts, spacing, radii, and motion is `mcp-gui/src/styles.css` (`src/theme/index.ts` only writes the mode to `<html data-theme="light|dark">`).
-- **Color**: a 12-step neutral ramp plus semantic aliases; **a single accent color (steel blue)**, kept strictly separate from the semantic tones (success / failure / caution / needs-human / terminated).
-- **Typography**: **system fonts only**, in three stacks — display / body / mono (Windows `Segoe UI Variable*`, macOS `SF Pro*`, CJK `PingFang SC` / `Microsoft YaHei UI`). **No font is downloaded or linked**, so the app is fully usable offline.
+- **An in-house design system, "Obsidian Terminal" — no UI component library, CSS framework, or animation library.** The **single source of truth** for colors, fonts, spacing, radii, motion, and layout constants is `mcp-gui/src/styles.css` (`src/theme/index.ts` only writes the mode to `<html data-theme="light|dark">`).
+- **The layout paradigm is two-state**: a **task overview page** (top bar · metrics strip · status chips · task card grid · search mode) ↔ a **full-page workspace** (breadcrumb · task summary bar · vertical section nav · content), with `server.log` as the workspace's second form. **No permanent task rail, no permanent detail column, no horizontal tab row.**
+- **Color**: dark by default (obsidian `#0B0D0C` canvas with a fluorescent-green `#3DFFA0` accent) and a light "paper terminal" rebuilt in the same language. The **accent is reserved for selection, primary actions, focus, and the breadcrumb back affordance**; status positions use semantic tones only (success / failure / caution / needs-human / terminated) — told apart by position and shape, not hue.
+- **Typography**: **system fonts only**, monospace-led (Windows `Cascadia Mono`, macOS `SF Mono`, CJK fallback `PingFang SC` / `Microsoft YaHei UI`). **No font is downloaded or linked**, so the app is fully usable offline.
 - **Icons**: all inline SVG (**no emoji**), inheriting the text color.
-- **Layout**: three columns (task list · content · details); the six tabs use an underline indicator; switching and filtering are split into two toolbar levels on the log and report pages; every counter, timestamp, line number, and byte count uses tabular figures (`tabular-nums`) so values do not jitter as they change.
-- **Accessibility**: every interactive element is reachable by `Tab` with a visible focus ring; the tab bar responds to `←` / `→`; the system "reduce motion" setting is honoured.
+- **Visual signature**: a 1px fluorescent rule along the top of both the top bar and the breadcrumb bar; a 3px status rail plus a `›` prefix on task cards; **bracketed status labels** (`[OK] 已成功`); panel radius 4px, tag and input radius 3px; a faint dot grid on the dark canvas and a faint grid on the light one.
+- **Readout consistency**: counters, timestamps, line numbers, byte counts, rounds, and exit codes all use tabular figures (`tabular-nums`) so values do not jitter as they change.
+- **Accessibility**: every interactive element is reachable by `Tab` with a visible focus ring (task cards and nav items are native buttons, operable with `Enter` / `Space`); icon buttons carry `aria-label`; the system "reduce motion" setting is honoured.
 
 ---
 

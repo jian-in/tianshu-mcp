@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * 中栏 · 事件流 `task.jsonl`：时序时间线，区分状态跃迁 / 细粒度 agent 事件 / 进度审计。
+ * 工作区 · 事件流 `task.jsonl`：带表头的四列终端时间线（行 / 时间 / 事件 / 详情）。
  *
- * 版式：带表头的四列栅格（行号 · 时间 · 事件 · 详情），展开的数据块整行通栏。
+ * 展开的数据块整行通栏；事件类型用方括号徽标领起详情。
  */
 import { computed, ref } from "vue";
 import AppIcon from "./AppIcon.vue";
@@ -35,13 +35,13 @@ function toggleData(line: number): void {
 </script>
 
 <template>
-  <div class="pane-inner">
-    <header class="pane-header">
-      <span class="pane-title">{{ t("tabs.events") }}</span>
-      <span class="hint mono truncate" :title="selectedTask?.taskId">
+  <div class="view">
+    <div class="view-bar">
+      <span class="view-title">{{ t("tabs.events") }}</span>
+      <span class="hint truncate" :title="selectedTask?.taskId">
         {{ selectedTask?.taskId ?? "" }}
       </span>
-      <span class="app-header-spacer" />
+      <span class="grow" />
       <span class="hint">
         {{
           t("events.loadedOf", {
@@ -50,30 +50,29 @@ function toggleData(line: number): void {
           })
         }}
       </span>
-      <button class="btn" :disabled="!hasMore || app.eventsLoading" @click="loadMoreEvents">
-        <AppIcon name="chevronUp" />
-        {{ t("events.loadMore") }}
+      <button class="tbtn" :disabled="!hasMore || app.eventsLoading" @click="loadMoreEvents">
+        <AppIcon name="chevronUp" />{{ t("events.loadMore") }}
       </button>
       <button
-        class="btn btn-icon"
+        class="ibtn"
         :title="t('common.refresh')"
         :aria-label="t('common.refresh')"
         @click="loadEvents(true)"
       >
         <AppIcon name="refresh" />
       </button>
-    </header>
+    </div>
 
-    <div v-if="app.eventsBadLines > 0" class="notice notice-warn app-notice">
+    <div v-if="app.eventsBadLines > 0" class="notice notice-warn mt-sm">
       <AppIcon name="alert" />
       <span>{{ t("events.badLines", { n: app.eventsBadLines }) }}</span>
     </div>
 
-    <div class="pane-body">
+    <div class="view-body">
       <div v-if="app.eventsLoading" class="empty">{{ t("common.loading") }}</div>
       <div v-else-if="app.events.length === 0" class="empty">{{ t("events.empty") }}</div>
       <template v-else>
-        <div class="timeline-head">
+        <div class="thead">
           <span>{{ t("common.lines") }}</span>
           <span>{{ t("events.ts") }}</span>
           <span>{{ t("events.event") }}</span>
@@ -82,28 +81,32 @@ function toggleData(line: number): void {
         <div
           v-for="event in app.events"
           :key="`${event.line}-${event.ts}`"
-          class="event-row"
+          class="erow"
           :class="{ 'is-note': event.kind === 'note' }"
         >
-          <span class="event-time">{{ event.line }}</span>
-          <span class="event-time">{{ formatDateTime(event.ts) }}</span>
-          <span class="event-name" :class="`tone-${eventKindTone(event.kind)}`">
+          <span class="etime">{{ event.line }}</span>
+          <span class="etime">{{ formatDateTime(event.ts) }}</span>
+          <span class="ename" :class="`tone-${eventKindTone(event.kind)}`">
             {{ eventLabel(event.event) }}
           </span>
           <div>
-            <div class="event-detail">
-              <span class="badge" :class="`tone-${eventKindTone(event.kind)}`">
+            <div class="edetail">
+              <span class="ebadge" :class="`tone-${eventKindTone(event.kind)}`">
                 {{ kindLabel(event.kind) }}
               </span>
               <span v-if="event.detail">{{ event.detail }}</span>
               <span v-else class="hint">{{ t("common.notAvailable") }}</span>
             </div>
-            <button v-if="event.data" class="btn btn-ghost event-toggle" @click="toggleData(event.line)">
+            <button
+              v-if="event.data"
+              class="tbtn etoggle"
+              @click="toggleData(event.line)"
+            >
               <AppIcon :name="expanded.has(event.line) ? 'chevronDown' : 'chevronRight'" />
               {{ expanded.has(event.line) ? t("events.hideData") : t("events.showData") }}
             </button>
           </div>
-          <pre v-if="event.data && expanded.has(event.line)" class="event-data">{{
+          <pre v-if="event.data && expanded.has(event.line)" class="edata">{{
             prettyJson(event.data)
           }}</pre>
         </div>

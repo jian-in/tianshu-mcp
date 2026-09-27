@@ -1,18 +1,13 @@
 <script setup lang="ts">
 /**
- * 数据目录栏（自动探测 + 手动多目录切换 / 追加 / 移除）。
+ * 数据目录选择器（概览顶栏内）：自动探测 + 手动多目录切换 / 追加 / 移除。
  *
  * 保留原生 `<select>`：跨 Windows/macOS 的稳定性与可访问性优先，样式由 `.select` 统一提供。
  */
 import { computed } from "vue";
 import AppIcon from "./AppIcon.vue";
 import { useI18n } from "@/i18n";
-import {
-  addDataHome,
-  app,
-  removeDataHome,
-  setActiveDataHome,
-} from "@/stores/app";
+import { addDataHome, app, removeDataHome, setActiveDataHome } from "@/stores/app";
 
 const { t } = useI18n();
 
@@ -25,10 +20,10 @@ async function onChange(event: Event): Promise<void> {
 </script>
 
 <template>
-  <div class="data-home">
+  <div class="inline">
     <AppIcon name="folder" />
     <select
-      class="select"
+      class="select select-path"
       :value="app.dataHome.active"
       :title="app.dataHome.active"
       :aria-label="t('dataHome.title')"
@@ -40,7 +35,7 @@ async function onChange(event: Event): Promise<void> {
       <option v-if="entries.length === 0" value="">{{ t("dataHome.empty") }}</option>
     </select>
     <button
-      class="btn btn-icon"
+      class="ibtn"
       :title="t('dataHome.add')"
       :aria-label="t('dataHome.add')"
       @click="addDataHome"
@@ -48,7 +43,7 @@ async function onChange(event: Event): Promise<void> {
       <AppIcon name="folder" />
     </button>
     <button
-      class="btn btn-icon"
+      class="ibtn"
       :title="t('dataHome.remove')"
       :aria-label="t('dataHome.remove')"
       :disabled="entries.length <= 1"

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * 中栏 · 验收报告：Markdown 渲染 / 结构化卡片 / 视觉验收（sandbox）/ dry-run 分区 / 多轮对比。
+ * 工作区 · 验收报告：Markdown 渲染 / 结构化卡片 / 视觉验收（sandbox）/ dry-run 分区 / 多轮对比。
  *
- * 版式：报告类型用分段控件（互斥），轮次用圆片（可快速跳转），两者视觉层级明确分离。
+ * 版式：报告类型为终端分段控件（互斥），轮次为圆片（快速跳转），两者层级分离。
  */
 import { computed, ref, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
@@ -146,16 +146,9 @@ function toggleCompare(): void {
 </script>
 
 <template>
-  <div class="pane-inner">
-    <header class="pane-header">
-      <span class="pane-title">{{ t("reports.title") }}</span>
-      <span class="app-header-spacer" />
-      <button class="btn" :class="{ 'btn-primary': app.compareOn }" @click="toggleCompare">
-        <AppIcon name="compare" />{{ t("reports.compare") }}
-      </button>
-    </header>
-
-    <div class="toolbar">
+  <div class="view">
+    <div class="view-bar">
+      <span class="view-title">{{ t("reports.title") }}</span>
       <div class="segmented">
         <button
           v-for="kind in availableKinds"
@@ -167,7 +160,13 @@ function toggleCompare(): void {
           {{ kindLabel(kind) }}
         </button>
       </div>
-      <span class="app-header-spacer" />
+      <span class="grow" />
+      <button class="tbtn" :class="{ 'is-primary': app.compareOn }" @click="toggleCompare">
+        <AppIcon name="compare" />{{ t("reports.compare") }}
+      </button>
+    </div>
+
+    <div class="view-bar is-sub">
       <button
         v-for="r in rounds"
         :key="r"
@@ -177,40 +176,39 @@ function toggleCompare(): void {
       >
         {{ t("reports.round", { n: r }) }}
       </button>
+      <span v-if="rounds.length === 0" class="hint">{{ t("common.none") }}</span>
     </div>
 
-    <div class="pane-body">
+    <div class="view-body">
       <div v-if="!task" class="empty">{{ t("detail.noSelection") }}</div>
 
       <template v-else-if="app.compareOn">
-        <div class="section">
-          <div class="inline wrap">
-            <span class="hint">{{ t("reports.compareHint") }}</span>
-            <span class="app-header-spacer" />
-            <select
-              v-model.number="app.compareLeftRound"
-              class="select select-compact"
-              :aria-label="t('reports.left')"
-              @change="loadCompare"
-            >
-              <option v-for="r in task.artifacts.reportJson" :key="`l-${r}`" :value="r">
-                {{ t("reports.left") }} {{ t("reports.round", { n: r }) }}
-              </option>
-            </select>
-            <select
-              v-model.number="app.compareRightRound"
-              class="select select-compact"
-              :aria-label="t('reports.right')"
-              @change="loadCompare"
-            >
-              <option v-for="r in task.artifacts.reportJson" :key="`r-${r}`" :value="r">
-                {{ t("reports.right") }} {{ t("reports.round", { n: r }) }}
-              </option>
-            </select>
-          </div>
+        <div class="view-bar is-sub">
+          <span class="hint">{{ t("reports.compareHint") }}</span>
+          <span class="grow" />
+          <select
+            v-model.number="app.compareLeftRound"
+            class="select select-compact"
+            :aria-label="t('reports.left')"
+            @change="loadCompare"
+          >
+            <option v-for="r in task.artifacts.reportJson" :key="`l-${r}`" :value="r">
+              {{ t("reports.left") }} {{ t("reports.round", { n: r }) }}
+            </option>
+          </select>
+          <select
+            v-model.number="app.compareRightRound"
+            class="select select-compact"
+            :aria-label="t('reports.right')"
+            @change="loadCompare"
+          >
+            <option v-for="r in task.artifacts.reportJson" :key="`r-${r}`" :value="r">
+              {{ t("reports.right") }} {{ t("reports.round", { n: r }) }}
+            </option>
+          </select>
         </div>
-        <div class="compare-grid">
-          <div class="card">
+        <div class="compare-grid mt-sm">
+          <div class="report-card flush">
             <ReportCard
               v-if="leftSummary"
               :summary="leftSummary"
@@ -218,7 +216,7 @@ function toggleCompare(): void {
             />
             <div v-else class="empty">{{ t("reports.missing") }}</div>
           </div>
-          <div class="card">
+          <div class="report-card flush">
             <ReportCard
               v-if="rightSummary"
               :summary="rightSummary"
@@ -239,7 +237,7 @@ function toggleCompare(): void {
       />
 
       <template v-else-if="app.reportKind === 'json' || app.reportKind === 'dry-run-json'">
-        <div v-if="jsonSummary" class="card report-card">
+        <div v-if="jsonSummary" class="report-card">
           <ReportCard :summary="jsonSummary" />
         </div>
         <div v-else class="empty">{{ t("reports.missing") }}</div>

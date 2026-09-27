@@ -11,16 +11,16 @@ const { t } = useI18n();
 
 <template>
   <div class="section">
-    <div class="inline mb-md">
+    <div class="inline wrap mb-md">
       <span class="section-title flush">{{ props.title ?? t("reports.structured") }}</span>
-      <span v-if="props.summary.round !== null" class="badge tone-muted">{{
-        t("reports.round", { n: props.summary.round })
-      }}</span>
-      <span class="badge" :class="props.summary.passed ? 'tone-ok' : 'tone-fail'">
+      <span v-if="props.summary.round !== null" class="tag tone-muted">
+        {{ t("reports.round", { n: props.summary.round }) }}
+      </span>
+      <span class="tag" :class="props.summary.passed ? 'tone-ok' : 'tone-fail'">
         <AppIcon :name="props.summary.passed ? 'check' : 'close'" size="12" />
         {{ props.summary.verdict ?? (props.summary.passed ? t("reports.passed") : t("reports.failed")) }}
       </span>
-      <span class="app-header-spacer" />
+      <span class="grow" />
       <span class="hint">
         {{
           t("reports.summary", {
@@ -53,9 +53,9 @@ const { t } = useI18n();
             {{ check.name }}
             <span v-if="check.optional" class="hint">({{ t("reports.optional") }})</span>
           </span>
-          <span class="mono truncate" :title="check.cmd">{{ check.cmd }}</span>
+          <span class="truncate" :title="check.cmd">{{ check.cmd }}</span>
           <span class="hint">{{ formatDuration(check.durationMs) }}</span>
-          <span class="hint mono check-exit">{{ check.exitCode ?? t("common.notAvailable") }}</span>
+          <span class="hint check-exit">{{ check.exitCode ?? t("common.notAvailable") }}</span>
           <pre v-if="check.outputTail" class="check-output">{{ check.outputTail }}</pre>
         </div>
       </div>
@@ -63,14 +63,14 @@ const { t } = useI18n();
 
     <div v-if="props.summary.diffstat.totalAdd + props.summary.diffstat.totalDel > 0" class="mb-lg">
       <div class="section-title flush mb-sm">
-        {{ t("reports.diffstat") }} ·
+        {{ t("reports.diffstat") }}
         <span class="tone-ok">{{ t("reports.addLines", { n: props.summary.diffstat.totalAdd }) }}</span>
         <span class="tone-fail">{{ t("reports.delLines", { n: props.summary.diffstat.totalDel }) }}</span>
       </div>
       <table class="md flush">
         <tbody>
           <tr v-for="file in props.summary.diffstat.perFile" :key="file.file">
-            <td class="mono">{{ file.file }}</td>
+            <td>{{ file.file }}</td>
             <td class="tone-ok col-num">{{ file.binary ? "bin" : `+${file.add}` }}</td>
             <td class="tone-fail col-num">{{ file.binary ? "bin" : `-${file.del}` }}</td>
           </tr>
@@ -88,7 +88,7 @@ const { t } = useI18n();
         {{ props.summary.untrackedFiles.length > 0 ? props.summary.untrackedFiles.join(", ") : t("common.none") }}
       </dd>
       <dt>{{ t("reports.signals") }}</dt>
-      <dd class="mono">
+      <dd>
         {{
           Object.entries(props.summary.signals)
             .map(([k, v]) => `${k}=${v}`)
@@ -101,7 +101,7 @@ const { t } = useI18n();
       <AppIcon name="alert" />
       <div>
         <div>{{ t("reports.blockingIssues") }}</div>
-        <div v-for="issue in props.summary.blockingIssues" :key="issue.code" class="mono">
+        <div v-for="issue in props.summary.blockingIssues" :key="issue.code">
           {{ issue.code }}: {{ issue.message }}
         </div>
       </div>

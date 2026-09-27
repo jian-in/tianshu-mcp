@@ -39,6 +39,7 @@ const ICON_PATHS: Record<string, string> = {
   filter: "M4 5h16l-6 7v6l-4 2v-8Z",
   sortAsc: "M4 17h8M4 12h5M4 7h2M17 7v10M14 14l3 3 3-3",
   sortDesc: "M4 7h8M4 12h5M4 17h2M17 17V7M14 10l3-3 3 3",
+  chevronLeft: "M15 6l-6 6 6 6",
   panelLeft: "M3 5h18v14H3zM9 5v14",
   listTree: "M4 6h4M4 12h4M4 18h4M11 6h9M11 12h9M11 18h9",
 };

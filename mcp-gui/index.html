@@ -6,12 +6,18 @@
     <meta name="color-scheme" content="light dark" />
     <title>Tianshu-mcp 日志台</title>
     <style>
-      /* 首屏防白闪：在 styles.css 加载前先给出画布底色（与设计系统 token 同值） */
+      /* 首屏防白闪：在 styles.css 加载前先给出画布底色（与设计系统 token 同值）。
+         默认深色（黑曜石）；跟随系统为浅色时媒查询先兜底，避免深→浅闪烁。 */
       html {
-        background: #f3f4f6;
+        background: #0b0d0c;
       }
-      html[data-theme="dark"] {
-        background: #090b0e;
+      html[data-theme="light"] {
+        background: #f6f7f4;
+      }
+      @media (prefers-color-scheme: light) {
+        html:not([data-theme="dark"]) {
+          background: #f6f7f4;
+        }
       }
     </style>
   </head>
