@@ -1,19 +1,19 @@
 {
-  "version": "0.1.0-beta.5",
-  "notes": "Tianshu-mcp 日志台 0.1.0-beta.5（测试版）",
-  "pub_date": "2026-09-27T12:45:36Z",
+  "version": "0.1.0-beta.6",
+  "notes": "Tianshu-mcp 日志台 0.1.0-beta.6（测试版）",
+  "pub_date": "2026-09-27T16:32:12Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTSUhhandxWENqeU1yNVE0L0pUbHZCdnV3RUl6RnZNUU9NZ1U3dVFTOHlYZzdWQTNtUlRra3lJeGk4NmQ2eWNHakp3WHlsNVhjZitvcTVvZ0k3QmNGamJ2S2lIeWcrVXdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTEyOTIwCWZpbGU6VGlhbnNodS1tY3AtTG9ncy5hcHAudGFyLmd6CXZlcnNpb246MC4xLjAtYmV0YS41CmVHMnNneHVtdEc2UFZya1ZGaDNhZDRsZVl2cktVK2p2K3BtUEgrZ1JrZ2RBQTRRamNrUnR4Yk5WVXkramN1UFpjdENpZENTUTk0d0M4TURpdkk0T0FBPT0K",
-      "url": "https://gitee.com/lan0811/tianshu-mcp/releases/download/gui-v0.1.0-beta.5/Tianshu-mcp-Logs_darwin-aarch64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTSUhhandxWENqeUJUdmwxNDJ3WGtuM0VSVWtpZm5vb0pVV2xzM3RuQWdOYU9NUVlNUTRRT2lnUEFHQlkzMEVrVm9idUdOeEI3ajQzWVBuMElGS1pPZTZObm1IT2NwUWc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTI2NTM2CWZpbGU6VGlhbnNodS1tY3AtTG9ncy5hcHAudGFyLmd6CXZlcnNpb246MC4xLjAtYmV0YS42Clo4dnVIaWFKRFRra05KblFwYjhIbzNtNmhoTTVqTm5mcE4xZmNGenpIRjE2MExJckU1M1NZYzJMalc1L2ttNDNZNkFtOGhMdkJ3dmpyRWR0bjdYUUFBPT0K",
+      "url": "https://gitee.com/lan0811/tianshu-mcp/releases/download/gui-v0.1.0-beta.6/Tianshu-mcp-Logs_darwin-aarch64.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTSUhhandxWENqeU10UFJ4TG4wVytFWWFFeU9QUFNlUERGSlRUZXF1Vi9ZR3Y4dkNGR2NLM3ByVjhQNW5lZG5VYzEzR09xNnRRS2drWm1TSXRqVlRyQlpFcjdmNXZNZkFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTEzMTE5CWZpbGU6VGlhbnNodS1tY3AtTG9ncy5hcHAudGFyLmd6CXZlcnNpb246MC4xLjAtYmV0YS41CjJiRFMzTDhBWHFNaEoxR0wwUDNRTjVzVWFZbGRpYWRPb3JRN1Q4eEhIdjdBc3VaU29QQzJ2U0lkSHpYS1hWTFFGbUxyc2NXcmdXNi9nRHl1REptK0RRPT0K",
-      "url": "https://gitee.com/lan0811/tianshu-mcp/releases/download/gui-v0.1.0-beta.5/Tianshu-mcp-Logs_darwin-x86_64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTSUhhandxWENqeUk0QWFyK3dIZElGZUtPRElKU09CQ0E3UXNkQmFDRUFKYnJkNUVMQmpMTmdTdjJQOWNQekk3dHdQNEVHTmsrOTdncmI0NnJWTUJUTmxOSmxnZVlHL1FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTI2NzE2CWZpbGU6VGlhbnNodS1tY3AtTG9ncy5hcHAudGFyLmd6CXZlcnNpb246MC4xLjAtYmV0YS42ClkweHpJYzJMRzQxT1R2SlgxREdwaGlWY1A0TlN6Ri9rVmE0TC9IL004SjJqRUZpWUVhVFhjZEp2YUN0T2drMzJ3QTVCTTBnejdiSjFBRGNSQzFJdkF3PT0K",
+      "url": "https://gitee.com/lan0811/tianshu-mcp/releases/download/gui-v0.1.0-beta.6/Tianshu-mcp-Logs_darwin-x86_64.app.tar.gz"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTSUhhandxWENqeUd2K01KNFRvQVBQSjQrN3c0MUN2T3VtRjRkS2dvKzNTQXZpVUtseC9leitCdXFNc3VFdnlvOVNTM0lxcXVsM0FLWi9uVCtVMkFTMHRTNzNQb05EeVFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTEzMDc5CWZpbGU6VGlhbnNodS1tY3AtTG9nc18wLjEuMC1iZXRhLjVfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMS4wLWJldGEuNQpleUNYVkQ0eVZaRGJjM2l1TW8wRTE5R2hrMWt1SC81emlYZUtJenZKd1QrZ0wweDgzbTVRTEFnay9FWW5ZRUU1QmxKV1hPdzJIWkZkOGdqZytzbHhDdz09Cg==",
-      "url": "https://gitee.com/lan0811/tianshu-mcp/releases/download/gui-v0.1.0-beta.5/Tianshu-mcp-Logs_0.1.0-beta.5_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTSUhhandxWENqeUcvRm1RUGQ3VmhvZW84K09mSWhRTzA5NHpvVFYvYnpicGNkazVibCtHRlcyUEtXWVMwQnptam41cEZyNWRFODJhcHAxT1BFSFFJMURLaVJrcTNCZHdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNTI2NjU0CWZpbGU6VGlhbnNodS1tY3AtTG9nc18wLjEuMC1iZXRhLjZfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMS4wLWJldGEuNgpqcnVrczV1bnIxczJQWmxPU3ZjYU16YXhVOUpvSTBrWFJ5a1Zuem9XMEhyWjI2ZWovZDIxZ2U0NTcxNUhmWHBTZ1pXMSsxdEROa0dPcWNuV2dXRUpBdz09Cg==",
+      "url": "https://gitee.com/lan0811/tianshu-mcp/releases/download/gui-v0.1.0-beta.6/Tianshu-mcp-Logs_0.1.0-beta.6_x64-setup.exe"
     }
   }
 }
