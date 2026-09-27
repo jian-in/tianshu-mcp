@@ -129,6 +129,10 @@ DevTools listening on ws://127.0.0.1:9889/devtools/browser/63dd8142-…
 就绪探测 `probeOpenDesignPort` 与传输层**共用同一份目标枚举实现**（`resolvePageTargets`），
 两处各写一套必然漂移。两条路径都失败时，错误信息必须写明「试过什么」，不允许只丢一句 `CDP_UNAVAILABLE`。
 
+**探针也走这条传输层**：`probe-opendesign.mjs` 的 `cdp` / `anchors` 已改用 `OpenDesignTransport`
+（原先只走 HTTP `/json` 的旧客户端在真机上会卡住）。这样「探针能读到的，适配器也能读到」，
+真机取证不会因为探针与适配器实现不同而给出误导性结论。
+
 ## 4. 界面结构与选择器取证
 
 Open Design 是打包过的 React 应用（`resources/app/prebundled/*` 为压缩产物），

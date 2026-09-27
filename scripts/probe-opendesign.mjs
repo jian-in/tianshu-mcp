@@ -329,10 +329,22 @@ async function withMainClient(fn) {
     line("结果", endpoint.message ?? "无可用 CDP 端点");
     return { ok: false, message: endpoint.message };
   }
-  const { createOpenDesignPageClient } = await load("../dist/agents/opendesign/cdp.js");
+  const { openDesignMainTargetRank } = await load("../dist/agents/opendesign/cdp.js");
+  const { OpenDesignTransport } = await load("../dist/agents/opendesign/transport.js");
   line("CDP 端口", String(endpoint.port));
   line("目标页面", `${endpoint.probe?.title ?? ""} ${endpoint.probe?.url ?? ""}`.trim());
-  const client = createOpenDesignPageClient("main", endpoint.port, 15_000);
+  /**
+   * 用**与适配器同一套**传输层（`OpenDesignTransport`），而不是只走 HTTP `/json` 的旧客户端：
+   * 真机实测本产品的 `/json`（Target 枚举走 UI 线程）会**连接成功却长时间无响应**，
+   * 只有浏览器级 WS 的 `Target.getTargets` + `attachToTarget` 才拿得到页面。
+   * 探针与适配器共用一份实现，才能保证「探针能读到的，适配器也能读到」。
+   */
+  const client = new OpenDesignTransport({
+    port: endpoint.port,
+    sendTimeoutMs: 15_000,
+    connectTimeoutMs: 20_000,
+    targetRank: openDesignMainTargetRank,
+  });
   await client.connect();
   if (!noFocus) {
     console.log(

@@ -149,6 +149,11 @@ The readiness probe `probeOpenDesignPort` and the transport **share one target-e
 (`resolvePageTargets`) — two copies would inevitably drift. When both paths fail the error must state what was
 tried; dumping a bare `CDP_UNAVAILABLE` is not acceptable.
 
+**The probe uses this same transport**: `cdp` / `anchors` in `probe-opendesign.mjs` now go through
+`OpenDesignTransport` (the previous client, which only used HTTP `/json`, wedges on the real machine). This
+keeps "what the probe can read" and "what the adapter can read" identical, so real-machine capture cannot
+produce a misleading conclusion through an implementation mismatch.
+
 ## 4. UI structure and selector evidence
 
 Open Design is a packaged React app (`resources/app/prebundled/*` are minified artifacts), but its
