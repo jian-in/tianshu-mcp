@@ -65,7 +65,7 @@
 - **版本**：`0.1.0-beta.2 → 0.1.0-beta.3`（`package.json` / `package-lock.json`（2 处）/ `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 同提交）；
   **不重打 beta.2**；按硬约束**本机不执行任何 Rust 构建 / 检查**。
 - **发布（2026-09-27）**：tag `gui-v0.1.0-beta.3` → `1652449`（两仓同 SHA）。`GUI` workflow 三平台构建（`windows-x86_64` / `darwin-x86_64` / `darwin-aarch64`）**全部 success**；
-  GitHub 与 Gitee **双端 pre-release 均带产物**（GitHub **8 个资产**含各类 `.sig`、Gitee **3 个更新载体附件**，两端同字节数），
+  GitHub 与 Gitee **双端 pre-release 均带产物**（两端各 **8 个附件**：含 3 个更新载体 `*-setup.exe` / `*_<平台>.app.tar.gz` 与全部 `.sig`，两端同字节数），
   两端更新清单 `update/gui/latest.json` 与 `latest-gitee.json` 均指向 `0.1.0-beta.3`（清单签名与发行版 `.sig` 逐一比对一致，三平台下载地址实测 HTTP 200）。
   首次运行时**发布作业末尾「提交 GitHub 清单」步骤失败**：`git push origin HEAD:master` 因发版期间 master 被并发提交推进而 non-fast-forward（exit 1）——
   已把该步骤改为**推送被拒即拉取最新 master 变基重推（最多 3 次，仍失败才报错）**，并据此补齐 GitHub 侧清单；`gui-v*` 仍未触发 `release.yml`。
