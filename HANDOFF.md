@@ -12,6 +12,10 @@
 > **⚠️ 仍有一条会阻断全部 Codex 派发的适配器缺陷**（`26.917.9434` 模型触发器回读混入整条思考等级条 → `model_mismatch`），尚未修复、建议单开 issue，详见下方「真机取证补记」与记录文件 §5。
 > **⚠️ Open Design 仍有一项真机验收未完成**：本机沙箱内 Open Design 主线程停在启动期（自身版本/遥测/计费请求不可达），
 > `/json` 与 `/json/version` 连接成功却无响应，故**真实 DOM 采集与真机全链路验收**待联网终端执行（见 `docs/opendesign-cdp.md` §4.4 与 `.dsh/plans/opendesign-gui-adapter-plan.md` §7.0/§9）。
+> **2026-09-27 复测（联网环境）**：再次执行 `node scripts/probe-opendesign.mjs all --launch --save` —— 安装探测、数据目录推导与 `app-config.json` 读取全部正常（`0.24.1` / `release-stable-win`），
+> 但启动后 **90000ms 内 CDP 始终未就绪**（stderr 已宣告 `DevTools listening on ws://127.0.0.1:9889/...`，主线程仍卡在启动期请求），与上一条结论一致 ——
+> 阻塞在**应用自身启动路径**，与本机是否有外网无关。实测现场见 `docs/opendesign-evidence/opendesign-probe-2026-09-27T13-36-09-530Z.md`；
+> 真机 DOM 采集仍需在能正常启动 Open Design 的终端执行。
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
