@@ -154,7 +154,13 @@ async function waitTerminal(manager: TaskManager, taskId: string, timeoutMs = 90
   }
 }
 
-describe("Open Design 自动验收返修", () => {
+/**
+ * 只在 Windows 上跑：`resolveProfile` 对 `opendesign-gui` 有**平台门禁**
+ * （非 win32 一律 `ok:false`「macOS research：未完成真机验证，禁止派发」）。
+ * 这是产品规则本身，不是测试缺陷——编排级返修闭环只能在真正允许派发的平台上验证；
+ * 平台无关的那部分（`runOpenDesignTask` 直调）由 `opendesign-flow.test.ts` 在三种腿上覆盖。
+ */
+describe.skipIf(process.platform !== "win32")("Open Design 自动验收返修", () => {
   it("失败后在**项目根**生成计划，并在同一会话返修通过", async () => {
     const dir = await project();
     const h = await harness(dir, true);

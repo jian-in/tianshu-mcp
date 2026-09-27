@@ -539,6 +539,7 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
         logFile,
         result,
         onAbort: abortResult,
+        noProject: !ctx.projectPath.trim(),
       });
     }
 
@@ -719,6 +720,7 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
       result,
       onAbort: abortResult,
       actualModel,
+      noProject: !ctx.projectPath.trim(),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -817,6 +819,8 @@ interface ObserveArgs {
   result: (extra: Partial<AgentRunResult>) => AgentRunResult;
   onAbort: () => Promise<AgentRunResult>;
   actualModel?: string;
+  /** 无 projectPath：终态文案必须**如实**说明已跳过目录绑定与视觉验收（计划 §4） */
+  noProject?: boolean;
 }
 
 /**
@@ -830,13 +834,15 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
   let lastProgress = 0;
   let runningReported = false;
   const deadline = startedAt + ctx.taskTimeoutMs;
+  /** 无 projectPath 的如实说明：这类轮次没做目录绑定，也**不会**有视觉验收（计划 §4） */
+  const noProjectNote = args.noProject ? "（无 projectPath：已跳过目录绑定与视觉验收）" : "";
   for (;;) {
     if (opts.signal?.aborted) return args.onAbort();
     if (Date.now() >= deadline)
       return result({
         timeout: true,
         endReason: "task_timeout",
-        error: "Open Design 任务总时限已到；已停止 MCP 等待并保留 Open Design 现场",
+        error: `Open Design 任务总时限已到；已停止 MCP 等待并保留 Open Design 现场${noProjectNote}`,
       });
     // eslint-disable-next-line no-await-in-loop
     await deps.sleep(gui.pollIntervalMs);
@@ -885,29 +891,30 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
         needsUserKind: "user_confirmation",
         pendingQuestion:
           `${question ?? "Open Design 正在等待用户处理"}\n` +
-          "请在 Open Design 窗口中处理该等待项后调用 continue_task(taskId, message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。",
+          "请在 Open Design 窗口中处理该等待项后调用 continue_task(taskId, message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。" +
+          noProjectNote,
         actualModel: args.actualModel,
-        progressSummary: "Open Design 等待用户处理",
+        progressSummary: `Open Design 等待用户处理${noProjectNote}`,
       });
     }
     if (verdict.kind === "idle_timeout")
       return result({
         endReason: "idle_timeout",
-        error: `Open Design 空闲超时（连续 ${gui.stableRounds} 轮对话与产物均无变化）；已停止 MCP 等待并保留现场`,
+        error: `Open Design 空闲超时（连续 ${gui.stableRounds} 轮对话与产物均无变化）；已停止 MCP 等待并保留现场${noProjectNote}`,
         actualModel: args.actualModel,
       });
     if (verdict.kind === "failed")
       return result({
         hardFailure: true,
         endReason: "agent_error",
-        error: "Open Design 本轮对话判定失败（界面出现错误态）",
+        error: `Open Design 本轮对话判定失败（界面出现错误态）${noProjectNote}`,
         actualModel: args.actualModel,
       });
     if (verdict.kind === "timeout")
       return result({
         timeout: true,
         endReason: "task_timeout",
-        error: "Open Design 任务总时限已到（轮询判定）",
+        error: `Open Design 任务总时限已到（轮询判定）${noProjectNote}`,
         actualModel: args.actualModel,
       });
     if (verdict.kind === "finished")
@@ -921,7 +928,7 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
         endReason: "reply_stable",
         keptInstance: true,
         actualModel: args.actualModel,
-        progressSummary: "Open Design 已完成本轮（对话与产物均静止）",
+        progressSummary: `Open Design 已完成本轮（对话与产物均静止）${noProjectNote}`,
       };
   }
 }

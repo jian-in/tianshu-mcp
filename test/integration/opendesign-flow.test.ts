@@ -217,6 +217,22 @@ describe("Open Design GUI 驱动（假 CDP）", () => {
     expect(events).toContain("file_modification_started");
   });
 
+  it("无 projectPath：跳过目录绑定与视觉验收，终态文案如实说明（计划 §4）", async () => {
+    const state = makeOpenDesignFakeState({
+      pollScript: [
+        { stopVisible: true, sendStarting: true },
+        { stopVisible: false, sendStarting: false },
+      ],
+    });
+    const { res } = await run(state, { ctx: { projectPath: "" } });
+
+    expect(res.ok).toBe(true);
+    expect(res.progressSummary ?? "").toContain("已跳过目录绑定与视觉验收");
+    // 无项目模式**必须**跳过目录交互（沿用界面当前工作目录）
+    expect(state.clicks).not.toContain("working-dir-trigger");
+    expect(state.sendClicks).toBe(1);
+  });
+
   it("模型名未命中 → model_unavailable 硬失败，并回显当前可见候选（绝不模糊匹配）", async () => {
     const state = makeOpenDesignFakeState({ models: ["deepseek-v4.1-flash", "claude-fable-5"] });
     const { res } = await run(state, { ctx: { model: "deepseek-v4-pro" } });
