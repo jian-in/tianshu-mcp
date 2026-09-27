@@ -34,7 +34,7 @@
   （Open Design 只能读它工作目录白名单内的文件），并同会话发送返修指令；`continue_task` / `rework_task` 已支持 opendesign。
 - **本轮修掉的两个真实缺陷**：① `inputText()` 曾把 `{found,value,length}` 当 `string` 返回 → 发送前回读抛错、被误报 `setup_failed`；
   ② 工作目录绑定失败曾落成「非硬失败的 `setup_failed`」→ 编排器按普通失败处理、用户无法 `continue_task`，现一律转 `needs_user`。
-- **测试**：新增 **32** 用例（`test/integration/opendesign-flow.test.ts` 11 + `test/unit/opendesign-{menu,send,transport}.test.ts` 8/6/7），
+- **测试**：新增 **33** 用例（`test/integration/opendesign-flow.test.ts` 12 + `test/unit/opendesign-{menu,send,transport}.test.ts` 8/6/7），
   桩扩展在 `test/fake-cdp.ts`（Open Design 页面桩，语义键由注册表自身反查，选择器漂移时桩会一起失败）。全部**不依赖本机安装 Open Design**、不联网。
 - **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**未打 tag、未发 npm**；
   `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。

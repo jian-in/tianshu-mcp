@@ -38,11 +38,13 @@
   ① 断言用 `path.join` 造的期待值与生产产出的 win32 路径在 ubuntu/macos 上必然不等；
   ② 版本回读取 `<安装目录>/resources/open-design-config.json`，win32 形态路径在 POSIX 宿主上 `fs.readFileSync` 必然 ENOENT，于是 `version` 恒为空。
   已把期待值改为按目标平台拼，并给 `discoverOpenDesign` 增加 `readFile` 注入点（与既有 `statFile` 同因），测试夹具同时注入映射到宿主路径的读取——断言自此**与宿主平台无关**。
+  ③ 同一主题的第三处：集成用例「版本不在已取证列表 → `version_mismatch`」把门禁表写死成 `win32`，而门禁判据是按**宿主平台**取表（生产语义正确：Open Design 跑在什么系统上就按那个系统取证），于是 ubuntu/macos 腿上门禁处于「未配置即放行」，用例必挂。
+  现改为把**当前宿主平台**写进已取证列表，并**另加一条互补用例**固化「宿主平台未取证时不拦截」这一平台语义——门禁在三种 CI 腿上同等生效，而平台语义也有回归保护。
 
 ### 测试
 
-- 新增 **32** 个用例（4 文件）：
-  - `test/integration/opendesign-flow.test.ts`（11）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 7 条 fail-closed 路径（非法方向在入口拒绝、模型未命中回显候选、版本不匹配、布局漂移、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`），并断言事件流（`task_dispatched` / `file_modification_started`）与 `guiStop` 如实回报；
+- 新增 **33** 个用例（4 文件）：
+  - `test/integration/opendesign-flow.test.ts`（12）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 8 条 fail-closed 路径（非法方向在入口拒绝、模型未命中回显候选、版本不匹配、宿主平台未取证不拦截、布局漂移、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`），并断言事件流（`task_dispatched` / `file_modification_started`）与 `guiStop` 如实回报；
   - `test/unit/opendesign-menu.test.ts`（8）：复用分支、触发器不唯一、菜单未出现、同名多命中、未命中回显候选、点中但回读不一致、搜索过滤路径、回读轮询；
   - `test/unit/opendesign-send.test.ts`（6）：确认判据真值表（清空单独不算成功）与 `input_mismatch` / `send_failed` / 成功 / `send_unknown`（只点一次）；
   - `test/unit/opendesign-transport.test.ts`（7）：目标枚举快/慢/全失败三条路径，以及会话路由（页面级带 `sessionId`、`Target.*` 不带）与未连接时的明确报错。

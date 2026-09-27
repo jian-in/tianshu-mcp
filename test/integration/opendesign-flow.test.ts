@@ -57,8 +57,18 @@ afterAll(async () => {
   await Promise.all([installDir, oldInstallDir, projectDir].map((d) => rmrf(d)));
 });
 
-/** 构造解析后的 agent（GUI 参数按测试加速收敛，不改变语义） */
-function makeResolved(command = path.join(installDir, "Open Design.exe")): ResolvedAgent {
+/**
+ * 构造解析后的 agent（GUI 参数按测试加速收敛，不改变语义）。
+ *
+ * `supported` 用于覆盖版本门禁表：门禁判据是按**宿主平台**取 `supportedVersions[platform]` 的
+ * （生产语义：Open Design 跑在什么系统上就按那个系统取证），内置 profile 只填了 `win32`，
+ * 因此 CI 的 ubuntu/macos 腿上门禁天然处于「未配置即放行」状态。要验证门禁本身，
+ * 必须把**当前宿主平台**写进去，否则这条用例只能在 Windows 上通过。
+ */
+function makeResolved(
+  command = path.join(installDir, "Open Design.exe"),
+  supported?: Record<string, string[]>,
+): ResolvedAgent {
   return {
     id: "opendesign",
     displayName: "Open Design",
@@ -85,6 +95,7 @@ function makeResolved(command = path.join(installDir, "Open Design.exe")): Resol
       },
       opendesign: {
         ...OD_PROFILE.opendesign!,
+        supportedVersions: supported ?? OD_PROFILE.opendesign!.supportedVersions,
         modelMenuTimeoutMs: 200,
         designSystemTimeoutMs: 200,
         designDirectionTimeoutMs: 200,
@@ -143,6 +154,8 @@ interface RunOptions {
   ctx?: Partial<TaskContext>;
   deps?: Partial<OpenDesignRunDeps>;
   command?: string;
+  /** 覆盖版本门禁表（默认用内置 profile 的 win32 条目） */
+  supportedVersions?: Record<string, string[]>;
   onEvent?: (kind: string) => void;
   signal?: AbortSignal;
 }
@@ -154,7 +167,7 @@ async function run(
   const events: string[] = [];
   const res = await runOpenDesignTask({
     ctx: makeCtx(options.ctx),
-    resolved: makeResolved(options.command),
+    resolved: makeResolved(options.command, options.supportedVersions),
     opts: {
       logger: silentLogger,
       signal: options.signal,
@@ -237,11 +250,27 @@ describe("Open Design GUI 驱动（假 CDP）", () => {
 
   it("版本不在已取证列表 → version_mismatch（fail-closed，不派发）", async () => {
     const state = makeOpenDesignFakeState();
-    const { res } = await run(state, { command: path.join(oldInstallDir, "Open Design.exe") });
+    const { res } = await run(state, {
+      command: path.join(oldInstallDir, "Open Design.exe"),
+      // 门禁按宿主平台取表（见 makeResolved 的说明）：把**当前宿主平台**写进已取证列表，
+      // 这条用例才能在 Windows / Linux / macOS 三种腿上**同等生效**（而不是只在 Windows 上跑）。
+      supportedVersions: { [process.platform]: ["0.24.1"] },
+    });
     expect(res.hardFailure).toBe(true);
     expect(res.endReason).toBe("version_mismatch");
     expect(res.error ?? "").toContain("0.25.0");
     expect(state.sendClicks).toBe(0);
+  });
+
+  it("版本门禁按宿主平台取表：宿主平台未取证时不拦截（避免跨平台误报）", async () => {
+    // 与上一条互补：内置 profile 只填 win32，宿主不是 win32 时门禁「未配置即放行」——
+    // 这是刻意的平台语义，不是漏洞（派发资格另由 registry 的 status 判定）。
+    const state = makeOpenDesignFakeState();
+    const { res } = await run(state, {
+      command: path.join(oldInstallDir, "Open Design.exe"),
+      supportedVersions: { "some-other-platform": ["0.24.1"] },
+    });
+    expect(res.endReason).not.toBe("version_mismatch");
   });
 
   it("布局守卫未命中（局部锚点漂移）→ selector_drift 硬失败，不进任何点击", async () => {
