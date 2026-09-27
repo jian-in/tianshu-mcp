@@ -40,11 +40,12 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Tests
 
-- **33** new cases across 4 files:
+- **47** new cases across 5 files:
   - `test/integration/opendesign-flow.test.ts` (12): the full chain over a fake CDP (bind directory → pick model / design system / direction → send → poll to completion) plus eight fail-closed paths (invalid direction rejected at the entry point, model miss echoing candidates, version mismatch, an unconfigured host platform not blocking, layout drift, an existing instance that cannot be adopted, an unconfirmable send that is never resent, and `session_lost` when the conversation page is missing during a rework round), asserting the event stream (`task_dispatched` / `file_modification_started`) and that `guiStop` is reported truthfully.
   - `test/unit/opendesign-menu.test.ts` (8): the reuse branch, non-unique trigger, menu never appears, duplicate names, miss echoing candidates, clicked-but-readback-mismatch, the search-filter path, and readback polling.
   - `test/unit/opendesign-send.test.ts` (6): the confirmation truth table (clearing alone does not count as success) plus `input_mismatch`, `send_failed`, success, and `send_unknown` (clicked exactly once).
   - `test/unit/opendesign-transport.test.ts` (7): the fast / slow / both-fail target-enumeration paths, session routing (page-level commands carry `sessionId`, `Target.*` does not), and an explicit error when not connected.
+  - `test/unit/opendesign-recovery.test.ts` (14): `remaining(cap)` taking the minimum of three deadlines, the setup budget no longer applying after binding, `setup_recovery` / `task_timeout` / `aborted` staying distinct, `run()` honouring its cap and aborting immediately, `setStage` writing the stage into the error, and the transient/permission error classifiers.
 - Shared test harness extended (`test/fake-cdp.ts`): a new Open Design page stub (`od:*` marker dispatch, in-memory state, coordinate-click interpretation) that resolves semantic keys from the registry itself, so selector drift breaks the stub rather than letting it "pretend it still works".
 - None of the cases require Open Design to be installed, and none touch the network (injection and temp directories only).
 

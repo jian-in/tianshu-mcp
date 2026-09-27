@@ -43,11 +43,12 @@
 
 ### 测试
 
-- 新增 **33** 个用例（4 文件）：
+- 新增 **47** 个用例（5 文件）：
   - `test/integration/opendesign-flow.test.ts`（12）：假 CDP 全链路（绑目录 → 选模型/设计系统/方向 → 发送 → 轮询完成）与 8 条 fail-closed 路径（非法方向在入口拒绝、模型未命中回显候选、版本不匹配、宿主平台未取证不拦截、布局漂移、既有实例无法接管、发送结果无法确认绝不重发、返修轮会话页缺失 `session_lost`），并断言事件流（`task_dispatched` / `file_modification_started`）与 `guiStop` 如实回报；
   - `test/unit/opendesign-menu.test.ts`（8）：复用分支、触发器不唯一、菜单未出现、同名多命中、未命中回显候选、点中但回读不一致、搜索过滤路径、回读轮询；
   - `test/unit/opendesign-send.test.ts`（6）：确认判据真值表（清空单独不算成功）与 `input_mismatch` / `send_failed` / 成功 / `send_unknown`（只点一次）；
-  - `test/unit/opendesign-transport.test.ts`（7）：目标枚举快/慢/全失败三条路径，以及会话路由（页面级带 `sessionId`、`Target.*` 不带）与未连接时的明确报错。
+  - `test/unit/opendesign-transport.test.ts`（7）：目标枚举快/慢/全失败三条路径，以及会话路由（页面级带 `sessionId`、`Target.*` 不带）与未连接时的明确报错；
+  - `test/unit/opendesign-recovery.test.ts`（14）：`remaining(cap)` 取三步最小值、绑定完成后 setup 预算失效、`setup_recovery` / `task_timeout` / `aborted` 三种分类互不混淆、`run()` 的 cap 到点与 abort 立即中断、`setStage` 把阶段写进错误对象、临时错误与权限错误的分类判据。
 - 测试桩扩展（`test/fake-cdp.ts`）：新增 Open Design 页面桩（`od:*` 标记分发 + 内存状态 + 坐标点击解释），语义键由注册表自身反查，选择器漂移时桩会一起失败而非「假装还能用」。
 - 全部用例**不依赖本机安装 Open Design**（走注入与临时目录），也不联网。
 
