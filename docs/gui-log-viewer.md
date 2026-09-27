@@ -30,6 +30,14 @@ Tianshu-mcp 日志台（英文名 **Tianshu-mcp Logs**）是一个**本地只读
 > 产物基名取自 `bundle.productName`，本项目刻意使用 **无空格** 的 `Tianshu-mcp-Logs`（界面显示名仍是「Tianshu-mcp 日志台 / Tianshu-mcp Logs」）：
 > GitHub 会**重命名**含空格等非字母数字字符的发行资产名（空格→点），而 Gitee 原样保留，两端不一致会让更新清单里的下载地址失效。
 > CI 另有一道断言，产物名含非 `[A-Za-z0-9._-]` 字符即直接失败。
+>
+> **`bundle.productName` 一经发布即冻结，不要再改**：NSIS 的「设置 → 应用和功能」卸载项注册表键由它拼成
+> （`…\CurrentVersion\Uninstall\<productName>`），一旦改名，新安装器就不再认得旧安装 —— 旧版本既不被覆盖也不被卸载，
+> 于是列表里留下两条记录、旧目录与旧快捷方式留在磁盘上（`0.1.0-beta.1 → 0.1.0-beta.3` 之间的真实事故）。
+> 为此 `mcp-gui/src-tauri/windows/installer-hooks.nsh`（经 `bundle.windows.nsis.installerHooks` 挂载）在安装前执行
+> `NSIS_HOOK_PREINSTALL`：检测到历史遗留名称的卸载项时，静默运行它自己的卸载器，再兜底清除残留的注册表键与快捷方式。
+> 该钩子只在检测到旧名称时动作，**全新安装与当前名称的版本更新完全不受影响**，也**不会删除用户数据**
+> （NSIS 卸载器的「Delete app data」复选框只在交互模式下才置位，静默卸载不触发）。
 
 > **macOS 未做 Apple 代码签名与公证**：首次打开可能需要在「系统设置 → 隐私与安全性」中手动允许。
 > 这不影响功能，也不影响自动更新——更新包的完整性由 minisign 签名校验保证。

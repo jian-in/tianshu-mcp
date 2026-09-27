@@ -3,7 +3,7 @@
 > **交接快照：2026-09-27 · 开发版本 `0.7.1`（**尚未打 tag、未发布 npm**）。**
 > **本轮（0.7.0 → 0.7.1）交付**：内置 agent `opendesign`（Open Design 桌面端）**从「开发中」推进到完整可派发**——
 > 选择器按产品产物取证落地、12 步执行链全部接线、并接入验收 → 自动返修 → 再验收闭环。
-> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.3`，独立 tag `gui-v*`，独立演进；本轮已把前端**推翻骨架重画**为两态式 + 黑曜石终端）。
+> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.4`，独立 tag `gui-v*`，独立演进；最新一轮修掉**「更新后旧版本不消失」**——`productName` 改名导致 NSIS 卸载项注册表键变更，现用 `installerHooks` 做一次性迁移）。
 > **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包 GUI 侧零改动。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
 > **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布），**五个 issue 均已回复并关闭**（2026-09-24）。
 > **#18~#22 的真机记录已全部补齐**（2026-09-25）：见 [issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md) 与 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)；各 issue 另附真机证据补充评论。
@@ -38,6 +38,33 @@
   桩扩展在 `test/fake-cdp.ts`（Open Design 页面桩，语义键由注册表自身反查，选择器漂移时桩会一起失败）。全部**不依赖本机安装 Open Design**、不联网。
 - **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**未打 tag、未发 npm**；
   `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。
+
+### 独立交付面 · 日志台 GUI **升级路径修复：更新后旧版本不消失**（`mcp-gui/`，`0.1.0-beta.4`，2026-09-27）
+
+- **真机现象**：Windows 10「设置 → 应用和功能」里**同时有两条记录** —— `Tianshu-mcp Logs`（0.1.0-beta.1，`D:\Tianshu-mcp Logs`）与
+  `Tianshu-mcp-Logs`（0.1.0-beta.3，`%LOCALAPPDATA%\Tianshu-mcp-Logs`），即「更新后原来的软件不消失、被保留下来」。
+- **根因（注册表实测取证，不是推测）**：Tauri 的 NSIS 模板把卸载项注册表键写成
+  `!define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}"`。
+  而 `0.1.0-beta.1 → 0.1.0-beta.2` 之间，为修「GitHub 会把含空格的发行资产名归一化成点、Gitee 原样保留 → 两端下载地址不一致」（提交 `7d56b21`），
+  `bundle.productName` 由含空格的 `Tianshu-mcp Logs` 改成了无空格的 `Tianshu-mcp-Logs`。**键名跟着 productName 变**，
+  于是新安装器不再把旧安装视为「同一个应用」—— 既不覆盖也不卸载。Tauri 只处理 `mainBinaryName` 变更（`UNINSTKEY` 下的 `MainBinaryName` 值），**不处理 productName 变更**。
+- **修法（不回退 productName）**：回退会让 beta.2/3 的新安装反而变成残留，并重新引入资产名两端不一致。改为**一次性迁移**：
+  新增 `mcp-gui/src-tauri/windows/installer-hooks.nsh`，经 `bundle.windows.nsis.installerHooks`（`"./windows/installer-hooks.nsh"`；CLI 打包前会把 CWD 切到 `src-tauri`，故是 src-tauri 相对路径）挂载，
+  在 `NSIS_HOOK_PREINSTALL` 中：读旧名称卸载项的 `UninstallString` → **静默运行它自己的卸载器**（`ExecWait '$R9 /S'`）→ 兜底 `Delete` 旧快捷方式、`DeleteRegKey` 旧卸载项与 `Software\tianshu\Tianshu-mcp Logs`。
+  旧卸载项不存在时**完全不动作**（全新安装与当前名称的更新零影响）。
+- **边界（已写进钩子注释与文档，防后人误扩）**：① 静默卸载**不会删用户数据** —— NSIS 卸载器的「Delete app data」复选框只在交互模式下经 `un.ConfirmLeave` 置位，
+  `/S` 下 `$DeleteAppDataCheckboxState` 保持空值；两端 BUNDLEID 相同、数据目录共用，必须保留；
+  ② 旧卸载器可能因「旧进程占用且强制关闭失败」而中途 `Abort`（静默模式下它只往控制台打印红色提示后 `Abort`），此时**不会**清理自己的注册表键 ——
+  故本钩子在它之后**无条件**删除该键，保证列表残留一定消失；③ **不对旧 `$INSTDIR` 做 `RmDir /r`**：旧安装位置是用户在旧安装器里自选的（本机即 `D:\Tianshu-mcp Logs`），递归删用户自选路径有误删风险；
+  ④ 只清理这一个已知历史名称（迁移别名常量），不做「扫描全部卸载项」式的通用清理。
+- **验证（本机，不涉及 Rust 侧）**：用 Tauri 同款 **NSIS 3.11** 工具链，按模板**真实顺序**（`!include` 钩子在前、`!define MANUFACTURER/PRODUCTNAME` 在后）写等价 harness 编译通过（`makensis` exit 0）——
+  这同时证明了「宏体内引用模板变量」在真实插入顺序下成立（`${MANUKEY}` 若未定义会直接报未知变量而非静默为空）。
+  附带确认：`makensis` 的文本编码校验只作用于**主脚本**，被 `!include` 的钩子按主脚本字符集解码，
+  故钩子内**运行期字符串保持 ASCII、注释用中文**（中文注释在 ACP / CP1252 / UTF-8 三种输入字符集下均不影响编译）。
+- **版本**：`0.1.0-beta.3 → 0.1.0-beta.4`（`package.json` / `package-lock.json`（2 处）/ `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 同提交）；
+  **不涉及 MCP 主包**（主包仍为 `0.7.1`，未打 tag、未发布）。
+- **待办**：下一次真实升级（beta.3 → beta.4，或 beta.1 直升 beta.4）后确认「应用和功能」只剩一条记录、旧目录与旧快捷方式被清除；
+  按 `docs/issue-25-gui-real-machine-record.md` §2.4 回填结果。当前机器上的历史残留可以立刻手动清掉：运行 `D:\Tianshu-mcp Logs\uninstall.exe`。
 
 ### 独立交付面 · 日志台 GUI **布局范式重写**（`mcp-gui/`，`0.1.0-beta.3`，2026-09-27）
 

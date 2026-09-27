@@ -1054,6 +1054,13 @@ build**. The `GUI` workflow also triggers on the two truth files, so TS-side dri
 - **Signature verification is a hard gate**: `tauri-plugin-updater` with the embedded public key;
   **a failed verification is always rejected**;
 - **Windows payload must be NSIS** (the Tauri updater does not support MSI); macOS uses `.app.tar.gz`;
+- **`bundle.productName` is an immutable contract on the upgrade path**: the NSIS uninstall registry key is
+  `…\CurrentVersion\Uninstall\<productName>`, so renaming it effectively means "a different app" (the previous
+  installation is neither overwritten nor uninstalled and lingers in Apps & features). productName has therefore been
+  frozen since `0.1.0-beta.2`; the one-off cleanup of the historical name is handled by
+  `mcp-gui/src-tauri/windows/installer-hooks.nsh` (`bundle.windows.nsis.installerHooks` → `NSIS_HOOK_PREINSTALL`),
+  which silently runs the legacy uninstaller when it detects a legacy-named uninstall entry and then removes any
+  leftover registry keys / shortcuts (it never deletes user data and never recursively deletes the old `$INSTDIR`);
 - **Failures never block**: any failure only affects updating; log viewing keeps working, with a "Manual download" entry.
 
 ### 16.5 Build boundary (a hard constraint from issue #25)

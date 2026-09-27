@@ -33,6 +33,16 @@ Artifacts are produced by CI (the `GUI` GitHub Actions workflow):
 > release assets containing spaces or other non-alphanumeric characters (space → dot) while Gitee keeps them as-is,
 > and that mismatch would break the download URLs inside the update manifests. CI also asserts that payload names use
 > only `[A-Za-z0-9._-]` and fails otherwise.
+>
+> **`bundle.productName` is frozen once released — do not change it again**: the NSIS "Apps & features" uninstall
+> registry key is built from it (`…\CurrentVersion\Uninstall\<productName>`). Renaming it makes the new installer stop
+> recognising the previous installation — the old version is neither overwritten nor uninstalled, so it stays in the
+> list while its directory and shortcuts stay on disk (exactly what happened between `0.1.0-beta.1` and `0.1.0-beta.3`).
+> `mcp-gui/src-tauri/windows/installer-hooks.nsh` (wired via `bundle.windows.nsis.installerHooks`) therefore runs
+> `NSIS_HOOK_PREINSTALL` before installing: if a legacy-named uninstall entry is found, its own uninstaller is run
+> silently and any leftover registry keys / shortcuts are cleaned up afterwards. The hook only acts when such a legacy
+> entry exists — **fresh installs and updates within the current name are unaffected** — and it **never deletes user
+> data** (the NSIS uninstaller's "Delete app data" checkbox is only set in interactive mode, not in silent uninstalls).
 
 > **macOS builds are not code-signed or notarized by Apple**: the first launch may require manual approval under
 > System Settings → Privacy & Security. This does not affect functionality or auto-update — update integrity is

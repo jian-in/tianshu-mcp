@@ -64,6 +64,18 @@
 | P3 | 图标 | 仓库内只有 `assets/tianshu-mcp-icon.svg`；无 emoji、无二进制图标 | ✅ 通过：`assets/` 下仅 `tianshu-mcp-icon.svg`；`src-tauri/icons/` 仅提交 `.gitkeep`（其余由 CI 生成） |
 | P4 | `tianshu-mcp-web/` | 未被改动 | ✅ 通过：最近 12 次提交均未触及该目录 |
 
+### 2.4 升级路径：旧 `productName` 的安装残留（真机发现 → 已修，GUI `0.1.0-beta.4`）
+
+| 项 | 内容 |
+|---|---|
+| 发现面 | 真机验收查看 Windows 10「设置 → 应用和功能」时看到**两条**记录：`Tianshu-mcp Logs`（0.1.0-beta.1）与 `Tianshu-mcp-Logs`（0.1.0-beta.3）——即「更新后原来的软件不消失，被保留下来」 |
+| 根因 | Tauri 的 NSIS 模板用 `bundle.productName` 直接拼卸载项注册表键：`…\CurrentVersion\Uninstall\${PRODUCTNAME}`。`0.1.0-beta.1 → 0.1.0-beta.2` 之间为修「发行资产名两端不一致」（见 §3.3 的 2-d）把 productName 由含空格改为无空格，**键名随之改变** → 新安装器不再把旧安装视为同一个应用（Tauri 只处理 `mainBinaryName` 变更，不处理 productName 变更），既不覆盖也不卸载 |
+| 取证（注册表实测） | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Tianshu-mcp Logs` → `DisplayVersion=0.1.0-beta.1`、`InstallLocation="D:\Tianshu-mcp Logs"`；`…\Uninstall\Tianshu-mcp-Logs` → `0.1.0-beta.3`、`%LOCALAPPDATA%\Tianshu-mcp-Logs`。两条并存即问题本身 |
+| 修法 | 新增 `mcp-gui/src-tauri/windows/installer-hooks.nsh`，经 `bundle.windows.nsis.installerHooks` 挂载：`NSIS_HOOK_PREINSTALL` 读到旧名称的 `UninstallString` 时静默运行它自己的卸载器（`/S`），随后兜底删除残留的卸载项注册表键、`Software\tianshu\Tianshu-mcp Logs` 与旧快捷方式；**旧条目不存在则完全不动作** |
+| 边界 | 静默卸载**不删用户数据**（「Delete app data」只在交互模式置位；两端 BUNDLEID 相同、数据目录共用）；旧卸载器中途 `Abort` 时其注册表键由本钩子无条件删除；**不对旧 `$INSTDIR` 做 `RmDir /r`**（旧位置由用户在旧安装器里自选，本机即 `D:\Tianshu-mcp Logs`） |
+| 本机验证（不涉及 Rust） | 用 Tauri 同款 **NSIS 3.11** 工具链，按模板真实顺序（`!include` 钩子在前、`!define MANUFACTURER/PRODUCTNAME` 在后）编译等价 harness 通过（`makensis` exit 0），同时证明宏体内引用模板变量成立 |
+| 真机待验 | 下一次真实升级（beta.3 → beta.4）后：「应用和功能」**只剩一条**记录，旧目录与旧快捷方式被清除 —— **待测** |
+
 ---
 
 ## 三、CI 门禁结果

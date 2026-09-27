@@ -92,6 +92,7 @@
 ### 修复
 
 - **`GUI` workflow 手动触发会被静默跳过**：`workflow_dispatch` 不带 `github.event.before`，原变更检测退化为 `git diff HEAD~1 HEAD`，若最近两次提交仅改文档，则三平台构建矩阵**全部 skipped**（运行显示 Success 却什么都没跑）。现改为**手动触发无条件构建**，tag 同样无条件构建，仅 push / PR 走 diff 过滤。
+- **升级后旧版本不消失：「应用和功能」残留两条记录（GUI 独立版本 `0.1.0-beta.4`，真机验收发现）**：Tauri 的 NSIS 模板用 `bundle.productName` 直接拼出卸载项注册表键（`…\CurrentVersion\Uninstall\${PRODUCTNAME}`），而 `0.1.0-beta.1 → 0.1.0-beta.2` 之间为修「发行资产名两端不一致」把 productName 由含空格的 `Tianshu-mcp Logs` 改成无空格的 `Tianshu-mcp-Logs` —— 键名随之改变，新安装器便不再把旧安装视为同一个应用，于是旧版本（本机实测为 0.1.0-beta.1，装在 `D:\Tianshu-mcp Logs`）**既不被覆盖也不被卸载**，与新版并存于列表，旧目录与旧快捷方式也留在磁盘上（Tauri 只处理 `mainBinaryName` 变更，不处理 productName 变更）。修法：新增 `mcp-gui/src-tauri/windows/installer-hooks.nsh` 并经 `bundle.windows.nsis.installerHooks` 挂载，在 `NSIS_HOOK_PREINSTALL` 中检测历史遗留名称的卸载项 → **静默运行它自己的卸载器（`/S`）** → 兜底删除残留的注册表键与快捷方式；只在检测到旧名称时动作，**全新安装与当前名称的版本更新不受影响**，静默卸载**不会删除用户数据**，也不对旧 `$INSTDIR` 做递归删除（旧安装位置是用户自选的）。`bundle.productName` 自此视为**冻结契约**（见 `ARCHITECTURE` §16.4）。
 
 ### 测试
 

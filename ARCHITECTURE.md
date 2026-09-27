@@ -1003,6 +1003,11 @@ Rust 侧需要重写一份「状态枚举 / 事件词表」用于事件分类，
 - **两端清单同版本、同签名**：minisign 签名针对**产物文件**，与源无关，故 Gitee 清单复用 GitHub 清单的 `signature`，只改 `url`；
 - **验签是硬门禁**：`tauri-plugin-updater` + 内置公钥，**验签不通过一律拒绝安装**；
 - **Windows 更新载体必须是 NSIS**（Tauri updater 不支持 MSI）；macOS 为 `.app.tar.gz`；
+- **`bundle.productName` 是升级路径上的不可变契约**：NSIS 的卸载项注册表键 = `…\CurrentVersion\Uninstall\<productName>`，
+  改名即等于「换了一个应用」（旧安装既不被覆盖也不被卸载，会残留在「应用和功能」里）。
+  故 productName 自 `0.1.0-beta.2` 起冻结；历史遗留名称的一次性清理由 `mcp-gui/src-tauri/windows/installer-hooks.nsh`
+  （`bundle.windows.nsis.installerHooks` → `NSIS_HOOK_PREINSTALL`）承担——检测到旧名称卸载项时静默运行其卸载器，
+  并兜底删除残留注册表键与快捷方式（不删用户数据、不对旧 $INSTDIR 递归删除）；
 - **失败不阻塞**：任一步失败只影响更新，日志查看始终可用，并给出「手动下载」兜底入口。
 
 ### 16.5 构建边界（issue #25 的硬约束）
