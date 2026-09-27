@@ -74,7 +74,7 @@
 | 修法 | 新增 `mcp-gui/src-tauri/windows/installer-hooks.nsh`，经 `bundle.windows.nsis.installerHooks` 挂载：`NSIS_HOOK_PREINSTALL` 读到旧名称的 `UninstallString` 时静默运行它自己的卸载器（`/S`），随后兜底删除残留的卸载项注册表键、`Software\tianshu\Tianshu-mcp Logs` 与旧快捷方式；**旧条目不存在则完全不动作** |
 | 边界 | 静默卸载**不删用户数据**（「Delete app data」只在交互模式置位；两端 BUNDLEID 相同、数据目录共用）；旧卸载器中途 `Abort` 时其注册表键由本钩子无条件删除；**不对旧 `$INSTDIR` 做 `RmDir /r`**（旧位置由用户在旧安装器里自选，本机即 `D:\Tianshu-mcp Logs`） |
 | 本机验证（不涉及 Rust） | 用 Tauri 同款 **NSIS 3.11** 工具链，按模板真实顺序（`!include` 钩子在前、`!define MANUFACTURER/PRODUCTNAME` 在后）编译等价 harness 通过（`makensis` exit 0），同时证明宏体内引用模板变量成立 |
-| 真机待验 | 下一次真实升级（beta.3 → beta.4）后：「应用和功能」**只剩一条**记录，旧目录与旧快捷方式被清除 —— **待测** |
+| 真机待验 | 下一次真实升级（beta.3 → beta.4）后：「应用和功能」**只剩一条**记录，旧目录与旧快捷方式被清除 —— **待测**（发布侧证据见 §3.4） |
 
 ---
 
@@ -136,6 +136,20 @@
 > 教训：**「构建全绿」不等于「发布链路可用」**——`Build updater manifest fragment` 与 `publish` 里的发布步骤都只在 **tag 运行**时才执行，
 > 非 tag 的 push / 手动触发一律跳过；因此首次打 tag 才会把这些问题一次性暴露出来。
 
+### 3.4 `gui-v0.1.0-beta.4` 发布跑通（2026-09-27）
+
+本轮修复（见 §2.4）的发布侧证据：
+
+| 项 | 结果 |
+|---|---|
+| tag | `gui-v0.1.0-beta.4` → `d593abe`：GitHub 侧 `git/ref` 与 Gitee 侧 `git ls-remote` **双端均确认指向该 SHA** |
+| `GUI` run | [36312223737](https://github.com/lanlan0811/tianshu-mcp/actions/runs/36312223737)：**5 个 job 全部 success** —— `Schema parity` + `Build (windows-x86_64 / darwin-x86_64 / darwin-aarch64)` + `Publish beta pre-release (GitHub + Gitee)` |
+| GitHub 发行版 | `gui-v0.1.0-beta.4`：`prerelease=true / draft=false`，**8 个资产**（2 个 dmg、NSIS `-setup.exe` + `.sig`、2 个按架构区分的 `.app.tar.gz` + 2 个 `.sig`） |
+| 两端清单 | `update/gui/latest.json` 与 `latest-gitee.json` 均指向 `0.1.0-beta.4`（`pub_date=2026-09-27T10:28:54Z`）；**6 个下载地址实测 HEAD 200**（GitHub×3 + Gitee×3） |
+| 发版隔离 | 该 tag 只触发 `GUI`（及 master 的 `CI`），**无 `Release` workflow** |
+| 新钩子确实进了包 | Windows 腿的 `tauri build` 成功即证明 `bundle.windows.nsis.installerHooks` → `windows/installer-hooks.nsh` 被 makensis **真正 include 并编译进** `-setup.exe`（路径写错或宏语法错误都会让该腿失败）；产物带 `.sig`，说明签名路径同样正常 |
+| 真机待验 | 「装 `0.1.0-beta.1` 造出旧条目 → 再装 `0.1.0-beta.4`」的端到端复现**待执行**（见 §2.4） |
+
 ---
 
 ## 四、结论
@@ -146,6 +160,11 @@
 **发布链路已跑通**（2026-09-27，`GUI` run 全绿）：`Publish beta pre-release` job 的 13 个步骤全部 success ——
 GitHub 与 Gitee **双端 pre-release 均已创建**，各自附齐 8 个产物；两端更新清单均已落库且**下载地址实测可达**（见 §2.2 U1~U3）。
 `gui-v*` 未触发 `release.yml`（见 U2）。
+
+**`gui-v0.1.0-beta.4`（升级路径修复）的发布同样已跑通**（2026-09-27）：三平台构建 + 双端 pre-release + 两端清单**全绿**，
+且新钩子确认已随 Windows 安装包一起编译进 `-setup.exe`（见 §3.4）。本机原有的那条历史残留
+（旧命名安装 `Tianshu-mcp Logs` 0.1.0-beta.1，装在 `D:\Tianshu-mcp Logs`）已用其自带卸载器清除，
+「应用和功能」恢复为单条记录（`Tianshu-mcp-Logs`）。
 
 **§2.3 打包与隔离（P1~P4）已在本机验证通过**（纯 Node 检查，不涉及 Rust 侧，见上表）。
 

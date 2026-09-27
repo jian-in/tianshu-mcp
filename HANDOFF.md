@@ -63,8 +63,15 @@
   故钩子内**运行期字符串保持 ASCII、注释用中文**（中文注释在 ACP / CP1252 / UTF-8 三种输入字符集下均不影响编译）。
 - **版本**：`0.1.0-beta.3 → 0.1.0-beta.4`（`package.json` / `package-lock.json`（2 处）/ `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 同提交）；
   **不涉及 MCP 主包**（主包仍为 `0.7.1`，未打 tag、未发布）。
-- **待办**：下一次真实升级（beta.3 → beta.4，或 beta.1 直升 beta.4）后确认「应用和功能」只剩一条记录、旧目录与旧快捷方式被清除；
-  按 `docs/issue-25-gui-real-machine-record.md` §2.4 回填结果。当前机器上的历史残留可以立刻手动清掉：运行 `D:\Tianshu-mcp Logs\uninstall.exe`。
+- **发布（2026-09-27）**：tag `gui-v0.1.0-beta.4` → `d593abe`（GitHub `git/ref` 与 Gitee `git ls-remote` 双端核对同 SHA）。
+  `GUI` run `36312223737` 的 **5 个 job 全 success**（`Schema parity` + 三平台 `Build` + `Publish beta pre-release`）；
+  GitHub 与 Gitee **双端 pre-release 均已创建**（GitHub 侧 8 个资产），两端清单 `update/gui/latest.json` / `latest-gitee.json` 均指向 `0.1.0-beta.4`，
+  **6 个下载地址实测 HEAD 200**；`gui-v*` 未触发 `release.yml`。Windows 腿构建成功即证明新钩子**确实被 makensis include 进** `-setup.exe`（路径或宏写错都会让该腿失败）。
+  发布后两仓各多一个机器人提交（GitHub `1f4415b` / Gitee `4f18879`），已合并为 `af22ce2` 并回推两端收敛。
+- **本机历史残留已清除**：用旧安装自带的卸载器把 `Tianshu-mcp Logs`（0.1.0-beta.1，`D:\Tianshu-mcp Logs`）卸载，并补删静默卸载不会清的 `HKCU\Software\tianshu\Tianshu-mcp Logs`（值为旧 `$INSTDIR`）；
+  「应用和功能」恢复为单条记录。旁证：同 publisher 下另有一个**完全无关**的 `Tianshu`（3.26.0）条目 —— 正好说明钩子「只清精确旧键、不做 publisher 扫描」是必要的。
+- **待办**：真机端到端复现（装 `0.1.0-beta.1` 造出旧条目 → 再装 `0.1.0-beta.4`，确认旧条目/旧目录/旧快捷方式被钩子清掉）待执行，
+  完成后按 `docs/issue-25-gui-real-machine-record.md` §2.4 回填；该文件已补 §3.4 记录本次发布全绿。
 
 ### 独立交付面 · 日志台 GUI **布局范式重写**（`mcp-gui/`，`0.1.0-beta.3`，2026-09-27）
 
