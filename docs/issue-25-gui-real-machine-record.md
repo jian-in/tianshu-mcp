@@ -188,13 +188,42 @@ DOM 断言 **10/10 通过**（探针脚本置于 `.rivet/scratch/`，该目录�
 > 该探针覆盖的是**前端接线与 URL 选择逻辑**（用 `window.open` 桩捕获目标地址）；**系统浏览器是否真被拉起**属桌面运行时行为，
 > 仍须在 CI 产物上验收（见下条）。
 
-**如实披露（尚未完成）**：上表第 2/3/4 项的**真机行为**（系统浏览器是否真的被拉起、落点是否为所选源、设置条目的落位与常亮）
-**尚未在 Windows 10 上验收** —— 需 `GUI` workflow 打出 `gui-v0.1.0-beta.7` 后下载 NSIS 产物实测，结论待回填本节。
+**CI 修复与发布（2026-09-28，均已跑通）**：
 
-**新增依赖与风险点（待 CI 确认）**：`src-tauri/Cargo.toml` 新增 `tauri-plugin-opener = "2"`（`Cargo.lock` 仍由 CI 生成，不入库）；
-JS 侧 `@tauri-apps/plugin-opener` 解析为 `2.6.0`（其要求 `@tauri-apps/api ^2.12.0`，lock 中 `@tauri-apps/api` 已解析为 `2.12.0`）。
-JS 绑定与 Rust crate 的版本匹配、`opener:allow-open-url` 白名单在运行时的实际放行范围，均由 `GUI` workflow 的 `cargo clippy` / `cargo test`
-与真机实测确认。
+1. **首次推送暴露 `cargo fmt --check` 失败**：GUI workflow 的三平台 `Build` job 在同一步骤 "Rust format / clippy / tests"
+   **1~2 秒内**失败（`windows-x86_64` 85s、`darwin-x86_64` 0s、`darwin-aarch64` 1s）——该步骤有三条命令，
+   只有最快的 `cargo fmt --check` 能在 1~2 秒内失败，故判定为格式问题而非 clippy / test。
+   **根因**：新增的 `&chosen` 实参把三处 `match` 臂推到超宽（rustfmt 改为 `Err(e) => { return ... }` 块式），
+   新增导入项的顺序（rustfmt 会按字母序重排：`_GITEE` 在 `_GITHUB` 之前）与一处 `assert_eq!` 的折行也与 rustfmt 输出不符。
+   **修法**：本机 `rustfmt`（`cargo 1.98.0` / `rustc 1.98.0`，与 CI stable 一致）执行 `cargo fmt` 修正后复检通过，
+   提交 `8d6df8f`。**本机无 MSVC `link.exe`，故 `cargo clippy` / `cargo test` 无法在本机运行**——这与 issue #25 的
+   「本机不执行 Rust 侧构建」约束（D2）一致，Rust 门禁仍由 CI 承担。
+2. **GUI run [#61](https://github.com/lanlan0811/tianshu-mcp/actions/runs/36368067735) 全绿**（commit `8d6df8f`）：
+   `Rust format / clippy / tests` 在三平台全部通过（windows 86s、darwin-aarch64 58s，即 clippy + test 真正跑完并编译了新增依赖），
+   三平台 `Build app bundle` + `Upload build artifacts` 全部 success，`Publish` 按预期 `skipped`（非 tag）。
+3. **tag `gui-v0.1.0-beta.7` 发布跑通**：GUI run [#62](https://github.com/lanlan0811/tianshu-mcp/actions/runs/36369447953)
+   的 5 个 job 中 **4 个 success**（schema-parity + 三平台 Build），`Publish beta pre-release (GitHub + Gitee)` 的
+   10 个步骤**全部 success**（`Publish GitHub pre-release` / `Publish Gitee pre-release with attachments + write Gitee manifest`
+   / `Commit GitHub manifest`）。
+   - **GitHub 侧**：pre-release `gui-v0.1.0-beta.7` 已创建（`prerelease: true`、`draft: false`），附 **8 个产物**（`x64-setup.exe` + `.sig`、
+     两个 `.dmg`、两个 `.app.tar.gz` + `.sig`）；
+   - **两端更新清单均已落库**：`update/gui/latest.json` 与 `update/gui/latest-gitee.json` 的 `version` 均为 `0.1.0-beta.7`，
+     分别指向 GitHub / Gitee 的 `gui-v0.1.0-beta.7` 附件，且**签名一致**（minisign 签的是产物文件，与源无关——
+     与 §2.2 的设计一致）；两份清单由各自的发布 job 提交，已按既有做法合并回同一提交并推送两仓。
+   - **`gui-v*` 未触发 MCP 的 `release.yml`**（workflow 内显式断言通过）。
+
+**如实披露（仍未完成）**：桌面运行时行为——**「手动下载」点击是否真的拉起系统默认浏览器**、落点是否为所选源、
+设置条目的落位与常亮——**尚未在 Windows 10 真机上验收**；需下载本次 `x64-setup.exe` 实测后回填本节。
+本机无 MSVC 工具链，无法自行构建桌面产物。
+
+**新增依赖已由 CI 确认可用**：`src-tauri/Cargo.toml` 新增 `tauri-plugin-opener = "2"`（`Cargo.lock` 仍由 CI 生成、不入库），
+JS 侧 `@tauri-apps/plugin-opener` 解析为 `2.6.0`（其要求 `@tauri-apps/api ^2.12.0`，lock 中已解析为 `2.12.0`）；
+两者的兼容性与 `opener:allow-open-url` 白名单的运行时放行范围，仍以真机实测为准。
+
+**另有一条与本轮无关的既有 CI 红灯（如实记录）**：MCP 主包的 `ci.yml` 在 `#284` 为止为 success，
+自 `#285`（`03cf91c` open-desktop 冒烟修复）起转红，`#286`/`#287`/`#288` 持续失败。
+失败集中在 **ubuntu / macos 的 6 个 `Build & Test`** job（windows 与全部 `Visual browser` job 通过），
+**与本轮 GUI 改动无因果关系**（本轮只动 `mcp-gui/**` 与 `gui.yml`，`ci.yml` 不覆盖 `mcp-gui`）。
 
 ---
 

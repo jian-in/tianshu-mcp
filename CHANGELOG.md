@@ -117,9 +117,11 @@
 ### 测试
 
 - `mcp-gui` 新增 **81 项前端用例**（8 文件：日志行解析 / 事件解析 / 字节与窗口 / 筛选排序 / 报告摘要 / i18n 完整性 / 沙箱 / mock 出口）；本机 `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest` / `vite build` 全绿（只依赖 Node；按 issue #25 约束**不在本机执行任何 Rust 侧构建与检查**）。
-- **`0.1.0-beta.7` 追加 1 条前端用例**（`test/mock.test.ts`：「手动下载兜底入口跟随本次使用的更新源」——`checkUpdate("gitee")` 必须给 Gitee 发行页），前端用例数 **81 → 82**，8 文件全绿；Rust 侧新增单测 `manual_download_url_follows_source`（覆盖 gitee / github / 未知源三分支），由 `GUI` workflow 的 `cargo test` 执行。
+- **`0.1.0-beta.7` 追加 1 条前端用例**（`test/mock.test.ts`：「手动下载兜底入口跟随本次使用的更新源」——`checkUpdate("gitee")` 必须给 Gitee 发行页），前端用例数 **81 → 82**，8 文件全绿；Rust 侧新增单测 `manual_download_url_follows_source`（覆盖 gitee / github / 未知源三分支）。
+- **`0.1.0-beta.7` 的 CI 与发布均已跑通（2026-09-28）**：首次推送时 `Rust format / clippy / tests` 在**三平台 1~2 秒内**失败（该步骤三条命令中只有最快的 `cargo fmt --check` 能这么快失败）——根因是新增的 `&chosen` 实参把三处 `match` 臂推到超宽（rustfmt 要求块式 `Err(e) => { return ... }`）、导入项字母序（`_GITEE` 先于 `_GITHUB`）与一处 `assert_eq!` 折行不符；改用本机 `rustfmt`（与 CI stable 同版本）执行 `cargo fmt` 后修正。`GUI` run #61 全绿（三平台 Rust 门禁 + 打包 + 上传产物），tag `gui-v0.1.0-beta.7` 的 run #62 发布成功：GitHub 与 Gitee 的 pre-release 均已创建（GitHub 侧 8 个产物），两端更新清单均为 `0.1.0-beta.7`。**本机无 MSVC `link.exe`，`cargo clippy` / `cargo test` 只能在 CI 运行**。
 - MCP 主工程全量 **1270 passed / 12 skipped**；`typecheck` / `lint` / `build` / `check:stdio` / `pack:check` 全绿。
 - GUI 侧 Rust 门禁（`cargo fmt --check` / `cargo clippy -D warnings` / `cargo test`）与三平台打包由 `GUI` workflow 执行。
+- **⚠️ 与本轮无关的既有红灯**：MCP 主包 `ci.yml` 自 `#285`（open-design 冒烟修复提交）起转红，`#286`~`#288` 持续失败，集中在 ubuntu / macos 的 6 个 `Build & Test`（windows 与全部 `Visual browser` 通过）；本轮只动 `mcp-gui/**` 与 `gui.yml`，与该红灯无因果关系。
 
 ### 文档
 
