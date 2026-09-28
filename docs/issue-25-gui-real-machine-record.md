@@ -287,6 +287,12 @@ GitHub pre-release `gui-v0.1.0-beta.8` 已创建（`prerelease: true`、`draft: 
 
 **本机门禁**：`check:schema`（版本一致 `0.1.0-beta.9`）/ `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest`（**82 passed**，8 文件）/ `vite build` 全绿。本轮**无 Rust 侧改动**（`src-tauri/**` 仅版本号）。
 
+**发布已跑通（2026-09-28）**：tag `gui-v0.1.0-beta.9` 的 GUI run
+[#68](https://github.com/lanlan0811/tianshu-mcp/actions/runs/36378889044) 完成发布：GitHub pre-release `gui-v0.1.0-beta.9`
+已创建（`prerelease: true`、`draft: false`），附 **8 个产物**（`0.1.0-beta.9_x64-setup.exe` + `.sig`、两个 `.dmg`、两个 `.app.tar.gz` + `.sig`）；
+Gitee pre-release 附件与清单同样写入；两端更新清单 `update/gui/latest.json` 与 `latest-gitee.json` 均已为 `0.1.0-beta.9`
+（分别指向各自宿主附件），两仓各自多出的清单机器人提交已合并回同一提交推送两仓。
+
 **待办**：桌面端观感需在 `0.1.0-beta.9` 的 Windows 产物上复核。
 
 ---
