@@ -10,6 +10,7 @@ import pkg from "../../package.json";
 import { byteLength, sliceRangeByBytes, sliceTailByBytes } from "@/core/bytes";
 import { classifyEvent, parseEventStream } from "@/core/events";
 import { DEFAULT_WINDOW_BYTES, planInitialWindow } from "@/core/tailwindow";
+import { parseVersion } from "@/core/version";
 import type { GuiApi } from "./gui-api";
 import type {
   AppVersionInfo,
@@ -150,6 +151,33 @@ function homeState(): DataHomeState {
 
 const PREF_KEY = "tianshu-mcp-logs.preferences";
 
+/** 预览模式下「可用的新版本」：当前版本的 patch + 1（永不追平自己） */
+function mockAvailableVersion(): string {
+  const p = parseVersion(MOCK_APP_VERSION);
+  if (!p) return "9.9.9";
+  return `${p.major}.${p.minor}.${p.patch + 1}`;
+}
+
+/**
+ * 预览模式下用于演示「更新日志面板」的 release 正文（Markdown）。
+ * 刻意包含标题 / 列表 / 行内代码，便于在预览里核对 Markdown 渲染确实生效。
+ */
+const MOCK_RELEASE_NOTES = [
+  `## Tianshu-mcp 日志台 ${mockAvailableVersion()}（预览数据）`,
+  "",
+  "本页面在**本地预览（mock）**下展示，用于核对更新日志面板的排版与交互。",
+  "",
+  "### 新增",
+  "",
+  "- 启动静默检查到新版本时，弹出更新窗口",
+  "- 窗口内提供 **立即更新** / **忽略此版本** / **稍后** 三个动作",
+  "- 显式展示本次将使用的更新源（Gitee / GitHub）与实际探测结果",
+  "",
+  "### 已知限制",
+  "",
+  "- 预览模式不执行真实下载与安装（点「立即更新」会明确报错）",
+].join("\n");
+
 function defaultPreferences(): Preferences {
   return {
     language: "zh-CN",
@@ -158,6 +186,7 @@ function defaultPreferences(): Preferences {
     dataHomes: [],
     lastGoodUpdateSource: null,
     closeAction: "tray",
+    ignoredUpdateVersion: null,
   };
 }
 
@@ -380,12 +409,14 @@ export const mockApi: GuiApi = {
     degraded: true,
   }),
 
+  // 预览模式下如实返回「有可用更新」：否则更新日志面板在预览里无从调试。
+  // 安装仍会明确报错——mock 不假装能安装（见 installUpdate）。
   checkUpdate: async (source: string): Promise<CheckUpdateResult> => ({
-    available: false,
+    available: true,
     currentVersion: MOCK_APP_VERSION,
-    version: null,
-    notes: null,
-    source: null,
+    version: mockAvailableVersion(),
+    notes: MOCK_RELEASE_NOTES,
+    source: source === "gitee" ? "gitee" : "github",
     // 与 Rust 侧同语义：兜底入口跟随本次实际使用的源（未知源回退 GitHub）
     manualDownloadUrl:
       source === "gitee"

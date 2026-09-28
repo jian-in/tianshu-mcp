@@ -111,6 +111,13 @@ pub struct Preferences {
     /// 缺字段会连带把用户的语言 / 主题 / 数据目录一起重置。
     #[serde(default = "default_close_action")]
     pub close_action: String,
+    /// 用户点过「忽略此版本」的那个版本号（`None` = 未忽略任何版本）。
+    ///
+    /// 只压**自动提示**（启动静默检查）；手动「检查更新」照常展示该版本。
+    /// serde 默认值兜底：旧偏好文件缺该字段时按「未忽略」处理——同 `close_action`，
+    /// 缺 `#[serde(default)]` 会让整份偏好反序列化失败并回退默认值。
+    #[serde(default)]
+    pub ignored_update_version: Option<String>,
 }
 
 fn default_close_action() -> String {
@@ -126,6 +133,7 @@ impl Default for Preferences {
             data_homes: Vec::new(),
             last_good_update_source: None,
             close_action: default_close_action(),
+            ignored_update_version: None,
         }
     }
 }

@@ -17,6 +17,7 @@ function defaults(): Preferences {
     dataHomes: [],
     lastGoodUpdateSource: null,
     closeAction: "tray",
+    ignoredUpdateVersion: null,
   };
 }
 

@@ -7,7 +7,14 @@
 import AppIcon from "./AppIcon.vue";
 import { useI18n } from "@/i18n";
 import { isMockRuntime } from "@/api";
-import { checkUpdate, installUpdate, openExternalUrl, probeUpdateSources, app } from "@/stores/app";
+import {
+  checkUpdate,
+  installUpdate,
+  openExternalUrl,
+  openUpdateDialog,
+  probeUpdateSources,
+  app,
+} from "@/stores/app";
 import { preferences, updatePreferences } from "@/stores/preferences";
 import type { CloseAction, Language, ThemeMode, UpdateSource } from "@/api/types-lite";
 
@@ -167,6 +174,9 @@ function probeText(side: "gitee" | "github"): string {
               <AppIcon name="download" />
               {{ app.update.installing ? t("update.installing") : t("update.install") }}
             </button>
+            <button v-if="app.update.result" class="tbtn" @click="openUpdateDialog()">
+              <AppIcon name="info" />{{ t("update.dialogTitle") }}
+            </button>
             <button
               v-if="app.update.result?.manualDownloadUrl"
               class="tbtn"
@@ -189,9 +199,9 @@ function probeText(side: "gitee" | "github"): string {
               <div v-if="app.update.result.source" class="hint">
                 {{ t("update.sourceUsed", { s: app.update.result.source }) }}
               </div>
-              <pre v-if="app.update.result.notes" class="output mt-sm">{{
-                app.update.result.notes
-              }}</pre>
+              <div v-if="preferences.ignoredUpdateVersion" class="hint">
+                {{ t("update.ignoredNotice", { v: preferences.ignoredUpdateVersion }) }}
+              </div>
             </div>
           </div>
         </section>

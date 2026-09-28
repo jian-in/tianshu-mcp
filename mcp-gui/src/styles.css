@@ -1893,3 +1893,55 @@ input[type="checkbox"] {
   border-color: color-mix(in srgb, var(--tone-ok) 40%, transparent);
   color: var(--tone-ok);
 }
+/* ============================================================
+ * 17. 更新日志面板（大尺寸居中弹窗）
+ * ============================================================ */
+
+/* 尺寸取自维护者对默认窗口 1440×900 的红框批注：宽 ~74.5% / 高 ~83.6%（≈1070×750） */
+.panel.is-wide {
+  width: min(1070px, 92vw);
+  height: min(750px, 88vh);
+  max-height: 88vh;
+}
+
+.dlg-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--sp-5);
+}
+
+.dlg-headline {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  letter-spacing: var(--ls-mono);
+}
+
+.dlg-version {
+  font-weight: 600;
+}
+
+/* release 正文滚动区：排版复用 `.md`，这里只补容器边框与滚动 */
+.dlg-notes {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--line-hair);
+  border-radius: var(--r-1);
+  background: var(--bg-inset);
+}
+
+.dlg-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--line-hair);
+}

@@ -21,6 +21,8 @@ import type {
 import { emptyLogFilter, type LogFilter } from "@/core/logline";
 import { emptyFilter, facetValues, filterTasks, sortTasks } from "@/core/filter";
 import { DEFAULT_WINDOW_BYTES } from "@/core/tailwindow";
+import { shouldPrompt } from "@/core/version";
+import { preferences, updatePreferences } from "@/stores/preferences";
 
 export type TabKey = "events" | "agentLogs" | "verifyLogs" | "reports" | "serverLog" | "search";
 export type ReportKind = "md" | "json" | "html" | "dry-run-md" | "dry-run-json";
@@ -41,6 +43,8 @@ export interface UpdateState {
   installing: boolean;
   probe: ProbeSourceResult | null;
   result: CheckUpdateResult | null;
+  /** 更新日志面板是否打开（手动检查一律打开；启动静默检查仅在「未被忽略」时打开） */
+  dialogOpen: boolean;
 }
 
 const EMPTY_HOME: DataHomeState = { detected: "", active: "", entries: [] };
@@ -108,6 +112,7 @@ export const app = reactive({
     installing: false,
     probe: null,
     result: null,
+    dialogOpen: false,
   } as UpdateState,
 });
 
@@ -459,16 +464,53 @@ export async function probeUpdateSources(): Promise<void> {
   }
 }
 
-export async function checkUpdate(source: string): Promise<void> {
+export function openUpdateDialog(): void {
+  app.update.dialogOpen = true;
+}
+
+export function closeUpdateDialog(): void {
+  app.update.dialogOpen = false;
+}
+
+/** 内部：跑一次检查；`silent` 为真时不写错误条（启动静默检查用——失败不该打扰阅读主流程） */
+async function runUpdateCheck(source: string, silent = false): Promise<CheckUpdateResult | null> {
   app.update.checking = true;
   try {
-    app.update.result = await api.checkUpdate(source);
-    app.error = null;
+    const result = await api.checkUpdate(source);
+    app.update.result = result;
+    if (!silent) app.error = null;
+    return result;
   } catch (err) {
-    setError(err);
+    if (!silent) setError(err);
+    return null;
   } finally {
     app.update.checking = false;
   }
+}
+
+/** 手动「检查更新」：结果**一律展示**（「忽略此版本」只压自动提示），故总是打开面板 */
+export async function checkUpdate(source: string): Promise<void> {
+  await runUpdateCheck(source);
+  app.update.dialogOpen = true;
+}
+
+/**
+ * 启动静默检查：仅在具备更新能力时执行（桌面运行时需已注入更新公钥；预览模式按 mock 数据演示）。
+ * 有可用版本且**未被忽略**才打开面板；出现更高版本时会自动重新提示（见 `core/version.ts` 的 shouldPrompt）。
+ */
+export async function checkUpdateOnStartup(): Promise<void> {
+  if (!isMockRuntime && !app.update.updaterConfigured) return;
+  const result = await runUpdateCheck(preferences.updateSource, true);
+  if (result?.available && shouldPrompt(result.version, preferences.ignoredUpdateVersion)) {
+    app.update.dialogOpen = true;
+  }
+}
+
+/** 忽略某个版本：持久化到应用偏好，只压自动提示（手动检查仍会展示该版本） */
+export async function ignoreUpdateVersion(version: string | null): Promise<void> {
+  if (!version) return;
+  await updatePreferences({ ignoredUpdateVersion: version });
+  closeUpdateDialog();
 }
 
 export async function installUpdate(source: string): Promise<void> {
@@ -500,6 +542,8 @@ export async function bootstrap(): Promise<void> {
   await initUpdateInfo();
   await refreshTasks();
   app.ready = true;
+  // 启动静默检查放最后且不 await：单源探测超时 4s，不应拖慢首屏
+  void checkUpdateOnStartup();
 }
 
 export const runtimeIsMock = isMockRuntime;

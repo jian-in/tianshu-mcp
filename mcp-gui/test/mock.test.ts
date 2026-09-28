@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { MOCK_HOME, fixtureFileCount, mockApi } from "@/api/mock";
+import { MOCK_APP_VERSION, MOCK_HOME, fixtureFileCount, mockApi } from "@/api/mock";
 import { DEFAULT_WINDOW_BYTES } from "@/core/tailwindow";
+import { compareVersion } from "@/core/version";
 
 describe("mock 数据出口", () => {
   it("fixtures 在构建期被打包（离线也能调 UI）", () => {
@@ -153,11 +154,15 @@ describe("mock 数据出口", () => {
     ).rejects.toThrow(/不支持导出/);
   });
 
-  it("更新相关命令返回明确的“不可用”状态与手动下载入口", async () => {
+  it("更新相关命令：探测如实降级、检查返回可演示的可用更新与手动下载入口", async () => {
     const probe = await mockApi.probeUpdateSources();
     expect(probe.degraded).toBe(true);
+
+    // 预览要能完整演示更新日志面板，故 mock 如实给出一个**更高**的可用版本
     const check = await mockApi.checkUpdate("auto");
-    expect(check.available).toBe(false);
+    expect(check.available).toBe(true);
+    expect(compareVersion(check.version as string, MOCK_APP_VERSION)).toBe(1);
+    expect(check.notes).toContain("##"); // 含 Markdown 结构，供弹窗渲染
     expect(check.manualDownloadUrl).toContain("github.com");
   });
 

@@ -19,6 +19,7 @@ import EventTimeline from "./components/EventTimeline.vue";
 import LogViewer from "./components/LogViewer.vue";
 import ReportPanel from "./components/ReportPanel.vue";
 import SettingsDrawer from "./components/SettingsDrawer.vue";
+import UpdateDialog from "./components/UpdateDialog.vue";
 import { useI18n } from "@/i18n";
 import { isMockRuntime } from "@/api";
 import { app, clearError, openTab, selectTask, type TabKey } from "@/stores/app";
@@ -168,5 +169,8 @@ function onNavigated(): void {
     </main>
 
     <SettingsDrawer v-if="settingsOpen" @close="settingsOpen = false" />
+
+    <!-- 更新日志面板：启动静默检查命中或手动检查后打开（面板内部自行关闭） -->
+    <UpdateDialog v-if="app.update.dialogOpen" />
   </div>
 </template>

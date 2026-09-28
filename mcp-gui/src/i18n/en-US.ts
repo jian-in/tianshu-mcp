@@ -308,6 +308,11 @@ export const enUS: Messages = {
     offlineFallback: "Both sources unreachable and no history; fell back to GitHub",
     pubkeyMissing: "Update public key not configured yet; auto-update is unavailable (enable by setting UPDATER_PUBKEY in CI)",
     betaChannel: "Beta channel (pre-release)",
+    dialogTitle: "Update log",
+    releaseNotesEmpty: "This release does not provide release notes",
+    ignoreVersion: "Ignore this version",
+    later: "Later",
+    ignoredNotice: "Ignored {v} (manual checks still show it)",
   },
   error: {
     loadFailed: "Load failed: {msg}",

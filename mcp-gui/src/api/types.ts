@@ -101,6 +101,8 @@ export interface Preferences {
   lastGoodUpdateSource: "gitee" | "github" | null;
   /** 关闭窗口时的行为：缩小到托盘（默认）/ 关闭应用 */
   closeAction: "tray" | "exit";
+  /** 用户点过「忽略此版本」的版本号（只压自动提示；手动检查仍展示） */
+  ignoredUpdateVersion: string | null;
 }
 
 /** 任务筛选条件（全部可选，缺省即不限制） */

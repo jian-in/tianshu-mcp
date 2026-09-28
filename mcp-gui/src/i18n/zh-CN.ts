@@ -306,6 +306,11 @@ export const zhCN = {
     offlineFallback: "两个更新源均不可达且无历史记录，已回退到 GitHub",
     pubkeyMissing: "尚未配置更新公钥，自动更新暂不可用（可在 CI 配置 UPDATER_PUBKEY 后启用）",
     betaChannel: "测试版通道（pre-release）",
+    dialogTitle: "更新日志",
+    releaseNotesEmpty: "该版本没有提供更新说明",
+    ignoreVersion: "忽略此版本",
+    later: "稍后",
+    ignoredNotice: "已忽略 {v}（手动检查仍可查看）",
   },
   error: {
     loadFailed: "加载失败：{msg}",
