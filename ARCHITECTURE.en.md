@@ -1098,6 +1098,19 @@ docs-only commit does not spin up the whole three-platform matrix. The three eve
 | `workflow_dispatch` (manual) | **always build** | manually triggering means "build now"; an earlier revision degraded to diffing the last two commits, so if they happened not to touch `mcp-gui/` the whole matrix was **silently skipped** (the manual run did nothing) |
 | push / PR | diff against the previous commit (or the PR base); build only when `mcp-gui/` or `gui.yml` matches | saves runners, while `gui.yml` changes still get re-verified |
 
+**The only difference between a stable release and a preview is the tag shape**: the `publish` job first decides
+`prerelease` from whether the tag contains `-beta.` / `-rc.`, then uses it to decide whether the GitHub / Gitee
+release page carries the Pre-release flag (`gui-v0.1.0` does not, `gui-v0.1.1-beta.1` does). Both lines **share one
+update manifest** (`update/gui/latest.json` and `latest-gitee.json`) and auto-update compares semantic versions
+(`0.1.1-beta.1 > 0.1.0`), so the upgrade path **never forks** — that is how "beta and stable interoperate" works.
+
+**The release body comes from a document, not from the workflow**: the `publish` job runs
+`scripts/gui-release-body.mjs` to compose a bilingual body from `docs/release-gui-v<version>.md` + `.en.md`
+(relative links absolutized to that tag; the GUI is not published to npm, hence **no npm line**), and a **missing
+doc exits non-zero** — so a release page can never end up as a bare Full Changelog line. GitHub uses it via
+`--notes-file` and Gitee via `--body-file`, so both sides carry the **same body, word for word**; that body is also
+the updater manifest's `notes`, which is why the desktop update window shows exactly this release note.
+
 ### 16.6 Frontend design system and theme contract
 
 The GUI frontend's **presentation layer has its own design system** (**Obsidian Terminal**), decoupled from the MCP package and from the

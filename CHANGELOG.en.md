@@ -191,11 +191,35 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - ARCHITECTURE / README / agent-profiles / adapter-matrix / SKILL / usage-examples (both languages): the status moves from "in development" to "wired", and the new `endReason` / `needsUserKind` values are added.
 - Versions: `package.json` and `src/version.generated.ts` are synced to `0.7.1` (per the `+0.0.1` rule); tag `v0.7.1` pushed and published to npm.
 
-## [Unreleased] — mcp-gui independent line
+## [0.1.0] — 2026-09-29 — mcp-gui independent line
 
-> This change adds a **new independent delivery surface**. The MCP package's runtime logic (tool contracts, task
-> model, acceptance engine and all of `src/**`) is **unchanged**.
-> **The MCP package version stays at `0.7.0` (not yet released)**; the GUI evolves independently with its own version
+> This is the **first stable release** of the GUI's independent version line (going stable + update log panel).
+> The MCP package's runtime logic (tool contracts, task model, acceptance engine and all of `src/**`) is
+> **unchanged**, and the package version stays at `0.7.4`; the GUI evolves independently with its own version
+> numbers and its own tags (`gui-v*`).
+>
+> **Three categories of change relative to `0.1.0-beta.9`**:
+>
+> 1. **New update log panel**: a dedicated desktop update window ("Update log") that pops up automatically when the
+>    silent startup check finds a new version that has not been ignored. It offers `Download and install` /
+>    `Ignore this version` / `Later`. "Ignore this version" suppresses the **automatic** prompt only (a manual
+>    "Check for updates" still shows that version, a higher version re-prompts, and the record is persisted in app
+>    preferences). The window states **which source will be used** (the result of concurrently probing Gitee /
+>    GitHub and picking by latency, with an explicit degradation notice when neither is reachable). Its body is the
+>    **bilingual release note** for that version (composed from `docs/release-gui-v<version>.md` + `.en.md`, rendered
+>    as Markdown with inline HTML disabled). The window size follows the maintainer's annotation:
+>    `min(1070px,92vw)` × `min(750px,88vh)`. Adds `mcp-gui/src/core/version.ts` (version comparison and ignore
+>    decisions, 16 unit tests) and `mcp-gui/src/components/UpdateDialog.vue`; `Preferences` gains
+>    `ignored_update_version` (with a serde default so an old preferences file is not reset wholesale).
+> 2. **Release pipeline now supports stable releases**: the tag filter in `.github/workflows/gui.yml` widens from
+>    `gui-v*-beta.*` to **`gui-v*`**, so stable and preview builds share one pipeline; a new step decides the
+>    pre-release flag from the tag shape (only tags containing `-beta.` / `-rc.` pass `--prerelease`); a new
+>    `scripts/gui-release-body.mjs` composes the bilingual release body (used via `--notes-file` on GitHub and
+>    `--body-file` on Gitee, so both sides are **byte-identical in content**, and a missing doc **exits non-zero**).
+> 3. **Version and wording go stable**: the GUI version is unified to `0.1.0` in all four places
+>    (`package.json` / `package-lock.json` / `tauri.conf.json` / `Cargo.toml`); the UI label
+>    "Beta channel (pre-release)" becomes "Stable channel / 正式版通道"; and every hard-coded "beta" wording in
+>    `gitee-gui-release.mjs` and `gui.yml` is removed.
 > (`0.1.0-beta.N`) and its own tag (`gui-v*`).
 
 ### Added

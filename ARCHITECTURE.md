@@ -1038,6 +1038,17 @@ Rust 侧需要重写一份「状态枚举 / 事件词表」用于事件分类，
 | `workflow_dispatch`（手动） | **无条件构建** | 手动触发的语义就是「我要现在构建」；早期版本会退化成比较最近两次提交，若它们恰好未改 `mcp-gui/`，整个矩阵会被**静默跳过**（手动触发变成"什么都没跑"） |
 | push / PR | 与上一提交（PR 则与 base）做 diff，命中 `mcp-gui/` 或 `gui.yml` 才构建 | 省算力，且 `gui.yml` 自身改动也需复验 |
 
+**正式版与预发布的唯一区别是 tag 形态**：`publish` job 先按 tag 是否含 `-beta.` / `-rc.` 判定 `prerelease`，
+再据此决定 GitHub / Gitee 发行页是否带 Pre-release 标记（`gui-v0.1.0` 不带、`gui-v0.1.1-beta.1` 带）。
+两条线**共用同一份更新清单**（`update/gui/latest.json` 与 `latest-gitee.json`），自动更新按语义版本比大小
+（`0.1.1-beta.1 > 0.1.0`），因此升级路径**不分叉**——这是「beta 与正式版互通」的落地方式。
+
+**发行版正文来自文档、不来自 workflow**：`publish` job 调 `scripts/gui-release-body.mjs` 读
+`docs/release-gui-v<版本>.md` + `.en.md` 合成双语正文（相对链接绝对化到该 tag；GUI 不发 npm，故**无 npm 行**），
+**缺文档即非 0 退出**——避免发行页只剩一句 Full Changelog。GitHub 侧经 `--notes-file`、Gitee 侧经
+`--body-file` 使用**同一份正文**，两端内容逐字一致；该正文同时作为更新清单的 `notes`，
+因此桌面端的更新窗口显示的正是这一版发行说明。
+
 ### 16.6 前端设计系统与主题契约
 
 GUI 前端的**表现层有一份独立的设计系统**（**黑曜石终端 / Obsidian Terminal**），与 MCP 主包、官网目录均无耦合。改任何界面样式之前先读本节。

@@ -19,7 +19,7 @@
 > `v0.7.1`（CI 红）与 `v0.7.2`（缺正文文档）的 GitHub 发行版因此**改用手动 API 补建**，两者的 tag 未动。
 > **本轮（0.7.0 → 0.7.1）交付**：内置 agent `opendesign`（Open Design 桌面端）**从「开发中」推进到完整可派发**——
 > 选择器按产品产物取证落地、12 步执行链全部接线、并接入验收 → 自动返修 → 再验收闭环。
-> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.9`，独立 tag `gui-v*`，独立演进；最近一轮把**侧栏底部的「刷新」上移到「数据目录」那一行**（与文件夹 / × 图标同排，侧栏底部不再常驻控件）；前两轮已按真机反馈补「已成功」指标、数据目录上移、设置面板改居中弹窗，并修好「手动下载」随源跳转）。
+> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，**正式版 `0.1.0`**，独立 tag `gui-v*`，独立演进；本轮**转正 + 新增更新日志面板**——桌面端独立的更新窗口（启动静默检查命中即弹、`忽略此版本` 只压自动提示、显式展示本次使用的更新源与探测结果、正文为该版本的双语发行说明），发布链同步支持正式版（tag 过滤器 `gui-v*`、按 tag 形态判定 pre-release、发行版正文取自 `docs/release-gui-v<版本>.md` + `.en.md`）；前几轮已按真机反馈补「已成功」指标、数据目录上移、设置面板改居中弹窗、「刷新」上移到数据目录行，并修好「手动下载」随源跳转）。
 > **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包 GUI 侧零改动。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
 > **issue #25 已按 DoD 全部达成回复并关闭**（2026-09-27）：DoD 2（F1~F12）与 DoD 9（U4~U8）由维护者在 Windows 10 真机逐项验收通过；
 > 验收中发现并修掉「更新后旧版本不消失」（GUI `0.1.0-beta.4`），已发布并完成真机端到端复现——详见下方「升级路径修复」小节与 `docs/issue-25-gui-real-machine-record.md`。
@@ -93,6 +93,37 @@
   `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。
 
 ---
+
+### 独立交付面 · 日志台 GUI **正式版 `0.1.0`（转正 + 更新日志面板）**（`mcp-gui/`，`0.1.0`）
+
+- **范围**（用户决策：0.1.0 = 转正 + 更新日志面板，功能与界面在 beta.9 基础上只加面板）：
+  - **新增**：`mcp-gui/src/core/version.ts`（版本比较与忽略判定纯函数）、`mcp-gui/test/version.test.ts`（16 项）、
+    `mcp-gui/src/components/UpdateDialog.vue`（大尺寸居中弹窗）、`scripts/gui-release-body.mjs`（合成双语发行版正文）、
+    `test/unit/gui-release-body.test.ts`（7 项）、`docs/release-gui-v0.1.0.md` + `.en.md`、`docs/gui-0.1.0-release-record.md`；
+  - **修改**：`mcp-gui/src/stores/app.ts`（`dialogOpen` + `checkUpdateOnStartup()` + `ignoreUpdateVersion()`）、
+    `mcp-gui/src-tauri/src/models.rs`（`Preferences.ignored_update_version`，**带 `#[serde(default)]`**）、
+    `mcp-gui/src/api/{types,mock}.ts`、`mcp-gui/src/stores/preferences.ts`、`mcp-gui/src/App.vue`、
+    `mcp-gui/src/components/SettingsDrawer.vue`、`mcp-gui/src/styles.css`、`mcp-gui/src/i18n/{zh-CN,en-US}.ts`、
+    `.github/workflows/gui.yml`、`scripts/gitee-gui-release.mjs`、四处版本号、`docs/gui-log-viewer.md` + `.en.md`、
+    `CHANGELOG.md` + `.en.md`、`README.md` + `.en.md`、`HANDOFF.md`；
+  - **未改**：MCP 主包 `src/**`、`.github/workflows/ci.yml`、`.github/workflows/release.yml`、
+    `scripts/release-body.mjs`（复用其导出的 `absolutizeDocLinks`，**零触碰**）；也未改 `tianshu-mcp-web/`。
+- **验证**（本机可验的部分）：
+  - `mcp-gui` 五项门禁 `typecheck` / `lint` / `test` / `check:schema` / `build` **全 exit 0**，
+    `vitest` **98 passed**（9 文件，含新增 16 项），`check:schema` 输出「GUI 版本号一致（0.1.0）」；
+  - 新增 `test/unit/gui-release-body.test.ts` **7 passed**；CLI 在缺文档时**非 0 退出**（fail-closed 已实测）；
+  - **无头 Edge 探针 15/15 通过**：启动自动弹窗、弹窗尺寸 1070×750、三个动作齐备、release 正文渲染为 DOM、
+    忽略后持久化且重载不弹、手动检查仍弹、全程无 `pageerror`；
+  - `gui.yml` YAML 语法经 `js-yaml` 解析通过；版本号四处均为 `0.1.0`；全库「测试版」字样**零残留**。
+- **排障记录（重要）**：vitest **无法 import 带 shebang 的 `.mjs`**——vite 的 SSR transform 会把
+  `#!/usr/bin/env node` 当作非法 token 抛 `SyntaxError: Invalid or unexpected token`（`node` 直接运行不受影响）。
+  因此 `scripts/gui-release-body.mjs` **刻意不带 shebang**，并在文件头注明原因；调用一律
+  `node scripts/gui-release-body.mjs …`。
+- **版本边界**：`mcp-gui` 四处版本同步 `0.1.0-beta.9 → 0.1.0`；发布走 tag `gui-v0.1.0`（**正式版**，
+  发行页不带 Pre-release 标记），两端发行版与 `update/gui/latest*.json` 由发布 job 生成/提交，
+  **发布后两仓各会多出一个机器人提交**，按既有做法合并回同一提交再推两仓。**MCP 主包版本不受影响**（仍 `0.7.4`）。
+- **遗留**：macOS 仅保证 CI 构建通过，**未做真机功能验收**（亦未做 Apple 签名/公证）；发布执行（`workflow_dispatch`
+  预演三平台全绿 + Windows 真机目测 + 打 tag）见 `docs/gui-0.1.0-release-record.md`。
 
 ### 独立交付面 · 日志台 GUI **「刷新」上移到数据目录行**（`mcp-gui/`，`0.1.0-beta.9`）
 

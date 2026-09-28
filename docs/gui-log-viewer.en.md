@@ -14,8 +14,10 @@ Chinese version: [gui-log-viewer.md](gui-log-viewer.md)
 
 Artifacts are produced by CI (the `GUI` GitHub Actions workflow):
 
-- **Normal use**: download installers from a GitHub or Gitee **pre-release** (tag like `gui-v0.1.0-beta.1`);
-- **Trying it out**: download the `gui-*` workflow artifact from the corresponding Actions run.
+- **Normal use**: download installers from a GitHub or Gitee **release** (tag like `gui-v0.1.0`);
+- **Preview builds**: tags containing `-beta.` / `-rc.` are published in both repos as well, but carry a
+  **Pre-release** flag;
+- **Verifying a build**: download the `gui-*` workflow artifact from the corresponding Actions run.
 
 | Platform | Installer | Auto-update payload |
 |---|---|---|
@@ -164,6 +166,29 @@ Task ID (breadcrumb), absolute task directory (expanded summary bar), and the fu
 - `Exit Logs` in the tray menu and `Exit app` in Settings **both quit completely** (nothing lingers in the background).
 - macOS extras: after the window is tucked into the tray, clicking the **Dock icon** shows it again.
 
+### 5.3 Update log panel
+
+- **Silent startup check**: the app checks for updates once at startup (without blocking the first paint). When a
+  new version is found **and that version has not been ignored**, the "Update log" window pops up automatically.
+  The check runs asynchronously after the UI is mounted, and a failure **never disturbs** log reading;
+- **Window size**: implemented from the maintainer's annotation (≈1070×750 in the default 1440×900 window) as a
+  centered overlay of `min(1070px, 92vw)` × `min(750px, 88vh)`;
+- **Three actions**:
+  - `Download and install` — updates directly through the source chosen for this run (Windows launches the
+    installer; macOS needs an app restart);
+  - `Ignore this version` — suppresses the **automatic** prompt only: that version stops popping up, but a manual
+    "Check for updates" **still shows it**. The record is persisted in app preferences, and **a higher version
+    re-prompts**;
+  - `Later` — just closes the window; the next launch prompts again;
+- **Source disclosed honestly**: every check probes Gitee / GitHub concurrently and picks by reachability and
+  latency; the window states which source will be used along with the probe result (reachable latency in ms, or
+  unreachable), and shows a degradation notice when neither is reachable;
+- **Release notes**: the window body is the release note for that version (the bilingual body composed from
+  `docs/release-gui-v<version>.md` + `.en.md`, rendered as Markdown with inline HTML disabled), so you can read
+  what changed **before** updating;
+- **Manual entry stays**: "Check for updates" in the settings panel opens the same window — manual results are
+  **always shown**, unaffected by "ignore".
+
 ---
 
 ## 6. Dual-source auto-update (Gitee / GitHub)
@@ -198,7 +223,10 @@ China) hit **GitHub**.
   - That entry opens in the **system default browser** (it is not an in-window navigation — Tauri's webview intercepts
     new-window requests, so the app ships an external-open capability constrained by an allow-list covering **only the
     `github.com` and `gitee.com` domains**); a failed open only surfaces an error in the UI and never blocks log viewing.
-- The update channel maps one-to-one to **pre-releases**: the GUI is a beta product end to end.
+- Update channel: stable and preview builds **share a single manifest** (`update/gui/latest.json` and
+  `latest-gitee.json`) and are compared by semantic version (`0.1.1-beta.1 > 0.1.0`), so the two lines
+  interoperate and the upgrade path never forks. Whether a release page carries the Pre-release flag is decided by
+  the tag shape (a tag containing `-beta.` / `-rc.` is a preview).
 
 ### 6.3 When no update public key is configured
 

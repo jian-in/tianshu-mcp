@@ -179,10 +179,29 @@
 - ARCHITECTURE / README / agent-profiles / adapter-matrix / SKILL / usage-examples 双语：状态由「开发中」同步为「已接线」，并补齐新的 `endReason` / `needsUserKind` 取值。
 - 版本：`package.json` 与 `src/version.generated.ts` 同步为 `0.7.1`（按 `+0.0.1` 规则）；已打 tag `v0.7.1` 并发布到 npm。
 
-## [未发布] — mcp-gui 独立版本线
+## [0.1.0] — 2026-09-29 — mcp-gui 独立版本线
 
-> 本次变更为**新增独立交付面**：MCP 主包的运行时逻辑（工具契约、任务模型、验收引擎与 `src/**`）**零改动**。
-> **MCP 主包版本保持不变**（仍为 `0.7.0`，尚未发布）；GUI 使用独立版本号（`0.1.0-beta.N`）与独立 tag（`gui-v*`）独立演进。
+> 本版本为 GUI 独立版本线的**首个正式版**（转正 + 更新日志面板）。MCP 主包的运行时逻辑
+> （工具契约、任务模型、验收引擎与 `src/**`）**零改动**，主包版本保持 `0.7.4` 不变；
+> GUI 使用独立版本号与独立 tag（`gui-v*`）独立演进。
+>
+> **0.1.0 相对 `0.1.0-beta.9` 的三类改动**：
+>
+> 1. **新增更新日志面板**：桌面端独立的更新窗口「更新日志」——启动静默检查命中新版本且该版本未被忽略时
+>    自动弹出，提供 `下载并安装 / 忽略此版本 / 稍后`；「忽略此版本」**只压自动提示**（手动「检查更新」
+>    仍展示该版本，出现更高版本时重新提示，记录持久化在应用偏好）；窗口显式展示**本次将通过哪个源更新**
+>    （并发实测 Gitee / GitHub 择优的结果与延迟，两端都不可达时给出降级提示）；正文即该版本的**双语发行说明**
+>    （`docs/release-gui-v<版本>.md` + `.en.md` 合成，Markdown 渲染、禁用内联 HTML）。窗口尺寸按维护者红框批注
+>    实现为 `min(1070px,92vw)` × `min(750px,88vh)`。新增 `mcp-gui/src/core/version.ts`（版本比较与忽略判定，
+>    16 项单测）与 `mcp-gui/src/components/UpdateDialog.vue`；`Preferences` 新增 `ignored_update_version`
+>    （带 serde 默认值兜底，避免旧偏好文件整份回退默认值）。
+> 2. **发布链转为支持正式版**：`.github/workflows/gui.yml` 的 tag 过滤器由 `gui-v*-beta.*` 扩为 **`gui-v*`**，
+>    正式版与预发布共用一条流水线；新增按 tag 形态判定 pre-release 的步骤（含 `-beta.` / `-rc.` 才带
+>    `--prerelease`）；新增 `scripts/gui-release-body.mjs` 合成双语发行版正文（GitHub 侧 `--notes-file`、
+>    Gitee 侧 `--body-file`，两端**同源**，**缺文档即非 0 退出**）。
+> 3. **版本与文案转正**：GUI 版本号四处（`package.json` / `package-lock.json` / `tauri.conf.json` / `Cargo.toml`）
+>    统一为 `0.1.0`；界面「测试版通道（pre-release）」改为「正式版通道 / Stable channel」；
+>    `gitee-gui-release.mjs` 与 gui.yml 中的硬编码「测试版」字样全部移除。
 
 ### 新增
 
