@@ -3,7 +3,7 @@
 > **交接快照：2026-09-27 · 开发版本 `0.7.1`（**尚未打 tag、未发布 npm**）。**
 > **本轮（0.7.0 → 0.7.1）交付**：内置 agent `opendesign`（Open Design 桌面端）**从「开发中」推进到完整可派发**——
 > 选择器按产品产物取证落地、12 步执行链全部接线、并接入验收 → 自动返修 → 再验收闭环。
-> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.7`，独立 tag `gui-v*`，独立演进；最近一轮修「手动下载」并把**设置入口迁入左侧栏导航**——兜底下载随实际更新源跳转且真正拉起系统默认浏览器，设置项从侧栏底部移到「运行日志」下方，同时删掉品牌区装饰绿块）。
+> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.8`，独立 tag `gui-v*`，独立演进；最近一轮按真机反馈调整界面——**指标仪补「已成功」、数据目录上移到「设置」下方、设置面板改为居中弹窗**；上一轮已修好「手动下载」随源跳转并接入系统浏览器）。
 > **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包 GUI 侧零改动。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
 > **issue #25 已按 DoD 全部达成回复并关闭**（2026-09-27）：DoD 2（F1~F12）与 DoD 9（U4~U8）由维护者在 Windows 10 真机逐项验收通过；
 > 验收中发现并修掉「更新后旧版本不消失」（GUI `0.1.0-beta.4`），已发布并完成真机端到端复现——详见下方「升级路径修复」小节与 `docs/issue-25-gui-real-machine-record.md`。
@@ -73,6 +73,21 @@
 
 ---
 
+### 独立交付面 · 日志台 GUI **指标仪补「已成功」+ 数据目录上移 + 设置面板改居中弹窗**（`mcp-gui/`，`0.1.0-beta.8`）
+
+- **范围**：`mcp-gui/src/App.vue`、`src/components/{OverviewPage,MetricsStrip}.vue`、`src/styles.css`，以及四处版本号（`package.json` / `package-lock.json` 两处 / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`）。**未改** `src/core/**`、`src/api/**`、`src/stores/**`、`src/i18n/**`（**零新增文案键**）与 `src-tauri/**` 的代码（仅版本号），也未改 MCP 主包 `src/**` 与 `tianshu-mcp-web/`。
+- **背景**：维护者在真机上验收 `0.1.0-beta.7` 时反馈 —— **「手动下载」点击已可直接跳转**（beta.7 的核心修复已真机确认，`docs/issue-25-gui-real-machine-record.md` §4.1 遗留项闭环），同时按截图提出三处界面调整。
+- **三处调整**：
+  1. **指标仪补「已成功」**（`OverviewPage.vue` 新增 `succeededCount` + 第 4 格，`.metrics` 由 4 列改 **5 列**）：顺序为 **任务总数 / 进行中 / 已结束 / 已成功 / 已失败**，读数用语义色 `tone-ok`；标签复用既有 `status.succeeded`，**不新增 i18n 键**（与相邻「已失败」复用 `status.failed` 同口径）。
+  2. **「数据目录」上移**：由 `.rail-foot` 移入 `.rail-nav`，**紧接「设置」之后**；侧栏序列变为 **品牌 → 全局搜索 → 任务列表 / 运行日志 / 设置 → 数据目录 → 任务分区 → 刷新**，侧栏底部只剩「刷新」。为保持分组可读，新增一条 `.rail-nav > .rail-block` 分组线（与 `.rail-label` 同款 `border-top`，**不写硬编码色值**）。
+  3. **设置面板改居中弹窗**：`.poverlay` 由 `justify-content: flex-end` 改为 `align-items/justify-content: center`；`.panel` 由「右侧全高滑出」改为居中卡片（`max-height: 86vh`、四边描边、圆角 `var(--r-2)`、`overflow: hidden`），入场动画改用既有 `@keyframes rise` 并删除只服务于旧形态的 `slide-in`；`.panel-body` 补 `min-height: 0` 以保证在 `max-height` 下正常内滚。点遮罩关闭的行为不变。
+- **验证（本机）**：`check:schema`（版本一致 `0.1.0-beta.8`）/ `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest`（**82 passed**，8 文件）/ `vite build` 全绿。
+- **模拟真机**：`puppeteer-core` + 本机无头 Edge（mock 运行时）DOM 断言 **12/12 通过** —— 指标仪 5 格与顺序、`已成功` 读数与 `tone-ok` 语义色、数据目录位于 `.rail-nav` 内且紧接「设置」、底部只剩「刷新」、**面板中心 720.0 = 窗口中心 720.0（1440×900）**、四周均不贴窗口边缘、圆角 4px、遮罩居中、`height=589.5 ≤ 视口`、全程无 `pageerror`。
+- **待办**：桌面端观感（居中弹窗在真实窗口尺寸下的观感、侧栏上移后的分组线）需在 `0.1.0-beta.8` 的 Windows 产物上复核。
+- **版本边界**：`mcp-gui` 四处版本同步 `0.1.0-beta.7 → 0.1.0-beta.8`，随本版发布 tag `gui-v0.1.0-beta.8`；`update/gui/latest*.json` 由发布 job 自动生成并提交（`[skip ci]`），**发布后两仓各会多出一个机器人提交**，按既有做法合并回同一提交再推两仓。**MCP 主包版本不受影响**。
+
+---
+
 ### 独立交付面 · 日志台 GUI **手动下载修复 + 设置入口迁入侧栏导航**（`mcp-gui/`，`0.1.0-beta.7`）
 
 - **范围**：`mcp-gui/src/App.vue`、`src/styles.css`、`src/components/SettingsDrawer.vue`、`src/api/{gui-api,tauri,mock}.ts`、`src/stores/app.ts`、`src-tauri/src/{lib,models,updater}.rs`、`src-tauri/{Cargo.toml,capabilities/default.json}`、`package.json` / `package-lock.json`、`test/mock.test.ts`。**未改** `src/core/**`、`src/i18n/**`（零新增文案键）与 MCP 主包 `src/**`、`tianshu-mcp-web/`。
@@ -85,7 +100,7 @@
 - **验证（本机）**：`check:schema`（版本一致 `0.1.0-beta.7`）/ `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest`（**82 passed**，8 文件，较上版 +1 条「兜底入口随源变化」）/ `vite build` 全绿；构建产物抽样确认 `.mark` 已不在 CSS、新 Gitee 发行页地址已进 JS。**本机无 MSVC `link.exe`**，故 `cargo clippy` / `cargo test` 无法在本机运行（与 issue #25 约束 D2 一致），Rust 门禁交 `GUI` workflow。
 - **CI 往返（本轮一次失败一次修复）**：首次推送时 `Rust format / clippy / tests` 在**三平台 1~2 秒内**失败 —— 该步骤含三条命令，只有最快的 `cargo fmt --check` 能这么快失败，定位为格式问题；根因是新增的 `&chosen` 实参把三处 `match` 臂推到超宽（rustfmt 要求改成 `Err(e) => { return ... }` 块式）、导入项字母序（`_GITEE` 应先于 `_GITHUB`）与一处 `assert_eq!` 折行不符。已用本机 `rustfmt`（`cargo/rustc 1.98.0`，与 CI stable 一致）跑 `cargo fmt` 修正（提交 `8d6df8f`）。
 - **CI 与发布已跑通**：`GUI` run [#61](https://github.com/lanlan0811/tianshu-mcp/actions/runs/36368067735)（push）全绿 —— 三平台 `Rust format / clippy / tests` + `Build app bundle` + `Upload build artifacts` 全部 success（windows 的 Rust 步骤 86s、darwin-aarch64 58s，说明 clippy/test 真正跑完并编译了新依赖）；tag `gui-v0.1.0-beta.7` 的 run [#62](https://github.com/lanlan0811/tianshu-mcp/actions/runs/36369447953) 的 `Publish beta pre-release (GitHub + Gitee)` **10 个步骤全部 success**：GitHub pre-release 已创建（8 个产物，含 `x64-setup.exe` 与其 `.sig`），Gitee pre-release 附件与清单已写入，`update/gui/latest.json` 与 `latest-gitee.json` 均为 `0.1.0-beta.7` 且签名一致，`gui-v*` 未触发 MCP 的 `release.yml`。
-- **未完成（如实标注）**：桌面运行时行为（**点击手动下载是否真的拉起系统默认浏览器**、落点是否为所选源、设置条目的落位与常亮）**尚未在 Windows 10 真机验收** —— 需下载本次 `x64-setup.exe` 实测后回填 `docs/issue-25-gui-real-machine-record.md` §4.1。
+- **真机验收已完成**：维护者在 Windows 10 安装 `0.1.0-beta.7` 后实测 —— **「手动下载」点击可直接跳转到系统默认浏览器**，beta.7 的核心修复生效，该遗留项已闭环（见 `docs/issue-25-gui-real-machine-record.md` §4.1）。
 - **⚠️ 另有一条与本轮无关的既有 CI 红灯**：MCP 主包 `ci.yml` 自 `#285`（`03cf91c` open-design 冒烟修复）起转红，`#286`~`#288` 持续失败，集中在 ubuntu / macos 的 6 个 `Build & Test`（windows 与全部 `Visual browser` 通过）；**与本轮 GUI 改动无因果关系**（本轮只动 `mcp-gui/**` 与 `gui.yml`）。
 - **模拟真机**：`puppeteer-core` + 本机无头 Edge 打开 dev server（mock 运行时），DOM 断言 **10/10 通过**（无 `.mark`、主导航为「任务列表 / 运行日志 / 设置」、底部只剩「刷新」、设置项可开面板且常亮、手动下载已非锚点、强制 Gitee/GitHub 各自经 `window.open` 打开对应发行页、无 `pageerror`）。
 - **版本边界**：`mcp-gui` 四处版本同步 `0.1.0-beta.6 → 0.1.0-beta.7`（`package.json` / `package-lock.json` 两处 / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`），随本版发布 tag `gui-v0.1.0-beta.7`；`update/gui/latest*.json` 由发布 job 自动生成并提交（`[skip ci]`）。**MCP 主包版本不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。

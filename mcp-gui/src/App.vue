@@ -2,7 +2,7 @@
 /**
  * 应用外壳：**常驻左侧栏 + 内容区**。
  *
- * 左栏（`aside.rail`）承载品牌 · 全局搜索 · 主导航 · 任务分区 · 数据目录 · 状态操作；
+ * 左栏（`aside.rail`）承载品牌 · 全局搜索 · 主导航（含「设置」）· 数据目录 · 任务分区 · 状态操作；
  * 右区（`main.stage`）是两态内容：态一 `OverviewPage`（指标仪 / 状态圆片 / 任务卡网格 / 搜索模式），
  * 态二 `WorkspacePage`（面包屑 / 摘要带 / 内容）。
  *
@@ -114,6 +114,8 @@ function onNavigated(): void {
           <span class="grow truncate">{{ t("settings.title") }}</span>
         </button>
 
+        <DataHomeBar />
+
         <template v-if="isTaskView">
           <div class="rail-label">{{ t("nav.sections") }}</div>
           <button
@@ -130,7 +132,6 @@ function onNavigated(): void {
       </nav>
 
       <div class="rail-foot">
-        <DataHomeBar />
         <div class="rail-row">
           <button
             class="ibtn"

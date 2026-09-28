@@ -212,8 +212,8 @@ DOM 断言 **10/10 通过**（探针脚本置于 `.rivet/scratch/`，该目录�
      与 §2.2 的设计一致）；两份清单由各自的发布 job 提交，已按既有做法合并回同一提交并推送两仓。
    - **`gui-v*` 未触发 MCP 的 `release.yml`**（workflow 内显式断言通过）。
 
-**如实披露（仍未完成）**：桌面运行时行为——**「手动下载」点击是否真的拉起系统默认浏览器**、落点是否为所选源、
-设置条目的落位与常亮——**尚未在 Windows 10 真机上验收**；需下载本次 `x64-setup.exe` 实测后回填本节。
+**真机验收（已由维护者在 Windows 10 上完成，2026-09-28）**：安装 `0.1.0-beta.7` 后实测 ——
+**「手动下载」点击可直接跳转**（系统默认浏览器被拉起，beta.7 的核心修复生效）。本节遗留项**已闭环**。
 本机无 MSVC 工具链，无法自行构建桌面产物。
 
 **新增依赖已由 CI 确认可用**：`src-tauri/Cargo.toml` 新增 `tauri-plugin-opener = "2"`（`Cargo.lock` 仍由 CI 生成、不入库），
@@ -224,6 +224,37 @@ JS 侧 `@tauri-apps/plugin-opener` 解析为 `2.6.0`（其要求 `@tauri-apps/ap
 自 `#285`（`03cf91c` open-desktop 冒烟修复）起转红，`#286`/`#287`/`#288` 持续失败。
 失败集中在 **ubuntu / macos 的 6 个 `Build & Test`** job（windows 与全部 `Visual browser` job 通过），
 **与本轮 GUI 改动无因果关系**（本轮只动 `mcp-gui/**` 与 `gui.yml`，`ci.yml` 不覆盖 `mcp-gui`）。
+
+### 4.2 `gui-v0.1.0-beta.8`：指标仪补「已成功」+ 数据目录上移 + 设置面板改居中弹窗（2026-09-28）
+
+由维护者按真机截图提出的三处界面调整（`0.1.0-beta.7` 真机验收发现）：
+
+| # | 调整 | 落点 | 说明 |
+|---|---|---|---|
+| 1 | **指标仪补「已成功」** | `OverviewPage.vue`（`succeededCount` + 第 4 格）、`styles.css`（`.metrics` 由 4 列改 5 列） | 顺序为 **任务总数 / 进行中 / 已结束 / 已成功 / 已失败**；读数用语义色 `tone-ok`；标签复用既有 i18n 键 `status.succeeded`（**零新增文案键**，与相邻的「已失败」复用 `status.failed` 同口径） |
+| 2 | **「数据目录」上移** | `App.vue`（由 `.rail-foot` 移入 `.rail-nav`，紧接「设置」之后）、`styles.css`（`.rail-nav > .rail-block` 补分组线） | 侧栏序列变为 **品牌 → 全局搜索 → 任务列表 / 运行日志 / 设置 → 数据目录 → 任务分区 → 刷新**；侧栏底部只剩「刷新」 |
+| 3 | **设置面板改居中弹窗** | `styles.css`（`.poverlay` 改 `align-items/justify-content: center`；`.panel` 由「右侧全高滑出」改为居中卡片：`max-height: 86vh` + 四边描边 + 圆角 + `overflow: hidden`；入场动画改用既有 `rise`，删除 `slide-in`）、`.panel-body` 补 `min-height: 0` | 面板不再贴窗口右侧边；点遮罩仍可关闭 |
+
+**模拟真机（浏览器 mock + 无头 Edge，2026-09-28）**：DOM 断言 **12/12 通过**（探针置于 `.rivet/scratch/`，该目录已 gitignore）：
+
+| 断言 | 实测 |
+|---|---|
+| 指标仪 5 格且顺序为 任务总数 / 进行中 / 已结束 / 已成功 / 已失败 | ✅ |
+| 「已成功」读数已统计 | ✅ 值 = 3（mock 样本） |
+| 「已成功」读数用语义色 `tone-ok` | ✅ `class="metric-value tone-ok"` |
+| 「数据目录」在导航区内且紧接「设置」之后 | ✅ 导航序列 `["任务列表","运行日志","设置","数据目录"]` |
+| 数据目录下拉已在 `.rail-nav` 内、不在 `.rail-foot` 内 | ✅ |
+| 侧栏底部只剩「刷新」 | ✅ |
+| 面板水平居中（中心 ≈ 窗口中心，容差 2px） | ✅ 面板中心 720.0 vs 窗口中心 720.0（1440×900） |
+| 面板四周均不贴窗口边缘 | ✅ `left=490 top=161.3 right=950 bottom=750.8` |
+| 面板具备圆角（弹窗形态） | ✅ `border-radius=4px` |
+| 遮罩层为居中布局 | ✅ `justify-content=center` |
+| 面板未超出视口（自适应高度生效） | ✅ `height=589.5 / 视口 900` |
+| 全程无 `pageerror` | ✅ |
+
+**本机门禁**：`check:schema`（版本一致 `0.1.0-beta.8`）/ `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest`（**82 passed**，8 文件）/ `vite build` 全绿。本轮**无 Rust 侧改动**（`src-tauri/**` 仅版本号），但 `Rust format / clippy / tests` 仍会随 `gui.yml` 例行执行。
+
+**待办**：三项修改的桌面端观感需在 `0.1.0-beta.8` 的 Windows 产物上复核（居中弹窗在真实窗口尺寸下的观感、侧栏上移后的分组线）。
 
 ---
 

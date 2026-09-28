@@ -40,12 +40,14 @@ const STATUS_CHIPS: { tone: StatusTone | null; labelKey: string }[] = [
 ];
 
 const counts = computed(() => countByPhase(app.tasks));
+const succeededCount = computed(() => app.tasks.filter((task) => task.status === "succeeded").length);
 const failedCount = computed(() => app.tasks.filter((task) => task.status === "failed").length);
 
 const metrics = computed(() => [
   { label: t("tasks.total"), value: app.tasks.length },
   { label: t("tasks.active"), value: counts.value.active, tone: "active" },
   { label: t("tasks.finished"), value: counts.value.terminal },
+  { label: t("status.succeeded"), value: succeededCount.value, tone: "ok" },
   { label: t("status.failed"), value: failedCount.value, tone: "fail" },
 ]);
 

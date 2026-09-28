@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 指标仪：四格等分读数（标签 11px 弱色 / 数字 18px 等宽 tabular）。
+ * 指标仪：等分读数（标签 11px 弱色 / 数字 18px 等宽 tabular）。
  */
 defineProps<{
   items: { label: string; value: number; tone?: string }[];

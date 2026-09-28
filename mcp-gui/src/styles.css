@@ -414,6 +414,13 @@ button {
   color: var(--fg-faint);
 }
 
+/* 数据目录已从侧栏底部上移到导航区内（紧接「设置」）：与相邻导航项分组 */
+.rail-nav > .rail-block {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--line-hair);
+}
+
 .rail-foot {
   display: flex;
   flex-direction: column;
@@ -563,7 +570,7 @@ button {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   flex: none;
   border-bottom: 1px solid var(--line-hair);
   background: var(--bg-panel);
@@ -1795,7 +1802,7 @@ input[type="checkbox"] {
 }
 
 /* ============================================================
- * 15. 设置面板（右侧全高滑出）
+ * 15. 设置面板（居中弹窗）
  * ============================================================ */
 
 .poverlay {
@@ -1803,31 +1810,24 @@ input[type="checkbox"] {
   inset: 0;
   z-index: 40;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
   background: rgba(4, 6, 5, 0.55);
 }
 
+/* 居中弹窗（不再贴右侧边）：四周留白、圆角与面板一致的浮层卡片 */
 .panel {
   display: flex;
   flex-direction: column;
-  width: 420px;
-  max-width: 94vw;
-  height: 100%;
-  border-left: 1px solid var(--line);
+  width: 460px;
+  max-width: 92vw;
+  max-height: 86vh;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
   background: var(--bg-panel);
   box-shadow: var(--sh-panel);
-  animation: slide-in var(--dur) var(--ease);
-}
-
-@keyframes slide-in {
-  from {
-    transform: translateX(16px);
-    opacity: 0.6;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
+  animation: rise var(--dur) var(--ease);
 }
 
 .panel-head {
@@ -1853,6 +1853,7 @@ input[type="checkbox"] {
   flex-direction: column;
   gap: var(--sp-6);
   flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   padding: var(--sp-5);
 }
