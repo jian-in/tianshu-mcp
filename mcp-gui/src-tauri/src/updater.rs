@@ -16,7 +16,7 @@ use url::Url;
 
 use crate::models::{
     AppVersionInfo, CheckUpdateResult, InstallUpdateResult, ProbeSourceResult, SourceProbe,
-    MANUAL_DOWNLOAD_URL_GITHUB, MANUAL_DOWNLOAD_URL_GITEE, UPDATE_ENDPOINT_GITEE,
+    MANUAL_DOWNLOAD_URL_GITEE, MANUAL_DOWNLOAD_URL_GITHUB, UPDATE_ENDPOINT_GITEE,
     UPDATE_ENDPOINT_GITHUB,
 };
 use crate::AppState;
@@ -174,7 +174,9 @@ pub async fn check_update(app: AppHandle, source: String) -> CheckUpdateResult {
 
     let url = match Url::parse(endpoint_for(&chosen)) {
         Ok(u) => u,
-        Err(e) => return failure_result(current_version, &chosen, format!("更新清单地址非法：{e}")),
+        Err(e) => {
+            return failure_result(current_version, &chosen, format!("更新清单地址非法：{e}"))
+        }
     };
     let builder = match app.updater_builder().endpoints(vec![url]) {
         Ok(b) => b,
@@ -182,7 +184,9 @@ pub async fn check_update(app: AppHandle, source: String) -> CheckUpdateResult {
     };
     let updater = match builder.build() {
         Ok(u) => u,
-        Err(e) => return failure_result(current_version, &chosen, format!("初始化更新器失败：{e}")),
+        Err(e) => {
+            return failure_result(current_version, &chosen, format!("初始化更新器失败：{e}"))
+        }
     };
 
     match updater.check().await {
@@ -373,7 +377,10 @@ mod tests {
     #[test]
     fn manual_download_url_follows_source() {
         assert_eq!(manual_download_url_for("gitee"), MANUAL_DOWNLOAD_URL_GITEE);
-        assert_eq!(manual_download_url_for("github"), MANUAL_DOWNLOAD_URL_GITHUB);
+        assert_eq!(
+            manual_download_url_for("github"),
+            MANUAL_DOWNLOAD_URL_GITHUB
+        );
         assert_eq!(
             manual_download_url_for("anything-else"),
             MANUAL_DOWNLOAD_URL_GITHUB
