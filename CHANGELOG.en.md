@@ -8,6 +8,67 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.7.4] - 2026-09-28
+
+### Fixed
+
+- **Project-scoped dispatch on ZCode 3.14.x always failed with `project_mismatch` (issue #24).**
+  ZCode 3.14.x removed the two DOM contracts tianshu-mcp used for **binding read-back**
+  (`data-project-path` and `data-testid^="workspace-item-"`), while `pathOf()` in
+  `src/agents/zcode/dom.ts:27` recognises nothing else — so `workspaceBinding().projectPath` was always
+  empty and `cdp.projects()` always returned `[]`, leaving the binding criterion unsatisfiable forever.
+  The failure happens **before the task brief is ever sent**, which made `autoFixRounds` inert
+  (`roundsUsed` stayed 0). The fix touches four places, all stemming from that one root cause:
+  - `selectors.ts:107` gains `projectMenuItem` (`[role="menuitemcheckbox"]`), and `projectItem` /
+    `projectPath` are now explicitly labelled as 3.11.x contracts;
+  - `workspaceBindingExpression()` in `dom.ts:38` now also returns `projectName` (the bound display name)
+    and `menuChecked` (display names of menu items with `aria-checked="true"`), treating multiple checked
+    items as ambiguity; it **never fabricates a path** — on 3.14.x `projectPath` stays an empty string, and
+    the decision layer uses that to distinguish evidence strength;
+  - `projects()` in `cdp.ts:279` falls back to harvesting the expanded menu **only when the old contracts
+    yield nothing**, and it includes the checked state and excludes "work outside a project", so the
+    3.11.x result is byte-for-byte unchanged;
+  - `matchZcodeProject()` in `project.ts:61` gains a **display-name exact-match** branch and reports
+    `matchedBy`; a new `boundProjectVerdict()` implements the layered criterion — **strict path equality
+    whenever a path is available (unchanged semantics), display name when there is no path channel** —
+    and requires the project list to be free of same-name ambiguity.
+- **Removed a fragile timing dependency**: `ensureProjectBound()` used to accept an externally supplied
+  item, which made "the menu happens to still be open" an implicit precondition. It is now an idempotent
+  self-check: read the verdict first, pass immediately when already bound, and only expand the menu and
+  click when it is not.
+- **Better failure diagnostics**: the `project_mismatch` message now carries the trigger text, the menu
+  checked state and the path read-back, so users are no longer left with a bare "read-back mismatch".
+- **On-device evidence entry point**: `scripts/probe-zcode.mjs` gains a `dom-contracts` subcommand that
+  reports hit counts for both legacy contracts, the trigger's full attributes, the menu item list and the
+  post-fix read-back — for re-checking this contract assumption against a real ZCode build.
+
+### Known limitation
+
+- The ZCode 3.14.x DOM exposes a project's **display name** but not its absolute path, so the criterion is
+  "display name + global same-name disambiguation": more than one same-name item yields
+  `project_ambiguous` (fail-closed). Disambiguation requires the menu to be expanded (that is `projects()`'
+  data source); with the menu closed only the `binding` display-name evidence is used, and a missing list
+  never negates a binding. The 3.11.x path-equality chain keeps the highest priority and is unchanged.
+
+### Tests
+
+- **14** new cases: 4 in `test/unit/zcode-dom.test.ts` (read-back contract under the missing 3.14.x
+  contracts, multi-check ambiguity, and no regression for 3.11.x), 6 in `test/unit/zcode-core.test.ts`
+  (display-name matching / same-name fail-closed / layered criterion / path priority), and 4 in
+  `test/integration/zcode-flow.test.ts` (already-bound dispatch without a stray click, switch-then-dispatch,
+  same-name ambiguity fail-closed, and a **counter-example** where missing display-name evidence still
+  fails closed with diagnostics). Full suite: **1383 passed / 12 skipped** (1395 tests, 115 files plus 3
+  real-browser files skipped by design).
+
+> **On-device verification boundary (disclosed honestly)**: this machine has **no ZCode 3.14.x**, so the fix
+> was not re-verified on hardware. The root cause (missing DOM contracts) is **deterministically reproducible
+> locally** against a `linkedom` fixture: the new cases were first written to show three failing assertions
+> (`projectName`/`menuChecked` absent, `projects()` empty, multi-check not treated as ambiguous) and then
+> driven to green. The on-device measurements reported in issue #24 (`data-project-path` 0 hits,
+> `workspace-item-` 0 hits, `menuitemcheckbox` intact) were **not independently reproduced**; the fix is
+> designed against those contracts. Maintainers with a 3.14.x environment should run
+> `npm run probe:zcode -- dom-contracts` to confirm.
+
 ## [0.7.3] - 2026-09-28
 
 ### Fixed

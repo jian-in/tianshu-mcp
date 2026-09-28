@@ -1,6 +1,18 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-28 · 已发布版本 `0.7.3`（tag `v0.7.3` + npm `tianshu-mcp@0.7.3`）。**
+> **交接快照：2026-09-28 · 已发布版本 `0.7.4`（tag `v0.7.4` + npm `tianshu-mcp@0.7.4`）。**
+> **本轮（0.7.3 → 0.7.4）交付**：修掉 **issue #24** —— ZCode `3.14.x` 删除了 `data-project-path` 与
+> `data-testid^="workspace-item-"` 两处 DOM 契约，而 `pathOf()` 只认这两个来源，于是
+> `workspaceBinding().projectPath` 恒空、`cdp.projects()` 恒 `[]`，**所有带 `projectPath` 的派单**都恒败于
+> `project_mismatch`（失败在发送任务书之前，`autoFixRounds` 形同虚设）。绑定判据改为**分层**
+> （`boundProjectVerdict()`）：路径可得时严格判等（3.11.x 语义不变），无路径渠道时按**显示名 + 全局同名消歧**
+> （同名即 `project_ambiguous`，绝不猜测）；显示名**不写进 `projectPath`**，故无项目模式的
+> `workspaceIsDefault` 判据不受影响。另修掉「菜单是否恰好还开着」这条隐式时序前提，并给
+> `project_mismatch` 补上「触发器文本 / 菜单勾选态 / 路径回读」诊断。新增
+> `npm run probe:zcode -- dom-contracts` 作真机取证入口。全量 **1383 passed / 12 skipped**（1395 项，115 文件）。
+> ⚠️ **本机无 ZCode 3.14.x，未真机复验**：根因在 `linkedom` 夹具上已 RED→GREEN 决定性复现
+> （先确认 3 处红灯，再修到全绿），issue 的真机实测数据未被独立复现 —— 有 3.14.x 环境的维护者请跑
+> `npm run probe:zcode -- dom-contracts` 复核。详见 `CHANGELOG.md` 的 `[0.7.4]` 与 `docs/release-v0.7.4.md`。
 > 发布链上有两个需要知道的坑（都是 `release.yml` 的前置门禁，不满足时 npm 可能已发但 Release 建不出来）：
 > ① 该 commit 必须有**成功的 CI**（`Require successful CI for this commit`）；
 > ② 正文必须来自 `docs/release-v<version>.md` 与 `.en.md`。

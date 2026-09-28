@@ -77,7 +77,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 867 passed / 12 skipped（879 项，85 个测试文件：单元/集成/协议 + 3 个真实浏览器文件按设计 skip）
+npm test             # 1383 passed / 12 skipped（1395 项，115 个测试文件：单元/集成/协议 + 3 个真实浏览器文件按设计 skip）
 ```
 
 ### 安装 npm 包
@@ -495,7 +495,7 @@ Qoder CN 使用 `agentId="qoder"`，必须提供已有 `projectPath` 和可读 `
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户确认、取消与重派护栏均已真机验证（v0.3.2）；Windows 真机已验证；macOS 基本闭环已真机验证（v0.4.0），取消/返修矩阵补齐前保持 `research` |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3），并加固项目/模型回读与初始化恢复（v0.3.4）；支持无项目派发与 `allowCreateProject`（v0.5.2，issue #12），v0.5.3 修复实例跨 server 驻留、新建任务切页与发送失败归因；macOS 基本闭环已真机验证（2026-09-13，v0.4.0），取消/返修/新建项目矩阵补齐前保持 `research` |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3），并加固项目/模型回读与初始化恢复（v0.3.4）；支持无项目派发与 `allowCreateProject`（v0.5.2，issue #12），v0.5.3 修复实例跨 server 驻留、新建任务切页与发送失败归因；**v0.7.4 适配 ZCode 3.14.x**（`data-project-path` 与 `workspace-item-*` 两处旧契约已被产品删除 → 绑定判据改为「路径优先、无路径渠道时按显示名 + 全局同名消歧」，同名即 fail-closed）；macOS 基本闭环已真机验证（2026-09-13，v0.4.0），取消/返修/新建项目矩阵补齐前保持 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `kimicode` | `gui` / `kimicode-gui` | **ready**（macOS 为 `research`） | Kimi Code 桌面端（Electron，实测 1.0.2）；**双渲染进程**（主窗口 + `Kimi Browser Overlay` 浮层承载模型/档位/模式菜单）；工作区以完整路径绑定，未登记时经原生「添加工作区」对话框导入；支持 `model`/`reasoningLevel`，不支持 `mode`；Windows 真机已验证成功路径、未登记工作区导入 + 自动验收、失败 → 返修 → 再验收同会话闭环；取消/提问续答仅由 hermetic 集成测试覆盖，macOS 为 `research` 且 fail-closed |
 | `qoder` | `gui` / `qoder-gui` | Windows 真机闭环通过；macOS **research** | 仅 Qoder CN；完整路径工作区、未登记目录经新建工作区 + 原生目录选择器导入、默认/自定义模型、模型管理全局思考等级保存回读、原会话续答与返修；Windows 真机验证：已有工作区默认模型、新登记工作区自定义模型、受控失败 → 落计划 → 原会话返修 → 再验收均通过；macOS 为 `research` 且 fail-closed（禁止派发） |

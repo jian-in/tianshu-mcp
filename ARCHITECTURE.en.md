@@ -559,11 +559,24 @@ Ensure instance → wait for UI ready → new conversation → switch to target 
 
 ```text
 Discover install → launch/reuse CDP instance (shared deadline budget) → bind project
-  (staged trigger location + full-path criterion) → pick model (direct selection first,
+  (staged trigger location + layered binding criterion) → pick model (direct selection first,
   provider/family grouping as fallback, decode stable attributes on read-back)
   → full-access permission → send (button readiness check → marker/session diff location)
   → run detection / question detection → poll to completion
 ```
+
+> **The binding criterion is layered (v0.7.4, issue #24)**: ZCode 3.14.x removed
+> `data-project-path` and `data-testid^="workspace-item-"`, so the project path is **no longer
+> available** in the DOM and only the display name remains. `boundProjectVerdict()`
+> (`src/agents/zcode/project.ts`) therefore layers by evidence strength: **strict equality whenever a
+> path is available** (3.11.x semantics unchanged), and **the display name when there is no path
+> channel** — requiring the project list to be free of same-name entries (more than one yields
+> `project_ambiguous`; it never guesses). That list comes from `projects()`, which only falls back to
+> harvesting the expanded `[role="menuitemcheckbox"]` menu when the legacy contracts yield nothing
+> (including `aria-checked`, excluding "work outside a project"). The display name is **never written
+> into `projectPath`**: with no path channel that field stays an empty string, which is exactly why
+> `workspaceIsDefault` still holds in project-less mode. On-device evidence entry point:
+> `npm run probe:zcode -- dom-contracts`.
 
 **Codex** (MSIX COM activation):
 

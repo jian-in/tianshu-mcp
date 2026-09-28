@@ -7,6 +7,52 @@
 
 ---
 
+## [0.7.4] - 2026-09-28
+
+### 修复
+
+- **ZCode 3.14.x 有项目派单恒败于 `project_mismatch`（issue #24）**。ZCode 3.14.x 删除了 tianshu-mcp
+  用于**绑定回读**的两处 DOM 契约（`data-project-path` 与 `data-testid^="workspace-item-"`），而
+  `src/agents/zcode/dom.ts:27` 的 `pathOf()` 只认这两个来源 —— 于是 `workspaceBinding().projectPath`
+  恒为空、`cdp.projects()` 恒为 `[]`，绑定判据永不成立。失败发生在**发送任务书之前**，
+  `autoFixRounds` 形同虚设（`roundsUsed` 恒为 0）。修复落在四处（同一根因）：
+  - `selectors.ts:107` 新增 `projectMenuItem`（`[role="menuitemcheckbox"]`），并把 `projectItem` /
+    `projectPath` 显式标注为 3.11.x 契约；
+  - `dom.ts:38` 的 `workspaceBindingExpression()` 增补 `projectName`（当前绑定显示名）与 `menuChecked`
+    （菜单中 `aria-checked="true"` 的显示名），多勾选判歧义；**不伪造路径** —— 3.14.x 下 `projectPath`
+    仍为空串，判定层据此区分证据等级；
+  - `cdp.ts:279` 的 `projects()` 改为「旧契约完全落空时才从展开菜单采集」（含勾选态、排除
+    「不在项目中工作」），保证 3.11.x 的采集结果逐字不变；
+  - `project.ts:61` 的 `matchZcodeProject()` 增加**显示名精确匹配**分支并返回 `matchedBy`，
+    新增 `boundProjectVerdict()` 实现分层判据：**路径可得时严格判等（原语义不变），无路径渠道时按显示名**，
+    且要求项目列表无同名歧义。
+- **修掉一条被掩盖的脆弱时序**：`ensureProjectBound()` 原先接受外部传入的 item，使「菜单是否恰好还开着」
+  成为隐式前提。现改为幂等自检 —— 每轮先读判定，已绑定即通过、未绑定才展开菜单并点击。
+- **绑定失败诊断补齐**：`project_mismatch` 的错误信息现携带「触发器文本 / 菜单勾选态 / 路径回读」，
+  用户不必再面对一句「回读不一致」而无法自救。
+- **真机取证入口**：`scripts/probe-zcode.mjs` 新增 `dom-contracts` 子命令，输出两处旧契约的命中计数、
+  触发器全属性、菜单项清单与修复后的回读结果（用于在真实 ZCode 上复核本次契约假设）。
+
+### 已知限制
+
+- ZCode 3.14.x 的 DOM 只暴露项目**显示名**、不暴露绝对路径，因此判定采用「显示名 + 全局同名消歧」：
+  同名项 > 1 直接判 `project_ambiguous`（fail-closed）。**能区分的前提是菜单已展开**（`projects()` 的数据源）；
+  菜单收起时只凭 `binding` 的显示名证据，不因列表缺失而否定绑定。3.11.x 的路径判等链路优先级最高，行为不变。
+
+### 测试
+
+- 新增 **14** 用例：`test/unit/zcode-dom.test.ts` 4 条（3.14.x 契约缺席下的回读契约 + 多勾选歧义 +
+  3.11.x 无退化）、`test/unit/zcode-core.test.ts` 6 条（显示名匹配 / 同名 fail-closed / 分层判据 / 路径优先）、
+  `test/integration/zcode-flow.test.ts` 4 条（已绑定直发不误点、未绑定切换后派发、同名歧义 fail-closed、
+  **缺显示名证据的反例**：仍 fail-closed 且错误信息带诊断）。全量 **1383 passed / 12 skipped**
+  （1395 项，115 文件 + 3 个真实浏览器文件按设计 skip）。
+
+> **真机验证边界（如实披露）**：本机**无 ZCode 3.14.x**，未在真机复验。根因（DOM 契约缺席）在
+> `linkedom` 夹具上可**本地决定性复现**：先写用例确认 3 处红灯（`projectName`/`menuChecked` 缺失、
+> `projects()` 为空、多勾选不判歧义），再修到全绿。issue #24 报告的真机实测数据（`data-project-path`
+> 0 命中、`workspace-item-` 0 命中、`menuitemcheckbox` 完好）**未被独立复现**，修复按该契约设计；
+> 有 3.14.x 环境的维护者请跑 `npm run probe:zcode -- dom-contracts` 复核一次。
+
 ## [0.7.3] - 2026-09-28
 
 ### 修复

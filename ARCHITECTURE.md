@@ -534,10 +534,19 @@ interface AgentAdapter {
 **ZCode**（CDP 驱动，无项目派发自 v0.5.2 起）：
 
 ```text
-发现安装 → 启动/复用 CDP 实例（共同截止时间预算） → 绑定项目（触发器逐级定位 + 完整路径判据）
+发现安装 → 启动/复用 CDP 实例（共同截止时间预算） → 绑定项目（触发器逐级定位 + 分层绑定判据）
   → 选模型（直选优先，provider/family 分组兜底，回读解码稳定属性） → 完全访问权限
   → 发送（按钮就绪检查 → 标记/会话差集定位） → 运行检测/提问检测 → 轮询到完成
 ```
+
+> **绑定判据是分层的（v0.7.4，issue #24）**：ZCode 3.14.x 删除了 `data-project-path` 与
+> `data-testid^="workspace-item-"`，项目路径在 DOM 上**不再可得**，只余显示名。因此
+> `boundProjectVerdict()`（`src/agents/zcode/project.ts`）按证据强度分层：**路径可得时严格判等**
+> （3.11.x 语义不变）；**无路径渠道时按显示名**，并要求项目列表无同名项（同名即判
+> `project_ambiguous`，绝不猜测）。判定所需的列表来自 `projects()` —— 旧契约完全落空时才改从展开的
+> `[role="menuitemcheckbox"]` 菜单采集（含 `aria-checked`，排除「不在项目中工作」）。
+> 显示名**不会被写进 `projectPath`**：无路径渠道下该字段保持空串，这正是 `workspaceIsDefault`
+> 在无项目模式下仍成立的原因。真机取证入口：`npm run probe:zcode -- dom-contracts`。
 
 **Codex**（MSIX COM 激活）：
 
