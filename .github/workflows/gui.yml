@@ -1,6 +1,6 @@
 name: GUI
 
-# Tianshu-mcp 日志台（mcp-gui/）的构建、门禁与双端测试版发布（issue #25）。
+# Tianshu-mcp 日志台（mcp-gui/）的构建、门禁与双端发行版发布（issue #25）。
 #
 # 刻意**独立于** ci.yml / release.yml：
 #   - 不碰 MCP 主包的测试与发版链路，避免「GUI 发版影响 MCP 发版」；
@@ -9,7 +9,8 @@ name: GUI
 # 触发与变更过滤（注意：push 上**不写 `paths`**）：
 #   - `push.paths` 与 `push.tags` 同时存在时，tag 推送可能根本不触发工作流（首次发版会空跑）；
 #     因此变更过滤统一交给 `schema-parity` 里的 `changed` 步骤：
-#       · push tag `gui-v*-beta.*` → **无条件构建** + 签名 + 双端 pre-release + 更新清单；
+#       · push tag `gui-v*` → **无条件构建** + 签名 + 双端发行版 + 更新清单
+#         （正式版 / 预发布按 tag 形态分流：含 `-beta.` / `-rc.` 即 pre-release）；
 #       · `workflow_dispatch`（手动） → **无条件构建**；
 #       · push 到 master/main、PR → 只有真的改了 `mcp-gui/**`、两个词表真源或 `gui.yml` 自身才构建（省 runner）。
 
@@ -17,7 +18,9 @@ on:
   push:
     branches: [master, main]
     tags:
-      - "gui-v*-beta.*"
+      # 正式版与预发布共用同一条流水线：`gui-v0.1.0` / `gui-v0.1.0-beta.9` / `gui-v0.1.0-rc.1` 都触发。
+      # 是否标为 pre-release 由 publish 阶段按 tag 形态判定（见 `Decide pre-release` 步骤）。
+      - "gui-v*"
   pull_request:
     branches: [master, main]
     paths:
@@ -222,7 +225,7 @@ jobs:
             mcp-gui/src-tauri/target/release/bundle/fragment-*.json
 
   publish:
-    name: Publish beta pre-release (GitHub + Gitee)
+    name: Publish release (GitHub + Gitee)
     needs: build
     if: startsWith(github.ref, 'refs/tags/gui-v')
     runs-on: ubuntu-latest
@@ -235,6 +238,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      # 正式版 / 预发布分流 + 合成发行版正文。
+      # 正文取自 docs/release-gui-v<版本>.md 与 .en.md（缺文档时脚本非 0 退出，不产出空壳正文）。
+      - name: Decide pre-release and compose release body
+        id: meta
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          VER="${TAG#gui-v}"
+          if [[ "$TAG" == *-beta.* || "$TAG" == *-rc.* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "判定为预发布：$TAG"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "判定为正式版：$TAG"
+          fi
+          node scripts/gui-release-body.mjs "$VER" github "${{ github.repository }}" > "$RUNNER_TEMP/gui-body.md"
+          echo "body=$RUNNER_TEMP/gui-body.md" >> "$GITHUB_OUTPUT"
+          echo "正文行数：$(wc -l < "$RUNNER_TEMP/gui-body.md")"
 
       - name: Download all platform artifacts
         uses: actions/download-artifact@v4
@@ -260,7 +282,7 @@ jobs:
             node mcp-gui/scripts/build-updater-manifest.mjs merge \
               --fragments fragments \
               --version "$VER" \
-              --notes "Tianshu-mcp 日志台 $VER（测试版）" \
+              --notes "Tianshu-mcp 日志台 $VER" \
               --out latest.json
             echo "built=true" >> "$GITHUB_OUTPUT"
           else
@@ -268,14 +290,13 @@ jobs:
             echo "built=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish GitHub pre-release
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           TAG="${{ github.ref_name }}"
-          TITLE="Tianshu-mcp 日志台 $TAG（测试版）"
-          NOTES="本地只读查看天枢 MCP 的运行日志与任务产物（Tauri 2.x + Vue 3）。测试版通道，与 MCP 主包发版互不干扰。文档见 docs/gui-log-viewer.md / .en.md。"
+          TITLE="Tianshu-mcp 日志台 $TAG"
           # 幂等重跑：先删掉该 tag 的历史发行版，再以当前构建产物全新创建。
           # 必须按 API 列表删除（而非 `gh release view <tag>`）：tag 被删除时 GitHub 会把已发布
           # 发行版**自动转为 draft**，而 draft 无法按 tag 查到，会残留旧资产（可能属于另一架构）。
@@ -286,13 +307,18 @@ jobs:
                 echo "已删除历史发行版 id=$id"
               fi
             done
+          # 预发布标记按 tag 形态决定：正式版不再带 --prerelease。
+          PRERELEASE_FLAG=""
+          if [ "${{ steps.meta.outputs.prerelease }}" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
           gh release create "$TAG" \
-            --prerelease \
+            $PRERELEASE_FLAG \
             --title "$TITLE" \
-            --notes "$NOTES" \
+            --notes-file "${{ steps.meta.outputs.body }}" \
             release/*
 
-      - name: Publish Gitee pre-release with attachments + write Gitee manifest
+      - name: Publish Gitee release with attachments + write Gitee manifest
         if: steps.manifest.outputs.built == 'true'
         shell: bash
         env:
@@ -308,6 +334,8 @@ jobs:
             --version "$VER" \
             --tag "$TAG" \
             --files "$FILES" \
+            --prerelease "${{ steps.meta.outputs.prerelease }}" \
+            --body-file "${{ steps.meta.outputs.body }}" \
             --github-manifest latest.json \
             --out-manifest latest-gitee.json 2>&1)
           CODE=$?
@@ -358,8 +386,9 @@ jobs:
           {
             echo "### Tianshu-mcp 日志台 ${{ github.ref_name }}"
             echo ""
-            echo "- GitHub pre-release：已创建（测试版，不占用 latest）"
+            echo "- 预发布标记：${{ steps.meta.outputs.prerelease }}"
+            echo "- GitHub release：已创建"
             echo "- 更新清单生成：${{ steps.manifest.outputs.built }}"
-            echo "- Gitee 预发布与附件：见上一步日志"
+            echo "- Gitee 发行版与附件：见上一步日志"
             echo "- 更新源实测择优：Gitee（中国大陆）/ GitHub（境外，含中国香港、中国台湾）"
           } >> "$GITHUB_STEP_SUMMARY"

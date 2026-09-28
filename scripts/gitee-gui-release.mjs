@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Gitee 侧 GUI 测试版发布（issue #25 §5.4）。
+ * Gitee 侧 GUI 发行版发布（issue #25 §5.4）。
  *
  * 与 MCP 主包的 `gitee-release.mjs` **分开实现**：GUI 的 tag 形态（`gui-v*`）、
  * 版本序列（独立 `0.1.0-beta.N`）与正文来源都不同，混在一个脚本里会把 GUI 分支
  * 引入主包发布路径。凭据沿用仓库 Secret `GITEE_TOKEN`，不新建重复实现。
  *
  * 职责：
- *  1. 幂等创建/更新 Gitee **预发布**（pre-release）；
+ *  1. 幂等创建/更新 Gitee **发行版**（正式版 / 预发布由 `--prerelease` 决定）；
  *  2. **上传安装包附件**（现有主包脚本没有这个能力）；
  *  3. 用附件下载地址改写更新清单中的 url，生成 `latest-gitee.json`；
  *  4. 通过 Gitee Contents API 把清单写入仓内 raw 路径（双源自动更新的 Gitee 端点）。
@@ -54,8 +54,16 @@ const files = (args.files || "")
 const githubManifest = args["github-manifest"];
 const outManifest = args["out-manifest"] || "latest-gitee.json";
 
+/** 预发布标记：由 `gui.yml` 按 tag 形态判定后传入（`true` / `false`；缺省 true 以兼容旧调用） */
+const prerelease = String(args.prerelease ?? "true").trim() !== "false";
+/** 发行版正文文件（由 `scripts/gui-release-body.mjs` 合成，与 GitHub 侧同源）；缺省回退内置说明 */
+const bodyFile = args["body-file"] ? path.resolve(String(args["body-file"])) : "";
+
 if (!/^\d+\.\d+\.\d+/.test(version)) {
-  console.error("用法：node scripts/gitee-gui-release.mjs --version 0.1.0-beta.1 --tag gui-v0.1.0-beta.1 --files a,b [--github-manifest x.json] [--out-manifest y.json]");
+  console.error(
+    "用法：node scripts/gitee-gui-release.mjs --version 0.1.0 --tag gui-v0.1.0 --files a,b " +
+      "[--prerelease true|false] [--body-file body.md] [--github-manifest x.json] [--out-manifest y.json]",
+  );
   process.exit(2);
 }
 if (!token) {
@@ -71,11 +79,28 @@ for (const file of files) {
 
 const api = `https://gitee.com/api/v5/repos/${owner}/${repo}`;
 const q = `access_token=${encodeURIComponent(token)}`;
-const releaseName = `Tianshu-mcp 日志台 ${tag}（测试版）`;
+const releaseName = `Tianshu-mcp 日志台 ${tag}`;
 
+/**
+ * 发行版正文：优先用 `gui.yml` 合成的双语正文（`--body-file`，与 GitHub 侧同源），
+ * 读取失败或为空时回退内置说明——但**不静默**（打 warning）。
+ */
 function releaseBody() {
+  if (bodyFile) {
+    try {
+      const text = readFileSync(bodyFile, "utf8").trim();
+      if (text) return text;
+      console.warn(`正文文件为空，回退内置说明：${bodyFile}`);
+    } catch (e) {
+      console.warn(`读取正文文件失败（回退内置说明）：${e.message}`);
+    }
+  }
+  return fallbackBody();
+}
+
+function fallbackBody() {
   return [
-    `## Tianshu-mcp 日志台 ${version}（测试版 / pre-release）`,
+    `## Tianshu-mcp 日志台 ${version}`,
     "",
     "本地只读查看天枢 MCP 的运行日志与任务产物（Tauri 2.x + Vue 3）。",
     "",
@@ -109,7 +134,7 @@ async function createRelease() {
       name: releaseName,
       body: releaseBody(),
       target_commitish: branch,
-      prerelease: true,
+      prerelease,
     }),
   });
   const text = await res.text();
@@ -126,7 +151,7 @@ async function updateRelease(id) {
       tag_name: tag,
       name: releaseName,
       body: releaseBody(),
-      prerelease: true,
+      prerelease,
     }),
   });
   const text = await res.text();
@@ -249,7 +274,9 @@ async function putRepoFile(repoPath, content) {
 async function main() {
   const existing = await getExistingRelease();
   const release = existing ? await updateRelease(existing.id) : await createRelease();
-  console.log(`Gitee 预发布就绪：${release.name ?? releaseName}（id=${release.id}）`);
+  console.log(
+    `Gitee 发行版就绪（预发布=${prerelease}）：${release.name ?? releaseName}（id=${release.id}）`,
+  );
 
   const before = await listAttachments(release.id);
   const urlByName = new Map();

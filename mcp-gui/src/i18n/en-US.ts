@@ -307,7 +307,7 @@ export const enUS: Messages = {
     degraded: "Both update sources are unreachable; fell back to the last known good source",
     offlineFallback: "Both sources unreachable and no history; fell back to GitHub",
     pubkeyMissing: "Update public key not configured yet; auto-update is unavailable (enable by setting UPDATER_PUBKEY in CI)",
-    betaChannel: "Beta channel (pre-release)",
+    betaChannel: "Stable channel",
     dialogTitle: "Update log",
     releaseNotesEmpty: "This release does not provide release notes",
     ignoreVersion: "Ignore this version",
