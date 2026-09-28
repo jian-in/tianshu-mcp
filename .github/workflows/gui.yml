@@ -163,9 +163,36 @@ jobs:
         working-directory: mcp-gui/src-tauri
         shell: bash
         run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test
+          # 公开仓的 job 日志需 admin 才能读取（REST /logs 返回 403），故失败时把命令输出
+          # 转成公开可读的 ::error:: 注解，避免只能靠猜（与 Gitee 发布步骤同一处置口径）。
+          # 三条命令都跑完再判定失败，使一轮 CI 即可同时暴露 fmt / clippy / test 的问题。
+          annotate_failure() {
+            local title="$1" out="$2" flat
+            flat=$(printf '%s' "$out" | tail -n 80 | awk 'BEGIN{ORS=""} {
+              gsub(/%/, "%25"); gsub(/\r/, "");
+              if (NR > 1) printf "%0A";
+              printf "%s", $0
+            }')
+            echo "::error title=${title}::${flat}"
+          }
+          failed=0
+          run_step() {
+            local title="$1"; shift
+            local out
+            if ! out=$("$@" 2>&1); then
+              printf '%s\n' "$out"
+              annotate_failure "$title" "$out"
+              failed=1
+            else
+              printf '%s\n' "$out"
+            fi
+          }
+          echo "rustc: $(rustc --version)"
+          echo "rustfmt: $(cargo fmt --version)"
+          run_step "cargo fmt --check" cargo fmt --check
+          run_step "cargo clippy --all-targets -- -D warnings" cargo clippy --all-targets -- -D warnings
+          run_step "cargo test" cargo test
+          exit "$failed"
 
       - name: Detect signing capability
         id: signing
