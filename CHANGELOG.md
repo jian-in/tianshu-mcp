@@ -7,6 +7,22 @@
 
 ---
 
+## [0.7.2] - 2026-09-28
+
+### 修复
+
+- **CI 跨平台红（ubuntu / macOS 全腿）**（`test/unit/opendesign-discovery.test.ts`）：新增的
+  `DevToolsActivePort` 候选路径用例只注入了 `APPDATA`，而生产里 `devToolsActivePortPaths`
+  **按宿主平台取基址**（win32 用 `APPDATA`，其他平台用 `HOME/Library/Application Support`）——
+  于是 ubuntu/macos 腿上路径基址走了 `HOME` 分支，断言必然不匹配。
+  这是**同一族**缺陷的第三次出现（前两次在 `discoverOpenDesign` 的候选路径与版本回读上），
+  均属「断言与宿主平台耦合，只在某一类机器上通过」。
+  修法：用例按宿主平台注入对应 env 并算出对应期望值，与生产同源。
+  实测影响：CI #295/#296 与 Release #44 均因此失败，**GitHub Release 未能创建**（npm 包本身不受影响）。
+
+> 说明：`0.7.1` 的 npm 包已发布且 `dist` 内容正确，本版仅修测试的跨平台耦合，
+> 使 tag / Release 与 npm 三者可在同一 commit 上收敛。
+
 ## [0.7.1] - 2026-09-28
 
 > 本次变更把内置 agent `opendesign`（Open Design 桌面端，`driver=gui` / `adapter=opendesign-gui`）

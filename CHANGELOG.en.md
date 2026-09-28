@@ -8,6 +8,25 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.7.2] - 2026-09-28
+
+### Fixed
+
+- **Cross-platform CI failure (every ubuntu / macOS leg)** (`test/unit/opendesign-discovery.test.ts`):
+  the new `DevToolsActivePort` candidate-path case injected only `APPDATA`, while production's
+  `devToolsActivePortPaths` **keys the base directory off the host platform** (win32 uses `APPDATA`,
+  other platforms use `HOME/Library/Application Support`) — so on ubuntu/macOS the base went down the
+  `HOME` branch and the assertion could never match. This is the **third** occurrence of the same
+  family (the earlier two were `discoverOpenDesign`'s candidate paths and the version read-back):
+  assertions coupled to the host platform, passing on only one class of machine.
+  Fix: the case now injects the platform-appropriate env and derives the matching expectation, sharing
+  the production source of truth.
+  Measured impact: CI #295/#296 and Release #44 all failed on this, so the **GitHub Release was never
+  created** (the npm package itself is unaffected).
+
+> Note: the `0.7.1` npm package is published and its `dist` is correct; this release only fixes the
+> test's cross-platform coupling so tag / Release / npm can converge on a single commit.
+
 ## [0.7.1] - 2026-09-28
 
 > This change moves the built-in agent `opendesign` (the Open Design desktop app, `driver=gui` /
