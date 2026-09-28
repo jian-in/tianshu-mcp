@@ -278,7 +278,35 @@ export class ZcodeCdpClient {
   }
   async projects(): Promise<ZcodeProjectItem[]> {
     return this.evaluate(
-      `(function(){const out=[];for(const s of ${candidateExpr("projectItem", this.selectors)})for(const e of document.querySelectorAll(s)){const testid=e.getAttribute('data-testid')||'';const testPath=testid.startsWith('workspace-item-')?testid.slice('workspace-item-'.length):undefined;const name=(e.getAttribute('data-project-name')||e.querySelector('[class*=name]')?.textContent||e.textContent||'').trim();const p=e.getAttribute('data-project-path')||e.querySelector('[data-project-path]')?.getAttribute('data-project-path')||testPath||e.getAttribute('title')||undefined;const id=e.getAttribute('data-project-id')||e.getAttribute('data-id')||testid||undefined;if(name)out.push({name,path:p,id})}return out})()`,
+      `(function(){
+        const norm=s=>(s||'').normalize('NFKC').trim();
+        const out=[],seen=new Set();
+        const push=(name,path,id,checked)=>{
+          const n=(name||'').trim();
+          if(!n)return;
+          const key=norm(n).toLocaleLowerCase();
+          if(seen.has(key))return;
+          seen.add(key);
+          out.push({name:n,path:path||undefined,id:id||undefined,checked});
+        };
+        for(const s of ${candidateExpr("projectItem", this.selectors)})for(const e of document.querySelectorAll(s)){
+          const testid=e.getAttribute('data-testid')||'';
+          const testPath=testid.startsWith('workspace-item-')?testid.slice('workspace-item-'.length):undefined;
+          const name=(e.getAttribute('data-project-name')||e.querySelector('[class*=name]')?.textContent||e.textContent||'').trim();
+          const p=e.getAttribute('data-project-path')||e.querySelector('[data-project-path]')?.getAttribute('data-project-path')||testPath||e.getAttribute('title')||undefined;
+          const id=e.getAttribute('data-project-id')||e.getAttribute('data-id')||testid||undefined;
+          push(name,p,id,undefined);
+        }
+        // issue #24：ZCode 3.14.x 已删除 workspace-item-*，项目列表只能从展开的下拉菜单采集。
+        // 仅在旧契约完全落空时启用，保证 3.11.x 的采集结果逐字不变。
+        if(!out.length)for(const s of ${candidateExpr("projectMenuItem", this.selectors)})for(const e of document.querySelectorAll(s)){
+          const name=(e.getAttribute('aria-label')||e.textContent||'').trim();
+          // 「不在项目中工作」是工作区切换项，不是项目——按本地化标签排除。
+          if(/不在项目中|outside a project|work outside/i.test(name))continue;
+          push(name,undefined,e.getAttribute('data-value')||undefined,e.getAttribute('aria-checked')==='true');
+        }
+        return out
+      })()`,
     );
   }
   async clickProject(id: string | undefined, projectPath: string | undefined): Promise<boolean> {
@@ -296,6 +324,10 @@ export class ZcodeCdpClient {
   async workspaceBinding(): Promise<{
     triggerText: string;
     projectPath: string;
+    /** 当前绑定的显示名（3.14.x 无路径渠道时的证据；菜单未开时等于触发器文本） */
+    projectName?: string;
+    /** 展开菜单中 aria-checked=true 的显示名，用于判定绑定与检测同名/多选歧义 */
+    menuChecked?: string[];
     ambiguous?: boolean;
   }> {
     return this.evaluate(workspaceBindingExpression(this.selectors));

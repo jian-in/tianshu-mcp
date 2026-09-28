@@ -123,7 +123,13 @@ class FakeZcode {
   async boundProjectPath() {
     return this.projectPath;
   }
-  async workspaceBinding() {
+  async workspaceBinding(): Promise<{
+    triggerText: string;
+    projectPath: string;
+    projectName?: string;
+    menuChecked?: string[];
+    ambiguous?: boolean;
+  }> {
     return {
       triggerText: path.basename(this.projectPath),
       projectPath: await this.boundProjectPath(),
@@ -1613,6 +1619,143 @@ describe("ZCode 项目创建策略", () => {
     expect(result.ok).toBe(true);
     expect(fake.chooseFolderClicked).toBe(true);
     expect(fake.sent).toBe(1);
+  });
+});
+
+/**
+ * issue #24：ZCode 3.14.x 删除了 `data-project-path` 与 `data-testid^="workspace-item-"`
+ * （issue 作者的 app.asar 全文扫描 + CDP 实测均为 0 命中）。这组替身还原「无路径渠道」的世界：
+ * 项目列表只能从展开菜单采集（仅有显示名 + 勾选态），绑定回读也只剩显示名。
+ * 修复前，这里的有项目派发会恒败于 project_mismatch（任务书从未送达）。
+ */
+class NoPathChannelZcode extends FakeZcode {
+  override async projects(): Promise<ZcodeProjectItem[]> {
+    const name = path.basename(await this.boundProjectPath());
+    return [
+      { name, checked: true },
+      { name: "另一个项目", checked: false },
+    ];
+  }
+  override async workspaceBinding() {
+    const name = path.basename(await this.boundProjectPath());
+    return { triggerText: name, projectPath: "", projectName: name, menuChecked: [name] };
+  }
+}
+
+/** 无路径渠道下菜单里出现两个同名项：必须 fail-closed，不能猜一个点下去。 */
+class NoPathChannelAmbiguousZcode extends NoPathChannelZcode {
+  override async projects(): Promise<ZcodeProjectItem[]> {
+    const name = path.basename(await this.boundProjectPath());
+    return [
+      { name, checked: true },
+      { name, checked: false },
+    ];
+  }
+}
+
+/** 无路径渠道下尚未绑定目标：触发器显示别的项目，点击菜单项后才切过去。 */
+class NoPathChannelUnboundZcode extends FakeZcode {
+  private bound = false;
+  override async projects(): Promise<ZcodeProjectItem[]> {
+    const name = path.basename(await this.boundProjectPath());
+    return [
+      { name, checked: this.bound },
+      { name: "另一个项目", checked: !this.bound },
+    ];
+  }
+  override async workspaceBinding() {
+    const name = path.basename(await this.boundProjectPath());
+    return this.bound
+      ? { triggerText: name, projectPath: "", projectName: name, menuChecked: [name] }
+      : {
+          triggerText: "另一个项目",
+          projectPath: "",
+          projectName: "另一个项目",
+          menuChecked: ["另一个项目"],
+        };
+  }
+  override async clickProject() {
+    this.bound = true;
+    return super.clickProject();
+  }
+}
+
+describe("ZCode 3.14.x 无路径渠道（issue #24）", () => {
+  it("已绑定目标项目时直接派发，不重复点击项目项", async () => {
+    const project = await makeTmpRoot("zcode-314-bound");
+    cleanup.push(project);
+    const fake = new NoPathChannelZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.sent).toBe(1);
+    // 已绑定时不得再点击项目项——projectClicks 就是「误点击/误绑定」的计数证据。
+    expect(fake.projectClicks).toBe(0);
+  });
+
+  it("尚未绑定目标项目时点击菜单项切过去并派发", async () => {
+    const project = await makeTmpRoot("zcode-314-switch");
+    cleanup.push(project);
+    const fake = new NoPathChannelUnboundZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.sent).toBe(1);
+    expect(fake.projectClicks).toBeGreaterThan(0);
+  });
+
+  it("菜单里出现两个同名项目时 fail-closed，不向任何项目发送", async () => {
+    const project = await makeTmpRoot("zcode-314-ambiguous");
+    cleanup.push(project);
+    const fake = new NoPathChannelAmbiguousZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("project_ambiguous");
+    expect(fake.sent).toBe(0);
+  });
+
+  it("反例：缺少显示名证据时仍 fail-closed（不把空路径当成已绑定）", async () => {
+    // 模拟修复前的回读形态：路径渠道为空、也没有显示名证据。
+    // 这正是 issue #24 的失败现场——修复后必须仍然明确失败，而不是猜一个项目就发。
+    const project = await makeTmpRoot("zcode-314-no-evidence");
+    cleanup.push(project);
+    class NoEvidenceZcode extends FakeZcode {
+      override async projects(): Promise<ZcodeProjectItem[]> {
+        return [{ name: path.basename(await this.boundProjectPath()), checked: true }];
+      }
+      override async workspaceBinding() {
+        return { triggerText: "", projectPath: "" };
+      }
+    }
+    const fake = new NoEvidenceZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 300 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("project_mismatch");
+    // 诊断必须带上触发器文本/菜单勾选态，用户才能自救。
+    expect(result.error).toMatch(/触发器文本/);
+    expect(fake.sent).toBe(0);
   });
 });
 

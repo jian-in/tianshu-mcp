@@ -13,10 +13,9 @@ import { mkdirp } from "../../util/fs.js";
 import { parseZcodeModel, exactUiName, ZcodeModelReadbackError } from "./model.js";
 import { validateTaskReferences } from "./references.js";
 import {
+  boundProjectVerdict,
   matchZcodeProject,
-  normalizeProjectPath,
   isUnboundTriggerText,
-  type ZcodeProjectItem,
 } from "./project.js";
 import { judgeZcodePoll, type ZcodePollState } from "./liveness.js";
 import {
@@ -148,12 +147,10 @@ async function waitBound(
 ): Promise<boolean> {
   for (let i = 0; i < 30; i++) {
     const binding = await cdp.workspaceBinding();
-    if (
-      !binding.ambiguous &&
-      binding.projectPath &&
-      normalizeProjectPath(binding.projectPath) === normalizeProjectPath(target)
-    )
-      return true;
+    // 与项目分支共用同一套分层判据（issue #24）：路径可得时严格判等，3.14.x 无路径渠道时按显示名。
+    // 点击菜单项后菜单会收起、列表为空，所以这里不传列表——不能因列表缺失而否定已确认的绑定。
+    const verdict = boundProjectVerdict(binding, { ambiguous: false }, target);
+    if (verdict.bound) return true;
     await deps.sleep(300);
   }
   return false;
@@ -530,38 +527,71 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         await deps.sleep(Math.min(300, Math.max(0, deadline - Date.now())));
       }
     };
-    const ensureProjectBound = async (
-      initialItem?: ZcodeProjectItem,
-    ): Promise<{ bound: boolean; ambiguous: boolean }> => {
-      const currentBinding = await cdp!.workspaceBinding();
-      if (currentBinding.ambiguous) return { bound: false, ambiguous: true };
-      if (
-        currentBinding.projectPath &&
-        normalizeProjectPath(currentBinding.projectPath) === normalizeProjectPath(ctx.projectPath)
-      )
-        return { bound: true, ambiguous: false };
-      let item = initialItem;
+    /**
+     * 绑定失败时的证据摘要：触发器文本、菜单勾选态与路径回读。
+     * issue #24 要求 fail-closed 时把这几项一并写进错误信息，用户在 ZCode 里能据此判断
+     * 到底绑到了哪个项目（而不是只看到一句「回读不一致」无从自救）。
+     */
+    const describeBinding = async (): Promise<string> => {
+      try {
+        const b = await cdp!.workspaceBinding();
+        return `触发器文本=${b.triggerText || "空"}；菜单勾选=${b.menuChecked?.length ? b.menuChecked.join("、") : "无"}；路径回读=${b.projectPath || "无"}`;
+      } catch {
+        return "绑定状态回读失败";
+      }
+    };
+
+    /**
+     * 读一次「当前绑定是否为目标项目」的分层判定（issue #24）：
+     * 路径可得时严格判等；无路径渠道（ZCode 3.14.x）时按显示名，并在列表可得时做同名消歧。
+     */
+    const readBoundVerdict = async () => {
+      const binding = await cdp!.workspaceBinding();
+      const match = matchZcodeProject(await cdp!.projects(), ctx.projectPath);
+      return { verdict: boundProjectVerdict(binding, match, ctx.projectPath), match };
+    };
+
+    /**
+     * 幂等确认绑定：每轮先读判定，已绑定即通过；未绑定则（必要时先展开菜单）点击目标项目再复检。
+     * 不再接受外部传入的 item——那会把「菜单是否恰好还开着」变成隐式前提（issue #24 暴露的脆弱时序）。
+     */
+    const ensureProjectBound = async (): Promise<{ bound: boolean; ambiguous: boolean }> => {
       for (let round = 0; round <= gui.setupRecoveryMaxRetries; round++) {
-        if (!item || round > 0) {
-          // eslint-disable-next-line no-await-in-loop
-          await cdp!.dismissMenus();
-          // eslint-disable-next-line no-await-in-loop
-          if (!(await cdp!.clickProjectTriggerAndConfirm(projectTriggerDeadline())).opened)
-            continue;
-          // eslint-disable-next-line no-await-in-loop
-          await deps.sleep(300);
-          // eslint-disable-next-line no-await-in-loop
-          const matched = matchZcodeProject(await cdp!.projects(), ctx.projectPath);
-          if (matched.ambiguous) return { bound: false, ambiguous: true };
-          item = matched.item;
-        }
-        if (!item) continue;
         // eslint-disable-next-line no-await-in-loop
-        const clicked = await cdp!.clickProject(item.id, item.path);
+        const { verdict, match } = await readBoundVerdict();
+        if (verdict.bound) return { bound: true, ambiguous: false };
+        if (verdict.ambiguous) return { bound: false, ambiguous: true };
+        if (match.item) {
+          // eslint-disable-next-line no-await-in-loop
+          const clicked = await cdp!.clickProject(
+            match.item.id,
+            match.item.path ?? ctx.projectPath,
+          );
+          // eslint-disable-next-line no-await-in-loop
+          if (clicked && (await waitBound(cdp!, ctx.projectPath, deps)))
+            return { bound: true, ambiguous: false };
+          continue;
+        }
+        // 目标不在当前列表（菜单多未展开）：显式展开菜单后再采集一次。
+        // eslint-disable-next-line no-await-in-loop
+        await cdp!.dismissMenus();
+        // eslint-disable-next-line no-await-in-loop
+        if (!(await cdp!.clickProjectTriggerAndConfirm(projectTriggerDeadline())).opened)
+          continue;
+        // eslint-disable-next-line no-await-in-loop
+        await deps.sleep(300);
+        // eslint-disable-next-line no-await-in-loop
+        const expanded = matchZcodeProject(await cdp!.projects(), ctx.projectPath);
+        if (expanded.ambiguous) return { bound: false, ambiguous: true };
+        if (!expanded.item) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const clicked = await cdp!.clickProject(
+          expanded.item.id,
+          expanded.item.path ?? ctx.projectPath,
+        );
         // eslint-disable-next-line no-await-in-loop
         if (clicked && (await waitBound(cdp!, ctx.projectPath, deps)))
           return { bound: true, ambiguous: false };
-        item = undefined;
       }
       return { bound: false, ambiguous: false };
     };
@@ -685,13 +715,13 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           pendingQuestion: "项目路径存在歧义，请在 ZCode 中确认目标项目后调用 continue_task。",
         });
       if (matched.item) {
-        const binding = await ensureProjectBound(matched.item);
+        const binding = await ensureProjectBound();
         if (!binding.bound)
           return result({
             hardFailure: true,
             error: binding.ambiguous
-              ? "项目绑定重试时目标项目无法唯一匹配"
-              : "ZCode 项目绑定有限重试均未生效",
+              ? `项目绑定重试时目标项目无法唯一匹配：${ctx.projectPath}；${await describeBinding()}`
+              : `ZCode 项目绑定有限重试均未生效：${ctx.projectPath}；${await describeBinding()}`,
             endReason: "project_mismatch",
             needsUserKind: "setup_recovery",
             pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",
@@ -850,8 +880,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         return result({
           hardFailure: true,
           error: finalBinding.ambiguous
-            ? "ZCode 项目绑定回读不一致，且重试时目标项目无法唯一匹配"
-            : "ZCode 项目绑定回读与 projectPath 不一致，有限幂等重试均失败",
+            ? `ZCode 项目绑定回读不一致，且重试时目标项目无法唯一匹配：${ctx.projectPath}；${await describeBinding()}`
+            : `ZCode 项目绑定回读与 projectPath 不一致，有限幂等重试均失败：${ctx.projectPath}；${await describeBinding()}`,
           endReason: "project_mismatch",
           needsUserKind: "setup_recovery",
           pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",

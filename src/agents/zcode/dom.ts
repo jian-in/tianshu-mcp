@@ -37,15 +37,25 @@ const trigger = triggerMatch.node;`;
 
 export function workspaceBindingExpression(overrides: Record<string, string>): string {
   return `(function(){${projectTriggerDom(overrides)}
-    if (!trigger) return {triggerText:'',projectPath:'',ambiguous:triggerMatch.count>1};
+    if (!trigger) return {triggerText:'',projectPath:'',projectName:'',menuChecked:[],ambiguous:triggerMatch.count>1};
     const triggerText = labelOf(trigger);
     // A path anywhere in the sidebar is not evidence of the composer's binding.
     const explicit = pathOf(trigger) || pathOf(trigger.querySelector('[data-project-path]'));
     const rows = [...document.querySelectorAll('[data-testid^="workspace-item-"]')];
     const matches = rows.filter(e => norm(labelOf(e)) === norm(triggerText));
     const paths = [...new Set(matches.map(pathOf).filter(Boolean))];
+    // issue #24：ZCode 3.14.x 删除了 data-project-path 与 workspace-item-*，路径渠道归零。
+    // 此时当前绑定只剩「显示名」这一证据：展开菜单里 aria-checked=true 的项最权威
+    // （它是 ZCode 自己渲染的绑定状态），菜单未开时退回触发器文本。
+    // 绝不把显示名写进 projectPath——路径字段保持为空，判定层据此区分证据等级。
+    const checked = [...document.querySelectorAll('[role="menuitemcheckbox"][aria-checked="true"]')]
+      .filter(visible).map(labelOf).filter(Boolean);
+    const menuChecked = [...new Set(checked)];
+    const projectName = menuChecked.length===1 ? menuChecked[0]
+      : (menuChecked.length===0 ? triggerText : '');
     return {triggerText, projectPath:explicit || (paths.length===1?paths[0]:''),
-      ambiguous:!explicit && paths.length>1};
+      projectName, menuChecked,
+      ambiguous:(!explicit && paths.length>1) || menuChecked.length>1};
   })()`;
 }
 

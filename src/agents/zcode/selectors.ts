@@ -17,6 +17,7 @@ export type ZcodeSelectorKey =
   | "runningCard"
   | "toolCall"
   | "projectItem"
+  | "projectMenuItem"
   | "projectPath"
   | "projectTrigger"
   | "addProject"
@@ -108,7 +109,13 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
     primary: '[data-testid^="workspace-item-"]',
     fallbacks: ['[class*="project-item"]', '[class*="workspace-item"]'],
     verifiedVersion: "3.11.x",
-    note: "项目列表项",
+    note: "3.11.x 的项目列表项。ZCode 3.14.x 已删除该契约（app.asar 扫描 0 命中），改用 projectMenuItem。",
+  },
+  projectMenuItem: {
+    primary: '[role="menuitemcheckbox"]',
+    fallbacks: [],
+    verifiedVersion: "3.14.x",
+    note: "工作区下拉中的项目项：textContent 即项目显示名，aria-checked 表示是否为当前绑定。3.14.x 下 workspace-item-* 与 data-project-path 均已不存在，这是唯一可用的绑定证据来源；仅在项目菜单展开时有效。",
   },
   projectPath: {
     primary: "[data-project-path]",

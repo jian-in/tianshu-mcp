@@ -169,6 +169,77 @@ async function uiState() {
   }
 }
 
+/**
+ * issue #24 真机取证：ZCode 3.14.x 是否真的删除了项目绑定的两处 DOM 契约。
+ *
+ * 输出各契约的命中计数、触发器全属性、展开菜单后的项目项清单，以及修复后的适配器回读结果。
+ * **会展开一次工作区菜单**（只读采集，不选中任何项）。
+ */
+async function domContracts() {
+  const endpoints = await cdpTargets();
+  const endpoint = endpoints.find((item) =>
+    item.targets?.some(
+      (target) =>
+        target.type === "page" && /z[ -]?code/i.test(`${target.title ?? ""} ${target.url ?? ""}`),
+    ),
+  );
+  if (!endpoint) return { ok: false, message: "没有通过产品标识核验的 ZCode CDP 页面" };
+  try {
+    const { ZcodeCdpClient } = await import("../dist/agents/zcode/cdp.js");
+    const client = new ZcodeCdpClient(endpoint.port, 10_000, {});
+    await client.connect();
+    try {
+      const counts = await client.evaluate(
+        `(function(){return {
+          dataProjectPath: document.querySelectorAll('[data-project-path]').length,
+          workspaceItems: document.querySelectorAll('[data-testid^="workspace-item-"]').length,
+          dataProjectName: document.querySelectorAll('[data-project-name]').length,
+          triggers: document.querySelectorAll('[data-testid="composer-workspace-trigger"]').length,
+          menuItemCheckbox: document.querySelectorAll('[role="menuitemcheckbox"]').length
+        }})()`,
+      );
+      const trigger = await client.evaluate(
+        `(function(){const e=document.querySelector('[data-testid="composer-workspace-trigger"]');if(!e)return null;const attrs={};for(const a of e.attributes)attrs[a.name]=a.value;return {text:(e.textContent||'').trim().slice(0,200),attrs}})()`,
+      );
+      // 项目身份只在菜单展开时可见：先收起残留菜单，再展开一次做只读采集。
+      await client.dismissMenus();
+      const opened = await client.clickProjectTriggerAndConfirm(Date.now() + 5_000);
+      const menuItems = opened.opened
+        ? await client.evaluate(
+            `(function(){return [...document.querySelectorAll('[role="menuitemcheckbox"]')].map(function(e){return {text:(e.textContent||'').trim().slice(0,200),checked:e.getAttribute('aria-checked'),testid:e.getAttribute('data-testid')||undefined};})})()`,
+          )
+        : [];
+      const binding = await client.workspaceBinding();
+      const projects = await client.projects();
+      await client.dismissMenus();
+      return {
+        ok: true,
+        port: endpoint.port,
+        counts,
+        trigger,
+        menuOpened: opened.opened,
+        menuItems,
+        binding,
+        projects,
+        verdict: {
+          // 两处旧契约都缺席 ⇒ 路径渠道不可用，适配器必须靠显示名完成绑定。
+          pathChannelAvailable: counts.dataProjectPath > 0 || counts.workspaceItems > 0,
+          nameChannelAvailable: binding.projectPath === "" && !!binding.projectName,
+          ambiguous: binding.ambiguous === true,
+        },
+      };
+    } finally {
+      client.disconnect();
+    }
+  } catch (e) {
+    return {
+      ok: false,
+      port: endpoint.port,
+      message: `绑定契约诊断失败：${e.message}。请先执行 npm run build。`,
+    };
+  }
+}
+
 async function menuControls(kind) {
   const endpoints = await cdpTargets();
   const endpoint = endpoints.find((item) =>
@@ -273,6 +344,7 @@ else if (command === "process") json(processInfo());
 else if (command === "cdp") json(await cdpTargets());
 else if (command === "models") json(await modelState());
 else if (command === "permission") json(await permissionState());
+else if (command === "dom-contracts") json(await domContracts());
 else if (command === "selectors")
   json({
     source: "src/agents/zcode/selectors.ts",

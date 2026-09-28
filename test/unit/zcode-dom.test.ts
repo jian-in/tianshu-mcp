@@ -338,3 +338,58 @@ describe("ZCode 发送失败诊断", () => {
     await expect(client.sendMessage()).rejects.toThrow(/未在观察期内启用或被遮挡/);
   });
 });
+
+/**
+ * issue #24：ZCode 3.14.x 删除了 `data-project-path` 与 `data-testid^="workspace-item-"`
+ * 两处 DOM 契约（issue 作者的 app.asar 全文扫描与 CDP 实测均为 0 命中）。
+ * 夹具刻意只保留 3.14.x 实际存在的结构（触发器 + 展开的 menuitemcheckbox 菜单），
+ * 用来复现「有项目派单恒败于 project_mismatch」的根因，并锁定修复后的回读契约。
+ */
+describe("ZCode 3.14.x 契约缺席（issue #24）", () => {
+  const v314 =
+    '<button data-testid="composer-workspace-trigger">Demo</button>' +
+    '<div role="menu">' +
+    '<div role="menuitemcheckbox" aria-checked="true">Demo</div>' +
+    '<div role="menuitemcheckbox" aria-checked="false">Other</div>' +
+    '<div role="menuitemcheckbox" aria-checked="false">不在项目中工作</div>' +
+    "</div>";
+
+  it("路径契约缺席时仍能回读当前绑定的显示名", async () => {
+    const { client } = fixture(v314);
+    const binding = await client.workspaceBinding();
+    // 环境事实：3.14.x 没有路径来源——不伪造路径，只补「显示名」这一可用证据。
+    expect(binding.projectPath).toBe("");
+    expect(binding.projectName).toBe("Demo");
+    expect(binding.menuChecked).toEqual(["Demo"]);
+    expect(binding.ambiguous).toBe(false);
+  });
+
+  it("projects() 改从展开菜单采集，并排除「不在项目中工作」", async () => {
+    const { client } = fixture(v314);
+    expect(await client.projects()).toEqual([
+      { name: "Demo", checked: true },
+      { name: "Other", checked: false },
+    ]);
+  });
+
+  it("菜单中同时勾选多项 → 绑定回读判歧义（fail-closed）", async () => {
+    const { client } = fixture(
+      '<button data-testid="composer-workspace-trigger">Demo</button>' +
+        '<div role="menu">' +
+        '<div role="menuitemcheckbox" aria-checked="true">Demo</div>' +
+        '<div role="menuitemcheckbox" aria-checked="true">Other</div>' +
+        "</div>",
+    );
+    expect(await client.workspaceBinding()).toMatchObject({ ambiguous: true });
+  });
+
+  it("3.11.x 的 workspace-item-* / data-project-path 证据链保持优先（无退化）", async () => {
+    const { client } = fixture(
+      `${primary}<div data-testid="workspace-item-D:/项目/Demo">Demo</div>` +
+        '<div role="menu"><div role="menuitemcheckbox" aria-checked="true">Demo</div></div>',
+    );
+    // 路径可得时必须仍以路径为准——这是老版本判等的兼容面。
+    expect((await client.workspaceBinding()).projectPath).toBe("D:/项目/Demo");
+  });
+});
+

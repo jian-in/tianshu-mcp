@@ -16,6 +16,7 @@ import {
 } from "../../src/agents/zcode/cdp.js";
 import { normalizeZcodeModelSelection, parseZcodeModel } from "../../src/agents/zcode/model.js";
 import {
+  boundProjectVerdict,
   isUnboundTriggerText,
   matchZcodeProject,
   normalizeProjectPath,
@@ -322,6 +323,70 @@ describe("ZCode 项目路径与引用", () => {
     expect(
       matchZcodeProject([{ name: "demo" }, { name: "demo" }], "/tmp/demo", "linux").ambiguous,
     ).toBe(true);
+  });
+  // --- issue #24：ZCode 3.14.x 无路径渠道时的判定 ---
+  it("无路径渠道时按显示名匹配并标出 matchedBy=name", () => {
+    const match = matchZcodeProject(
+      [
+        { name: "Demo", checked: true },
+        { name: "Other", checked: false },
+      ],
+      "D:\\项目\\Demo",
+      "win32",
+    );
+    expect(match.item?.name).toBe("Demo");
+    expect(match.matchedBy).toBe("name");
+    expect(match.ambiguous).toBe(false);
+  });
+  it("同名项带路径且与目标不符时保持 fail-closed", () => {
+    expect(
+      matchZcodeProject([{ name: "Demo", path: "D:/other/Demo" }], "D:\\项目\\Demo", "win32")
+        .ambiguous,
+    ).toBe(true);
+  });
+  it("绑定判定：显示名一致且列表无同名项 → 已绑定", () => {
+    const verdict = boundProjectVerdict(
+      { triggerText: "Demo", projectPath: "", projectName: "Demo", menuChecked: ["Demo"] },
+      { ambiguous: false, matchedBy: "name" },
+      "D:\\项目\\Demo",
+      "win32",
+    );
+    expect(verdict.bound).toBe(true);
+    expect(verdict.ambiguous).toBe(false);
+  });
+  it("绑定判定：显示名不一致 → 不绑定（不把显示名当路径）", () => {
+    expect(
+      boundProjectVerdict(
+        { triggerText: "Other", projectPath: "", projectName: "Other" },
+        { ambiguous: false },
+        "D:\\项目\\Demo",
+        "win32",
+      ).bound,
+    ).toBe(false);
+  });
+  it("绑定判定：列表存在同名歧义时显示名一致也不放过（fail-closed）", () => {
+    expect(
+      boundProjectVerdict(
+        { triggerText: "Demo", projectPath: "", projectName: "Demo" },
+        { ambiguous: true },
+        "D:\\项目\\Demo",
+        "win32",
+      ).ambiguous,
+    ).toBe(true);
+  });
+  it("绑定判定：路径可得时以路径为准，显示名不参与", () => {
+    const base = { triggerText: "Demo", projectPath: "D:/项目/Demo", projectName: "Demo" };
+    expect(boundProjectVerdict(base, { ambiguous: false }, "D:\\项目\\Demo", "win32").bound).toBe(
+      true,
+    );
+    expect(
+      boundProjectVerdict(
+        { ...base, projectPath: "D:/other/Demo" },
+        { ambiguous: false },
+        "D:\\项目\\Demo",
+        "win32",
+      ).bound,
+    ).toBe(false);
   });
   it("验证中文、空格目录引用并拒绝越界/不存在", async () => {
     const root = await makeTmpRoot("zcode refs 中文");
