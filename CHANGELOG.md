@@ -7,7 +7,7 @@
 
 ---
 
-## [0.7.1] — 未发布（MCP 主包，未打 tag、未发布 npm）
+## [0.7.1] - 2026-09-28
 
 > 本次变更把内置 agent `opendesign`（Open Design 桌面端，`driver=gui` / `adapter=opendesign-gui`）
 > 从「开发中」推进到**完整可派发**：选择器已按产品产物取证落地，12 步执行链全部接线，
@@ -92,7 +92,7 @@
 
 - [docs/opendesign-cdp.md](docs/opendesign-cdp.md) / [.en.md](docs/opendesign-cdp.en.md)：补选择器取证来源与证据表、传输层双路径结论、失败码表补齐。
 - ARCHITECTURE / README / agent-profiles / adapter-matrix / SKILL / usage-examples 双语：状态由「开发中」同步为「已接线」，并补齐新的 `endReason` / `needsUserKind` 取值。
-- 版本：`package.json` 与 `src/version.generated.ts` 同步为 `0.7.1`（按 `+0.0.1` 规则；**尚未打 tag、未发布 npm**）。
+- 版本：`package.json` 与 `src/version.generated.ts` 同步为 `0.7.1`（按 `+0.0.1` 规则）；已打 tag `v0.7.1` 并发布到 npm。
 
 ## [未发布] — mcp-gui 独立版本线
 

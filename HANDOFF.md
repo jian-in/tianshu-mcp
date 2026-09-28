@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-27 · 开发版本 `0.7.1`（**尚未打 tag、未发布 npm**）。**
+> **交接快照：2026-09-28 · 已发布版本 `0.7.1`（tag `v0.7.1` + npm `tianshu-mcp@0.7.1`）。**
 > **本轮（0.7.0 → 0.7.1）交付**：内置 agent `opendesign`（Open Design 桌面端）**从「开发中」推进到完整可派发**——
 > 选择器按产品产物取证落地、12 步执行链全部接线、并接入验收 → 自动返修 → 再验收闭环。
 > **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.9`，独立 tag `gui-v*`，独立演进；最近一轮把**侧栏底部的「刷新」上移到「数据目录」那一行**（与文件夹 / × 图标同排，侧栏底部不再常驻控件）；前两轮已按真机反馈补「已成功」指标、数据目录上移、设置面板改居中弹窗，并修好「手动下载」随源跳转）。
@@ -10,8 +10,13 @@
 > **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布），**五个 issue 均已回复并关闭**（2026-09-24）。
 > **#18~#22 的真机记录已全部补齐**（2026-09-25）：见 [issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md) 与 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)；各 issue 另附真机证据补充评论。
 > **⚠️ 仍有一条会阻断全部 Codex 派发的适配器缺陷**（`26.917.9434` 模型触发器回读混入整条思考等级条 → `model_mismatch`），尚未修复、建议单开 issue，详见下方「真机取证补记」与记录文件 §5。
-> **⚠️ Open Design 仍有一项真机验收未完成**：本机沙箱内 Open Design 主线程停在启动期（自身版本/遥测/计费请求不可达），
-> `/json` 与 `/json/version` 连接成功却无响应，故**真实 DOM 采集与真机全链路验收**待联网终端执行（见 `docs/opendesign-cdp.md` §4.4 与 `.dsh/plans/opendesign-gui-adapter-plan.md` §7.0/§9）。
+> **✅ Open Design 真机链路已跑通（2026-09-28）**：先前「主线程停在启动期、CDP 接不上」的阻塞已定位并修复 ——
+> 根因是**固定 `--remote-debugging-port` 被不承载窗口的 launcher 进程抢占并驻留**，真窗口进程绑定失败后
+> `/json/list` 恒为 `[]`（端口连得上却无 page target）。改用 `=0`（各拿随机端口）+ 按 `DevToolsActivePort`
+> 定位真窗口后，**真机 4 秒接管**。整条链路已验：绑定工作目录 → 选模型/设计系统/设计方向 → 输入发送 →
+> 轮询完成 → **产物取回**（`onboarding-guide.html` 落进任务目录，视觉验收识别入口）。
+> 剩余：zip 导出方式（产品主进程接管下载，`state=canceled`）待后续优化；`docs/opendesign-cdp.md` §4.4 的证据表仍可补。
+> 下面两段 2026-09-27 的旧结论保留作对照（当时的判断已被上一条取代）。
 > **2026-09-27 复测（联网环境）**：再次执行 `node scripts/probe-opendesign.mjs all --launch --save` —— 安装探测、数据目录推导与 `app-config.json` 读取全部正常（`0.24.1` / `release-stable-win`），
 > 但启动后 **90000ms 内 CDP 始终未就绪**（stderr 已宣告 `DevTools listening on ws://127.0.0.1:9889/...`，主线程仍卡在启动期请求），与上一条结论一致 ——
 > 阻塞在**应用自身启动路径**，与本机是否有外网无关。实测现场见 `docs/opendesign-evidence/opendesign-probe-2026-09-27T13-36-09-530Z.md`；
@@ -21,7 +26,7 @@
 
 ---
 
-### 内置 agent · Open Design 适配器接线完成（`0.7.1`，未发布，2026-09-27）
+### 内置 agent · Open Design 适配器接线完成（`0.7.1`，**已发布** 2026-09-28）
 
 - **范围**：`src/agents/opendesign/**`（新增 `transport.ts` / `menu.ts` / `send.ts` / `recovery.ts`，重写 `run.ts`、`selectors.ts`、`cdp.ts`），
   以及 `src/loop/fix-loop.ts`、`src/tasks/task-manager.ts`、`src/mcp/context.ts` 的 opendesign 接线。**未改 `tianshu-mcp-web/`**。
@@ -68,7 +73,7 @@
   ——已在代码注释里如实标注，不当成已解决。可试的下一步：① 面板里的「最近目录」
   （本轮实测点开后**没有**子列表，只有 `选择目录` / `最近使用的目录` 两项，故当前不可用）；
   ② 改用 `IFileDialog` 的 COM 接口而非 Win32 消息；③ 在能稳定复现的机器上抓对话框的选中项控件。
-- **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**未打 tag、未发 npm**；
+- **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**已打 tag `v0.7.1`、已发布 npm**；
   `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。
 
 ---

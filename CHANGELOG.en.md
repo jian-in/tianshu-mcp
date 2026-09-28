@@ -8,7 +8,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## [0.7.1] — Unreleased (MCP package; no tag, not published to npm)
+## [0.7.1] - 2026-09-28
 
 > This change moves the built-in agent `opendesign` (the Open Design desktop app, `driver=gui` /
 > `adapter=opendesign-gui`) from "in development" to **fully dispatchable**: selectors are now grounded in the
@@ -80,7 +80,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 - [docs/opendesign-cdp.md](docs/opendesign-cdp.md) / [.en.md](docs/opendesign-cdp.en.md): selector evidence sources and the evidence table, the two-path transport conclusion, and a completed failure-code table.
 - ARCHITECTURE / README / agent-profiles / adapter-matrix / SKILL / usage-examples (both languages): the status moves from "in development" to "wired", and the new `endReason` / `needsUserKind` values are added.
-- Versions: `package.json` and `src/version.generated.ts` are synced to `0.7.1` (per the `+0.0.1` rule; **no tag, not published to npm**).
+- Versions: `package.json` and `src/version.generated.ts` are synced to `0.7.1` (per the `+0.0.1` rule); tag `v0.7.1` pushed and published to npm.
 
 ## [Unreleased] — mcp-gui independent line
 
