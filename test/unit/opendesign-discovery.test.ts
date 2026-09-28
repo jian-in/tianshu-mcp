@@ -438,15 +438,21 @@ describe("Open Design 进程枚举与产品校验", () => {
   it("DevToolsActivePort 候选路径覆盖真机实测位置（默认 userData 根）与 namespace 两处", () => {
     const appData = path.join(tmpRoot, "AppData");
     const nsRoot = path.join(appData, "Open Design", "namespaces", "release-stable-win");
-    const paths = devToolsActivePortPaths(nsRoot, { APPDATA: appData });
+    // 路径基址按**宿主平台**注入：生产同源（win32 用 APPDATA，其他平台用 HOME/Library/Application Support）。
+    // 只注入 APPDATA 会让这条用例在 ubuntu/macos 腿上必红 —— 与 discovery 里那条同族教训一致
+    // （断言与宿主平台耦合，只在某一类机器上通过）。
+    const isWin = process.platform === "win32";
+    const env = isWin ? { APPDATA: appData } : { HOME: appData };
+    const defaultPortFile = isWin
+      ? path.join(appData, "Open Design", "DevToolsActivePort")
+      : path.join(appData, "Library", "Application Support", "Open Design", "DevToolsActivePort");
+    const paths = devToolsActivePortPaths(nsRoot, env);
     // 真机实测：文件落在**默认 userData 根**（应用随后才 setPath 到 namespace/user-data）
-    expect(paths).toContain(path.join(appData, "Open Design", "DevToolsActivePort"));
+    expect(paths).toContain(defaultPortFile);
     expect(paths).toContain(path.join(nsRoot, "DevToolsActivePort"));
     expect(paths.every((p) => path.isAbsolute(p))).toBe(true);
     // namespaceRoot 缺失时也必须给出默认根候选，否则随机端口模式无从定位
-    expect(devToolsActivePortPaths(null, { APPDATA: appData })).toContain(
-      path.join(appData, "Open Design", "DevToolsActivePort"),
-    );
+    expect(devToolsActivePortPaths(null, env)).toContain(defaultPortFile);
   });
 
   it("拒绝别的 Electron 应用：UA 不含 electron 或页面不是本产品", async () => {
