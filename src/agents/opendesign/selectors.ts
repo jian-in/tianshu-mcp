@@ -27,6 +27,7 @@ export type OpenDesignSelectorKey =
   | "workingDirTrigger"
   | "selectDirItem"
   | "recentDirTrigger"
+  | "recentDirList"
   | "recentDirItem"
   | "workingDirValue"
   | "modelTrigger"
@@ -38,7 +39,10 @@ export type OpenDesignSelectorKey =
   | "designDirectionItem"
   | "sendButton"
   | "stopButton"
-  | "conversationText";
+  | "conversationText"
+  | "exportTrigger"
+  | "exportMenu"
+  | "exportMenuItem";
 
 export interface OpenDesignSelectorSpec {
   /**
@@ -139,6 +143,10 @@ export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSele
     primary: '[data-testid="working-dir-recent"]',
     texts: ["最近使用的目录"],
   },
+  /** 「最近使用的目录」列表容器：点开入口后挂载。`recentDirItem` 以它为 scope（见该键注释） */
+  recentDirList: {
+    primary: '[data-testid="working-dir-recent-list"]',
+  },
   /**
    * 最近目录列表项：无稳定 testid（探针只在**点开前**采集过面板），故用宽选择器 + **文本精确匹配**
    * （`exactMatchPointExpression` 负责 NFKC 归一后的全等，多命中即拒绝）。
@@ -146,6 +154,11 @@ export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSele
   recentDirItem: {
     primary: '[role="menuitem"]',
     fallbacks: ['[role="option"]', '[data-testid="working-dir-recent-item"]'],
+    // **必须限定在「最近使用的目录」列表容器内**：面板顶层的「选择目录」「最近使用的目录」
+    // 两项同样是 `role=menuitem`，不限定 scope 就会混进命中集合
+    // （真机 2026-09-27 实测：不限定 scope 时 available 只有那两项，目标项永远匹配不上，
+    //  于是白白判定「最近目录路线不可用」）。
+    scope: '[data-testid="working-dir-recent-list"]',
   },
   /** 工作目录显示值：回读触发器上的标签文本（绑定是否生效的唯一权威判据） */
   workingDirValue: {
@@ -159,10 +172,18 @@ export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSele
     primary: '[data-testid="inline-model-switcher-chip"]',
     fallbacks: ['[data-testid="model-picker-trigger"]', '[data-testid="inline-model-switcher"]'],
   },
-  /** 模型菜单项：listbox 形态的 `role="option"`（触发器 `aria-haspopup="listbox"`） */
+  /**
+   * 模型菜单项：真机实测（2026-09-28）是 **`role="radio"`**（radiogroup 成员），**不是** `option`
+   * —— 按 `[role=option]` 找会恒为 0，表现为「点了触发器但 15s 内没有可选项」。
+   * 每项带稳定 testid `inline-model-switcher-compact-model-<modelId>`；同前缀还有 `-lock-` 变体，
+   * 那是「升级后使用」的锁标记而非选项本身，必须排除。
+   * 另注意：菜单里显示的是**短名**（`v4.1-flash`），testid 里的才是完整 id（`deepseek-v4.1-flash`）。
+   */
   modelMenuItem: {
-    primary: '[role="option"]',
-    fallbacks: ['[role="menuitemradio"]', '[role="menuitem"]'],
+    primary: '[data-testid^="inline-model-switcher-compact-model-"]',
+    fallbacks: ['[role="radio"]'],
+    excludes: ['[data-testid*="-lock-"]'],
+    scope: '[data-testid="inline-model-switcher-popover"]',
   },
   /** 设计系统触发器：composer 图标形态 / 首页 footer 形态 / 项目选择器入口 */
   designSystemTrigger: {
@@ -173,15 +194,23 @@ export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSele
       '[data-testid="project-ds-picker-trigger"]',
     ],
   },
-  /** 设计系统搜索框（面板打开后才出现） */
+  /** 设计系统搜索框（面板打开后才出现）。真机实测（2026-09-28）：testid 是 `project-ds-picker-search` */
   designSystemSearch: {
-    primary: '[data-testid="design-system-search"]',
-    fallbacks: [".ds-picker-search", '[data-testid="model-picker-search"]'],
+    primary: '[data-testid="project-ds-picker-search"]',
+    fallbacks: ['[data-testid="design-system-search"]'],
   },
-  /** 设计系统列表项（同一面板内也是 listbox 形态） */
+  /**
+   * 设计系统列表项。真机实测（2026-09-28）：
+   * - 面板容器 `project-ds-picker-popover`，列表 `project-ds-picker-list`（listbox）；
+   * - 选项本体带 `role="option"` 且 testid 形如 `project-ds-picker-option-<id>`；
+   * - 同前缀还有 `-group-*`（分组标签，`role=presentation`）与 `-check` 后缀（勾选标记），**都不是选项**，
+   *   不排除会让「唯一点击」判据必然失败。
+   */
   designSystemItem: {
     primary: '[role="option"]',
-    fallbacks: ['[role="menuitemradio"]', '[role="listitem"]'],
+    fallbacks: ['[data-testid^="project-ds-picker-option-"]', '[role="menuitemradio"]'],
+    excludes: ['[data-testid$="-check"]'],
+    scope: '[data-testid="project-ds-picker-popover"]',
   },
   /**
    * 设计方向（界面上的「创建类型」选择器）：`home-hero-template-picker` 内含
@@ -218,6 +247,25 @@ export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSele
   conversationText: {
     primary: '[data-testid="chat-log"]',
     fallbacks: ["[class*=chat-log i]"],
+  },
+  /**
+   * 「导出」按钮（产物落到项目目录的唯一入口；真机取证 2026-09-28）。
+   * **无 testid**：产品只给了文本，故按可见文本精确匹配。
+   * 注意：产物卡片上也有一个「导出」按钮（`artifact-card-export-*`），
+   * 工具栏那个才是导出整个设计——`excludes` 把卡片上的排除掉，避免多命中。
+   */
+  exportTrigger: {
+    primary: "button",
+    texts: ["导出"],
+    excludes: ['[data-testid^="artifact-card-"]'],
+  },
+  /** 导出下拉菜单（`role=menu`） */
+  exportMenu: {
+    primary: '[role="menu"]',
+  },
+  /** 导出方式菜单项（`role=menuitem`，四项：PDF / 图片 / .zip / 独立 HTML；无 testid → 文本精确匹配） */
+  exportMenuItem: {
+    primary: '[role="menuitem"]',
   },
 };
 
@@ -315,13 +363,17 @@ export function specArgs(
   overrides: Record<string, string> = {},
   key?: string,
 ): string {
+  const override = key ? overrides[key]?.trim() : undefined;
   return JSON.stringify([
     cssCandidates(spec, overrides, key),
     spec.texts ?? [],
     spec.ariaLabels ?? [],
     spec.ariaPatterns ?? [],
     spec.excludes ?? [],
-    spec.scope ?? "",
+    // 覆盖是**权威的**：profile 一旦给出该键的选择器，就连 scope 一起作废 ——
+    // 否则内置 scope 会继续把用户给的新选择器限制在旧容器里，
+    // 表现为「热修复选择器反而把功能彻底关掉」（与 cssCandidates 注释里那条同名教训同源）。
+    override ? "" : (spec.scope ?? ""),
   ]);
 }
 

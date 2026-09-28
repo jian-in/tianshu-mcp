@@ -420,6 +420,34 @@ export class OpenDesignCdpClient {
    * 在输入框内键入文本：先可信点击聚焦，再走 `Input.insertText`（真实输入管线，
    * Lexical/contenteditable 友好；直接改 textContent 不会触发 React 的 onChange）。
    */
+  /**
+   * 清空任务输入框（点入 → 全选 → 删除 → 回读确认为空）。
+   *
+   * 为什么必须在输入任务书**之前**做（真机 2026-09-28 实测）：首页输入框可能残留产品模板
+   * 或上一次的草稿（例如「游戏化习惯应用…」），而 `Input.insertText` 是**插到光标处**、
+   * 不是替换全文 —— 结果是「模板 + 任务书」混在一起（真机上就是 55 字的混合文本），
+   * 回读不含本次标记，适配器只能 fail-closed 放弃发送；用户看到的现象正是「没有点击发送按钮」。
+   */
+  async clearInput(): Promise<boolean> {
+    const hit = await this.evaluate<{ count: number; point?: OpenDesignPoint }>(
+      singlePointExpression(selectorSpecFor("inputBox", this.overrides)),
+    );
+    if (hit.count !== 1 || !hit.point) return false;
+    await this.clickAt(hit.point);
+    await this.sleepFn(100);
+    // 与 clearAndType 同一套原语：Ctrl+A 全选 + Delete
+    await this.key("a", "KeyA", 65, { modifiers: 2 });
+    await this.key("Delete", "Delete", 46);
+    await this.sleepFn(120);
+    return true;
+  }
+
+  /**
+   * 在任务输入框里键入任务书。
+   *
+   * **调用方必须先 `clearInput()`**（见 `dispatchTask`）：本方法只负责"输入"这一件事，
+   * 不做隐式清场 —— 清空与否是可观测的行为，藏进这里就无法在单测里断言调用顺序。
+   */
   async typeText(text: string): Promise<void> {
     const hit = await this.evaluate<{ count: number; point?: OpenDesignPoint }>(
       singlePointExpression(selectorSpecFor("inputBox", this.overrides)),
@@ -457,9 +485,51 @@ export class OpenDesignCdpClient {
     return true;
   }
 
+  /* ------------------------------ 导出段（步 9.5） ------------------------------ */
+
+  /** 当前页面 URL —— 导出段据此推导产物名（`od://.../files/onboarding-guide.html`） */
+  async currentUrl(): Promise<string> {
+    return this.evaluate<string>("location.href");
+  }
+
+  /**
+   * 按**可见文本**精确点一个按钮。
+   *
+   * 为什么需要它：工具栏「导出」按钮**没有 testid**（真机取证 2026-09-28），产品只给了文本；
+   * 语义键 `exportTrigger` 用 `texts:["导出"]` + `excludes`（排除产物卡片上的同名按钮）来消歧，
+   * 这里仍要求**唯一命中**才点——多命中说明排除规则没覆盖住，宁可报错也不猜。
+   */
+  async clickByText(text: string): Promise<{ clicked: boolean; count: number }> {
+    const hit = await this.evaluate<{ count: number; point?: OpenDesignPoint }>(
+      exactMatchPointExpression("exportTrigger", text, this.overrides),
+    );
+    if (hit.count !== 1 || !hit.point) return { clicked: false, count: hit.count };
+    await this.clickAt(hit.point);
+    return { clicked: true, count: 1 };
+  }
+
+  /** 等导出菜单（`role=menu`）出现 */
+  async waitForMenu(timeoutMs: number): Promise<boolean> {
+    return this.waitFor(() => this.exists("exportMenu"), timeoutMs);
+  }
+
+  /** 按文本精确点导出方式菜单项；未命中时回显可见候选（fail-closed 报错要能直接读） */
+  async clickMenuItem(
+    text: string,
+  ): Promise<{ clicked: boolean; count: number; available: string[] }> {
+    const hit = await this.evaluate<{
+      count: number;
+      available?: string[];
+      point?: OpenDesignPoint;
+    }>(exactMatchPointExpression("exportMenuItem", text, this.overrides));
+    const available = hit.available ?? [];
+    if (hit.count !== 1 || !hit.point) return { clicked: false, count: hit.count, available };
+    await this.clickAt(hit.point);
+    return { clicked: true, count: 1, available };
+  }
+
   /** Escape 关闭浮层（尽力而为；浮层未关闭由后续回读判据兜底） */
-  async dismissMenus(): Promise<void> {
-    try {
+  async dismissMenus(): Promise<void> {    try {
       await this.evaluate(dismissExpression(this.overrides));
     } catch {
       /* 尽力而为 */

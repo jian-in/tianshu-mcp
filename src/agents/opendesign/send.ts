@@ -13,6 +13,8 @@ import type { OpenDesignPollSnapshot } from "./cdp.js";
 export interface OpenDesignSendPage {
   inputText(): Promise<string>;
   conversationText(): Promise<string>;
+  /** 清空任务输入框（全选 + 删除）。**输入任务书前必须先调用**，见 dispatchTask 注释 */
+  clearInput(): Promise<boolean>;
   typeText(text: string): Promise<void>;
   clickKey(
     key: "sendButton",
@@ -77,6 +79,22 @@ export interface DispatchTaskInput {
 export async function dispatchTask(input: DispatchTaskInput): Promise<SendOutcome> {
   const { page, text, marker } = input;
   const before = await page.conversationText().catch(() => "");
+
+  /**
+   * **先清空再输入**（真机 2026-09-28 实测）：首页输入框可能残留产品模板或上次草稿，
+   * 而 `Input.insertText` 是**插到光标处**、不是替换全文 —— 真机上就出现了
+   * 「游戏化习惯应用 制作一份新员工入职指南… 应用，用经验值…」这种模板与任务书混杂的 55 字文本，
+   * 回读不含本次标记，于是 fail-closed 放弃发送；用户看到的现象正是「没有点击发送按钮」。
+   */
+  const cleared = await page.clearInput().catch(() => false);
+  if (!cleared)
+    return {
+      ok: false,
+      reason: "input_mismatch",
+      before,
+      message:
+        "任务输入框无法唯一定位（清空失败）——选择器可能已漂移或页面不在首页；已放弃发送，避免把任务插进残留文本",
+    };
 
   await page.typeText(text);
   // 输入回读：受控编辑器可能晚一拍才反映 insertText，**重读一次**（计划 §5「重试一次后硬失败」）；

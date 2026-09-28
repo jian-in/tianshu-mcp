@@ -33,6 +33,7 @@ import type {
 import type { GuiProfile, OpenDesignProfile } from "../../config/schema.js";
 import { OPEN_DESIGN_DEFAULTS, ZCODE_SETUP_DEFAULTS } from "../../config/schema.js";
 import { makeEmitter } from "../agent-events.js";
+import { fetchArtifactForSummary } from "./artifact.js";
 import { validateTaskReferences } from "../zcode/references.js";
 import {
   ensureOpenDesignInstance,
@@ -41,6 +42,7 @@ import {
   readAppConfig,
   rootOpenDesignProcesses,
   versionGateError,
+  waitForDaemonReady,
   type OpenDesignInstanceOptions,
   type OpenDesignProcess,
   type OpenDesignReady,
@@ -571,6 +573,39 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
 
     // ---- 步 3：绑定工作目录（首次派发且给了项目路径时） ----
     if (initialDispatch && ctx.projectPath.trim()) {
+      // 真机取证（2026-09-28）：产品打开「文件夹选择器」前必须先与 **daemon sidecar** 完成鉴权握手。
+      // daemon 未就绪时它只显示自己的守卫文案
+      //   「Couldn't open the folder picker (desktop auth handshake with the daemon failed; please retry)」
+      // 并且**根本不弹对话框** —— 适配器若照常点「选择目录」，那就是一次空操作，
+      // 表现为「原生对话框流程走完、工作目录却没变」（此前多次复现且时好时坏）。
+      // 实测 daemon 在应用启动后约 30s 才驻留（0 → 2 个进程），所以这里必须先等它，而不是抢跑。
+      budget.setStage("等待 Open Design daemon 就绪");
+      const daemonReady = await waitForDaemonReady(
+        {
+          signal: opts.signal,
+          deadline: started + ctx.taskTimeoutMs,
+          // 走注入的进程枚举（否则测试会读本机真实进程，导致用例随「本机是否开着 Open Design」飘）
+          listProcesses: deps.listProcesses,
+        },
+        90_000,
+      );
+      if (!daemonReady) {
+        await emit(
+          "awaiting_user_authorization",
+          "Open Design daemon 未就绪（工作目录选择器依赖 desktop↔daemon 鉴权握手），等待人工处理",
+          { round: ctx.round },
+        );
+        return result({
+          endReason: "needs_user",
+          needsUserKind: "setup_recovery",
+          pendingQuestion:
+            "Open Design 的后台 daemon 尚未就绪，工作目录选择器现在还打不开" +
+            "（产品会提示 desktop 与 daemon 的鉴权握手失败）。请确认 Open Design 已正常联网并保持在运行中，" +
+            "随后调用 continue_task 继续。",
+          progressSummary: "等待 Open Design daemon 就绪",
+        });
+      }
+      logger.info("[opendesign] daemon 已就绪，开始绑定工作目录");
       budget.setStage("绑定工作目录");
       const rootPids = rootOpenDesignProcesses(
         await deps.listProcesses({ signal: opts.signal }),
@@ -762,6 +797,8 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
       onAbort: abortResult,
       actualModel,
       noProject: !ctx.projectPath.trim(),
+      // 产物数据根：<namespaceRoot>/data（产物存储为 <dataRoot>/projects/<projectId>/）
+      artifactDataRoot: namespaceRoot ? path.join(namespaceRoot, "data") : null,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -867,6 +904,8 @@ interface ObserveArgs {
   actualModel?: string;
   /** 无 projectPath：终态文案必须**如实**说明已跳过目录绑定与视觉验收（计划 §4） */
   noProject?: boolean;
+  /** 产物数据根（<namespaceRoot>/data）：终态后据此把设计稿取回项目目录，供视觉验收 */
+  artifactDataRoot?: string | null;
 }
 
 /**
@@ -969,7 +1008,15 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
         error: `Open Design 任务总时限已到（轮询判定）${noProjectNote}`,
         actualModel: args.actualModel,
       });
-    if (verdict.kind === "finished")
+    if (verdict.kind === "finished") {
+      // 终态后把设计稿从产品存储取回项目目录（视觉验收的数据来源）。
+      // 取回失败**不改终态**，只如实写进 summary —— 它是增值步骤，不是成败判据。
+      const fetched = await fetchArtifactForSummary({
+        page: client,
+        dataRoot: args.artifactDataRoot ?? null,
+        targetDir: ctx.projectPath,
+        logger,
+      });
       return {
         ok: true,
         exitCode: 0,
@@ -980,7 +1027,8 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
         endReason: "reply_stable",
         keptInstance: true,
         actualModel: args.actualModel,
-        progressSummary: `Open Design 已完成本轮（对话与产物均静止）${noProjectNote}`,
+        progressSummary: `Open Design 已完成本轮（对话与产物均静止）${fetched}${noProjectNote}`,
       };
+    }
   }
 }

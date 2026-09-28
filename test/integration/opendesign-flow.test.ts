@@ -133,7 +133,17 @@ function makeDeps(
 ): Partial<OpenDesignRunDeps> {
   return {
     ensureInstance: async () => ({ ready: { port: 9889, title: "Open Design", pid: 4242 } }),
-    listProcesses: async () => [],
+    // 必须给出一行 **daemon sidecar** 进程：绑定工作目录前的 `waitForDaemonReady` 依赖它。
+    // 真机实测（2026-09-28）产品打开文件夹选择器前要先与 daemon 完成鉴权握手，daemon 未就绪时
+    // 它根本不弹对话框；所以适配器会先等 daemon。桩若返回空数组，这轮就会一路等到 deadline
+    // 并落成 needs_user（真机上表现为「对话框明明在、却报环境需要人工恢复」）。
+    listProcesses: async () => [
+      {
+        pid: 4242,
+        commandLine:
+          '"C:\\Open Design\\Open Design.exe" "C:\\Open Design\\resources\\app\\prebundled\\daemon\\daemon-sidecar.mjs"',
+      },
+    ],
     probePort: async () => ({ ready: true, version: "Electron/41.3.0" }),
     createPage: () => new FakeOpenDesignPage(state) as never,
     // makeClient 不覆盖：走真实 OpenDesignCdpClient（表达式 + 坐标点击全链路）
@@ -348,11 +358,18 @@ describe("Open Design GUI 驱动（假 CDP）", () => {
     });
     const { res, events } = await run(state, {
       deps: {
-        // 残留清理只在「枚举到根进程」时才做，故这里必须给出一个根进程行
+        // 残留清理只在「枚举到根进程」时才做，故这里必须给出一个根进程行。
+        // 同时保留一行 daemon sidecar：绑定目录前的 `waitForDaemonReady` 需要它，
+        // 否则本用例会在等 daemon 上耗到 deadline（真机同因，见 makeDeps 注释）。
         listProcesses: async () => [
           {
             pid: 4242,
             commandLine: '"C:\\Open Design\\Open Design.exe" --remote-debugging-port=9889',
+          },
+          {
+            pid: 4243,
+            commandLine:
+              '"C:\\Open Design\\Open Design.exe" "C:\\Open Design\\resources\\app\\prebundled\\daemon\\daemon-sidecar.mjs"',
           },
         ],
         listDialogs: async () => ["文件夹选择（残留，测试桩）"],

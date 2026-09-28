@@ -204,11 +204,15 @@ public static class TianshuOdDlg {
   [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h, int id);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
   public const uint WM_SETTEXT = 0x000C;
   public const uint WM_GETTEXT = 0x000D;
   public const uint WM_KEYDOWN = 0x0100;
   public const uint WM_KEYUP = 0x0101;
+  public const uint WM_LBUTTONDOWN = 0x0201;
+  public const uint WM_LBUTTONUP = 0x0202;
   public const uint BM_CLICK = 0x00F5;
   // 旧式「浏览文件夹」(#32770 + Shell 树) 设置**选中项**的官方消息：WM_USER+103（W 版，lParam 为路径字符串）
   public const uint BFFM_SETSELECTIONW = 0x0400 + 103;
@@ -313,24 +317,10 @@ if($editHandle -ne [IntPtr]::Zero -and [TianshuOdDlg]::IsWindowVisible($editHand
   # 上一步的「回读一致」读的是刚写进去的那个控件自身，属自证，不能证明应用会接受。
   # 若就此点「确定」，对话框会正常关闭、而应用仍用原目录 —— 表现为「对话框关了、工作目录却没变」。
   # 故补一次 Enter 让对话框真正导航/确认该路径；后续仍按「对话框是否关闭」收敛，不新增放行条件。
-  if($mode -eq 'wm-settext'){
-    Write-Output 'native:settext-enter'
-    # 直接把回车发给**编辑框**（WM_KEYDOWN/UP + VK_RETURN），不走 SendKeys：
-    # SendKeys 依赖「对话框已获前台焦点」，真机 2026-09-27 里同样的 Enter 一次生效一次没生效，
-    # 结果一次绑定成功、一次「对话框关了但工作目录没变」。给控件发消息与焦点无关，
-    # 标准文件夹对话框的 edt1 收到回车即按其内容导航。
-    [void][TianshuOdDlg]::SendMessage($editHandle,[TianshuOdDlg]::WM_KEYDOWN,[IntPtr]13,[IntPtr]::Zero)
-    [void][TianshuOdDlg]::SendMessage($editHandle,[TianshuOdDlg]::WM_KEYUP,[IntPtr]13,[IntPtr]::Zero)
-    Start-Sleep -Milliseconds 1200
-    # 诊断（真机 2026-09-27）：回车究竟做了什么——编辑框内容是否还在、对话框是否还活着、
-    # 确认按钮是否可用。三者组合能区分「回车没被接受」「回车关掉了对话框」「回车后按钮仍禁用」。
-    $postEdit = Read-Back $editHandle
-    $alive = [TianshuOdDlg]::IsWindow($dialogHandle)
-    $okBtn = [TianshuOdDlg]::GetDlgItem($dialogHandle,$CONFIRM_ID)
-    $okEnabled = 'n/a'
-    if($okBtn -ne [IntPtr]::Zero){ if([TianshuOdDlg]::IsWindowEnabled($okBtn)){$okEnabled='yes'}else{$okEnabled='no'} }
-    Write-Output "native:after-enter edit='$postEdit' dialogAlive=$alive confirmEnabled=$okEnabled"
-  }
+  # 刻意**不**发回车（真机 2026-09-28 枚举子控件后确认）：回车被解释为「导航」，
+  # 导航成功的同时会把「文件夹:」编辑框(edt1) **清空**，而确定按钮返回的正是 edt1 的内容 ——
+  # 这就是「对话框正常关闭、工作目录却没变」以及此前时好时坏的直接原因。
+  # 路径的保证由「WM_SETTEXT + 点确定前的校准」承担（见 native:refill-before-submit）。
 }
 
 # ---- 路线 2：纯键盘（Ctrl+A → 输入 → Enter），再回读校验 ----
@@ -355,15 +345,37 @@ if($mode -eq 'none' -and $readback -ne ''){
   throw "OD_DIALOG_READBACK_MISMATCH:$readback"
 }
 
+  # 点「确定」前**最后一次校准 edt1**。
+  # 真机取证（2026-09-28，枚举对话框子控件）：地址栏已正确显示「地址: D:\…\test」、而
+  # 「文件夹:」编辑框(id=1152) 是**空的** —— 因为回车被解释为「导航」，导航成功的同时把 edt1 清空了；
+  # 而旧式「浏览文件夹」的确定按钮返回的正是 edt1 的内容，于是「对话框正常关闭、目录却没变」。
+  # 这正是此前时好时坏（一次成功、多次失败）的来源。
+  $finalCheck = Read-Back $editHandle
+  if(-not (Paths-Match $finalCheck $nativePath)){
+    Write-Output 'native:refill-before-submit'
+    [void][TianshuOdDlg]::SendMessage($editHandle,[TianshuOdDlg]::WM_SETTEXT,[IntPtr]::Zero,$nativePath)
+    Start-Sleep -Milliseconds 400
+    $finalCheck = Read-Back $editHandle
+    Write-Output "native:refilled edit='$finalCheck'"
+  }
+
 Write-Output 'native:submit'
 $confirm=[TianshuOdDlg]::GetDlgItem($dialogHandle,$CONFIRM_ID)
 if($confirm -ne [IntPtr]::Zero -and [TianshuOdDlg]::IsWindowVisible($confirm)){
-  [void][TianshuOdDlg]::SendMessage($confirm,[TianshuOdDlg]::BM_CLICK,[IntPtr]::Zero,[IntPtr]::Zero)
-  Write-Output 'native:submit-bm-click'
+  # 用**真实鼠标按键消息**点「选择文件夹」，而不是 BM_CLICK。
+  # 真机取证（2026-09-28）：BM_CLICK 能让对话框正常关闭、应用却始终不接受该目录
+  # （工作目录回读仍是「工作目录」）；产品文档/操作截图里强调的也是「点击」这个按钮。
+  # WM_LBUTTONDOWN/UP 直发按钮（定向、不依赖窗口在前台），按钮随后自行向父窗口发 BN_CLICKED。
+  # 坐标为按钮客户区中心（lParam = y<<16 | x）。
+  $rc=New-Object TianshuOdDlg+RECT
+  [void][TianshuOdDlg]::GetClientRect($confirm,[ref]$rc)
+  $lx=[int](($rc.Right - $rc.Left)/2); $ly=[int](($rc.Bottom - $rc.Top)/2)
+  $lp=[IntPtr](($ly -shl 16) -bor ($lx -band 0xFFFF))
+  [void][TianshuOdDlg]::SendMessage($confirm,[TianshuOdDlg]::WM_LBUTTONDOWN,[IntPtr]1,$lp)
+  Start-Sleep -Milliseconds 90
+  [void][TianshuOdDlg]::SendMessage($confirm,[TianshuOdDlg]::WM_LBUTTONUP,[IntPtr]0,$lp)
+  Write-Output 'native:submit-real-click'
 } elseif([TianshuOdDlg]::IsWindow($dialogHandle)){
-  # 控件 id 漂移时退回 Enter（标准选择器的默认按钮）。
-  # 前提是对话框**还在**：若它已被上一步 Enter 关掉，这里再发 Enter 会打到前台的其他窗口，
-  # 可能触发意外操作（真机 2026-09-27 加固）。
   [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
   Write-Output 'native:submit-enter'
 } else {
@@ -471,5 +483,288 @@ export async function selectOpenDesignFolder(
         message: "已提交路径但对话框未在预算内关闭；无法确认目录绑定生效。",
       };
     return { ok: false, reason: "error", message: raw };
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 「另存为」对话框（导出产物用）
+ *
+ * 与上面的「选择文件夹」**不同一族**：那个是 SHBrowseForFolder（`文件夹:` edt1=1152），
+ * 这个是 GetSaveFileName（`文件名(N):` edt1=1148 + `保存类型(T):`），真机取证（2026-09-28）：
+ * - 标题是 `blob:od://app/<uuid>`（产品用 Blob 下载，不是固定标题）；
+ * - **默认目录是「下载」** —— 直接把产物留在下载目录是最常见的「导出成功却没文件」；
+ * - 标准技巧：**在「文件名」框里填完整路径**（`D:\dir\file.html`）→ Windows 会自动导航并把
+ *   文件名填好，比在地址栏敲目录更稳（地址栏是 ToolbarWindow32，不是 Edit，无法 WM_SETTEXT）。
+ *   地址栏路线作为回退保留。
+ * ------------------------------------------------------------------ */
+
+export const WINDOWS_SAVE_DIALOG_SCRIPT = String.raw`
+$ErrorActionPreference='Stop'
+$deadline=[DateTimeOffset]::FromUnixTimeMilliseconds([Int64]$env:TIANSHU_OD_DIALOG_DEADLINE).LocalDateTime
+function Assert-Deadline { if((Get-Date) -ge $deadline){throw 'OD_SAVE_TIMEOUT'} }
+Write-Output 'save:initialize'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class TianshuOdSave {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc p, IntPtr l);
+  [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, string l);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, StringBuilder l);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h, int id);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  public const uint WM_SETTEXT = 0x000C;
+  public const uint WM_GETTEXT = 0x000D;
+  public const uint WM_LBUTTONDOWN = 0x0201;
+  public const uint WM_LBUTTONUP = 0x0202;
+  public const uint WM_KEYDOWN = 0x0100;
+  public const uint WM_KEYUP = 0x0101;
+}
+'@
+# GetSaveFileName 的标准控件 id：1148 = 「文件名(N):」编辑框，1 = 「保存」按钮
+$NAME_ID = 1148
+$SAVE_ID = 1
+$owners=($env:TIANSHU_OD_PIDS -split ',')
+$baseline=@($env:TIANSHU_OD_BASELINE -split ',' | Where-Object { $_ -ne '' })
+$fullPath=$env:TIANSHU_OD_SAVE_PATH
+$targetDir=$env:TIANSHU_OD_SAVE_DIR
+
+function Get-Title([IntPtr]$h) {
+  $sb=New-Object Text.StringBuilder 512
+  [void][TianshuOdSave]::GetWindowText($h,$sb,$sb.Capacity); return $sb.ToString()
+}
+# 只认「新出现」且属于本产品进程组的 #32770
+function Get-NewDialogs {
+  $script:found=@()
+  [TianshuOdSave]::EnumWindows({param($h,$l)
+    if([TianshuOdSave]::IsWindowVisible($h)){
+      [uint32]$owner=0
+      [void][TianshuOdSave]::GetWindowThreadProcessId($h,[ref]$owner)
+      if($owners -contains [string]$owner){
+        $cls=New-Object Text.StringBuilder 256
+        [void][TianshuOdSave]::GetClassName($h,$cls,$cls.Capacity)
+        if($cls.ToString() -eq '#32770'){
+          $t=Get-Title $h
+          if($baseline -notcontains "dialog:$($h.ToInt64()):$t"){$script:found += $h}
+        }
+      }
+    }
+    return $true
+  },[IntPtr]::Zero)|Out-Null
+  return $script:found
+}
+
+Write-Output 'save:find-dialog'
+$dlg=[IntPtr]::Zero
+do {
+  $handles=@(Get-NewDialogs)
+  if($handles.Count -ge 1){
+    # 保存对话框必有「文件名」框（id=1148）；标题是 blob: 不能当判据，故用控件消歧。
+    # 注意：PowerShell 里用 + 拼接（双引号内嵌套 $(...) 会把变量当字面量，真机 2026-09-28 踩过）。
+    $withName=@($handles | Where-Object { $p=[TianshuOdSave]::GetDlgItem($_,$NAME_ID); $p -ne [IntPtr]::Zero })
+    if($withName.Count -eq 1){$dlg=$withName[0]}
+    elseif($handles.Count -eq 1){$dlg=$handles[0]}
+    else{
+      # 用 stdout 传结构化标记 + exit 0（不用 throw：异常文本经管道传递会被破坏）。
+      # 拼接一律走 -f 格式化，不用加号：真机 2026-09-28 实测括号内字符串加变量在该脚本上下文里
+      # 会被解析成字面量，调用方读到的候选列表变成垃圾文本。
+      # 另外：本段位于 TS 模板字符串内，注释里不能出现反引号（会终止字符串并炸掉编译）。
+      $desc=''
+      foreach($h in $handles){
+        $hasName=[TianshuOdSave]::GetDlgItem($h,$NAME_ID) -ne [IntPtr]::Zero
+        $desc = '{0}hwnd={1} hasNameBox={2} title={3} ;; ' -f $desc, $h.ToInt64(), $hasName, (Get-Title $h)
+      }
+      Write-Output ('OD_SAVE_AMBIGUOUS:{0}' -f $desc)
+      exit 0
+    }
+  }
+  if($dlg -eq [IntPtr]::Zero){Start-Sleep -Milliseconds 200}
+} while($dlg -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline)
+if($dlg -eq [IntPtr]::Zero){throw 'OD_SAVE_NOT_FOUND'}
+Write-Output ("save:dialog-title:" + (Get-Title $dlg))
+
+function Read-Name([IntPtr]$e) {
+  $b=New-Object Text.StringBuilder 2048
+  [void][TianshuOdSave]::SendMessage($e,[TianshuOdSave]::WM_GETTEXT,[IntPtr]2048,$b)
+  return $b.ToString()
+}
+
+$nameBox=[TianshuOdSave]::GetDlgItem($dlg,$NAME_ID)
+if($nameBox -eq [IntPtr]::Zero){throw 'OD_SAVE_NO_NAMEBOX'}
+
+# 路线 1：文件名框填**完整路径**
+# GetSaveFileName 支持在「文件名」框里给完整路径（Windows 会据此定位目录并保存），
+# 这是**不依赖前台**的路线 —— 后台 MCP 子进程无法用 SetForegroundWindow/SendKeys（会被系统拒绝）。
+Write-Output 'save:fill-fullpath'
+[void][TianshuOdSave]::SendMessage($nameBox,[TianshuOdSave]::WM_SETTEXT,[IntPtr]::Zero,$fullPath)
+Start-Sleep -Milliseconds 700
+Write-Output ('save:name-after-fill:' + (Read-Name $nameBox))
+
+# 路线 2：用 **UI Automation** 把地址栏设到目标目录（同样不依赖前台）。
+# 真机取证（2026-09-28）：只填文件名框时保存位置可能仍是「此电脑 > 下载」；
+# 地址栏是 ToolbarWindow32 内的控件，WM_SETTEXT 无效，必须走 UIA 的 ValuePattern。
+Write-Output 'save:uia-address'
+try {
+  Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+  $root=[System.Windows.Automation.AutomationElement]::FromHandle($dlg)
+  $cond=New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+    [System.Windows.Automation.ControlType]::Edit)
+  $edits=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$cond)
+  $nameNative=$nameBox.ToInt64()
+  foreach($e in $edits){
+    $h=$e.Current.NativeWindowHandle
+    if($h -eq $nameNative){continue}
+    try {
+      $vp=$e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+      $vp.SetValue($targetDir)
+      Write-Output 'save:uia-address-set'
+      break
+    } catch { }
+  }
+} catch { Write-Output 'save:uia-address-skip' }
+
+function Read-Address([IntPtr]$d) {
+  # 地址栏：优先 UIA（能读到面包屑文本），回退到 ToolbarWindow32(1001) 的窗口文本
+  try {
+    Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes -ErrorAction SilentlyContinue
+    $root=[System.Windows.Automation.AutomationElement]::FromHandle($d)
+    $cond=New-Object System.Windows.Automation.PropertyCondition(
+      [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+      [System.Windows.Automation.ControlType]::Edit)
+    $edits=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$cond)
+    $name=$nameBox.ToInt64()
+    foreach($e in $edits){
+      if($e.Current.NativeWindowHandle -eq $name){continue}
+      $v=$e.Current.Name
+      if($v){ return $v }
+    }
+  } catch { }
+  $addr=[TianshuOdSave]::GetDlgItem($d,1001)
+  if($addr -ne [IntPtr]::Zero){
+    $sb=New-Object Text.StringBuilder 1024
+    [void][TianshuOdSave]::SendMessage($addr,[TianshuOdSave]::WM_GETTEXT,[IntPtr]1024,$sb)
+    return $sb.ToString()
+  }
+  return ''
+}
+$addrShown=Read-Address $dlg
+Write-Output ('save:address-readback:' + $addrShown)
+# 导航后重新把完整路径写回文件名框（地址栏导航可能清掉它）
+[void][TianshuOdSave]::SendMessage($nameBox,[TianshuOdSave]::WM_SETTEXT,[IntPtr]::Zero,$fullPath)
+Start-Sleep -Milliseconds 400
+
+Write-Output 'save:submit'
+$save=[TianshuOdSave]::GetDlgItem($dlg,$SAVE_ID)
+if($save -ne [IntPtr]::Zero -and [TianshuOdSave]::IsWindowVisible($save)){
+  # 真实鼠标按键消息（真机教训：BM_CLICK 有时让对话框正常关闭、应用却没接受）
+  $rc=New-Object TianshuOdSave+RECT
+  [void][TianshuOdSave]::GetClientRect($save,[ref]$rc)
+  $lx=[int](($rc.Right-$rc.Left)/2); $ly=[int](($rc.Bottom-$rc.Top)/2)
+  $lp=[IntPtr](($ly -shl 16) -bor ($lx -band 0xFFFF))
+  [void][TianshuOdSave]::SendMessage($save,[TianshuOdSave]::WM_LBUTTONDOWN,[IntPtr]1,$lp)
+  Start-Sleep -Milliseconds 90
+  [void][TianshuOdSave]::SendMessage($save,[TianshuOdSave]::WM_LBUTTONUP,[IntPtr]0,$lp)
+  Write-Output 'save:submit-real-click'
+} else {
+  throw 'OD_SAVE_NO_BUTTON'
+}
+
+# 成功判据：对话框**真的关闭**（只发消息不等于生效）
+$closed=$false
+do {
+  Start-Sleep -Milliseconds 200
+  $closed = -not [TianshuOdSave]::IsWindow($dlg)
+} while(-not $closed -and (Get-Date) -lt $deadline)
+if(-not $closed){throw 'OD_SAVE_STILL_OPEN'}
+Write-Output 'save:done'
+`;
+
+export interface SaveFileDialogInput {
+  /** 目标目录（项目根） */
+  targetDir: string;
+  /** 文件名（含扩展名） */
+  fileName: string;
+  ownerPids: number[];
+  budgetMs: number;
+  /**
+   * **点击导出之前**采样的对话框基线（`dialog:<hwnd>:<title>` 身份串）。
+   * 必须由调用方在点导出前采集：若在这里现采，刚弹出的保存对话框会被当成"本来就存在"，
+   * 「只看新出现的窗口」这条判据就永远命中不了它（真机 2026-09-28 就是这个表现）。
+   */
+  baseline: string[];
+  signal?: AbortSignal;
+}
+
+/**
+ * 处理导出后弹出的「另存为」对话框，把产物存到 `targetDir`。
+ *
+ * 仅 Windows 实现（与「选择文件夹」同样的取舍：非 Windows 不做未验证的自动化）。
+ */
+export async function saveFileViaNativeDialog(
+  input: SaveFileDialogInput,
+): Promise<{ ok: boolean; message?: string }> {
+  if (process.platform !== "win32")
+    return { ok: false, message: "导出后的「另存为」对话框目前只在 Windows 上实现" };
+  if (!input.ownerPids.length)
+    return { ok: false, message: "未取得 Open Design 进程 pid，无法安全定位保存对话框" };
+
+  const fullPath = toNativeDialogPath(path.join(input.targetDir, input.fileName));
+  const deadline = Date.now() + input.budgetMs;
+
+  try {
+    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", WINDOWS_SAVE_DIALOG_SCRIPT], {
+      env: {
+        ...process.env,
+        TIANSHU_OD_PIDS: input.ownerPids.join(","),
+        TIANSHU_OD_BASELINE: input.baseline.join(","),
+        TIANSHU_OD_SAVE_PATH: fullPath,
+        TIANSHU_OD_SAVE_DIR: toNativeDialogPath(input.targetDir),
+        TIANSHU_OD_DIALOG_DEADLINE: String(deadline),
+      },
+      windowsHide: true,
+      timeout: Math.max(5_000, input.budgetMs + 5_000),
+      signal: input.signal,
+    });
+    const out = String(stdout);
+    if (out.includes("save:done")) return { ok: true };
+    // 歧义走 stdout 标记（脚本里是 exit 0），在这里先接住——它比异常文本可靠
+    if (out.includes("OD_SAVE_AMBIGUOUS")) {
+      const detail = /OD_SAVE_AMBIGUOUS:([^\n]*)/.exec(out)?.[1]?.trim();
+      return {
+        ok: false,
+        message: `同时出现多个 #32770 对话框，无法确定哪一个是「另存为」；已放弃操作（绝不猜一个去点）。${
+          detail ? `\n候选窗口：${detail}` : ""
+        }`,
+      };
+    }
+    return { ok: false, message: `保存对话框流程未完成：${out.trim().split("\n").slice(-3).join(" | ")}` };
+  } catch (error) {
+    const raw = String((error as { stdout?: string; stderr?: string; message?: string }).stdout ?? "") +
+      String((error as { stderr?: string }).stderr ?? "") +
+      String((error as { message?: string }).message ?? "");
+    if (raw.includes("OD_SAVE_AMBIGUOUS")) {
+      const detail = /OD_SAVE_AMBIGUOUS:(.+)/.exec(raw)?.[1]?.trim();
+      return {
+        ok: false,
+        message: `同时出现多个 #32770 对话框，无法确定哪一个是「另存为」；已放弃操作（绝不猜一个去点）。${
+          detail ? `\n候选窗口：${detail}` : ""
+        }`,
+      };
+    }
+    if (raw.includes("OD_SAVE_NOT_FOUND"))
+      return { ok: false, message: "等待「另存为」对话框超时：导出菜单可能未点中，或产品改用其它保存方式" };
+    if (raw.includes("OD_SAVE_STILL_OPEN"))
+      return { ok: false, message: "「另存为」对话框未关闭（保存未生效）" };
+    return { ok: false, message: `保存对话框处理失败：${raw.trim().split("\n").slice(-3).join(" | ")}` };
   }
 }

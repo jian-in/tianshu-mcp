@@ -120,3 +120,30 @@ describe("Open Design 视觉验收：推导不出来时如实说明", () => {
     expect(hint.message).not.toContain('route:"/index.html"');
   });
 });
+
+describe("Open Design 视觉验收：产物兜底（真机取回的设计稿名由产品决定）", () => {
+  it("根层唯一 html 且白名单未命中 → 认它（取回产物 onboarding-guide.html 的真机形态）", () => {
+    write("onboarding-guide.html");
+    const got = findStaticEntries(root);
+    expect(got.map((c) => c.relPath)).toEqual(["onboarding-guide.html"]);
+    expect(got[0]!.reason).toContain("唯一");
+  });
+
+  it("白名单命中时优先于产物兜底（手写工程不会被产物抢走入口）", () => {
+    write("index.html");
+    write("onboarding-guide.html");
+    const got = findStaticEntries(root);
+    expect(got[0]!.relPath).toBe("index.html");
+  });
+
+  it("根层多个 html 且白名单未命中 → 不猜（保持原设计「不把任意 html 当入口」）", () => {
+    write("about.html");
+    write("contact.html");
+    expect(findStaticEntries(root)).toEqual([]);
+  });
+
+  it("深层唯一 html 不兜底（多为示例/模板，认了会指向错页面）", () => {
+    write("examples/only.html");
+    expect(findStaticEntries(root)).toEqual([]);
+  });
+});

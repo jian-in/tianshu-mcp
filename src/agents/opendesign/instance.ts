@@ -372,6 +372,42 @@ export function classifyLauncherExit(
   return "failed";
 }
 
+/**
+ * 等 Open Design 的 **daemon sidecar 就绪**。
+ *
+ * 真机取证（2026-09-28）：产品打开「文件夹选择器」前必须与 daemon 完成**鉴权握手**；
+ * daemon 未就绪时它自己的守卫会显示
+ *   `Couldn't open the folder picker (desktop auth handshake with the daemon failed; please retry)`
+ * 并且**根本不弹对话框** —— 适配器若只看对话框，就会把「选择目录」点成空操作，
+ * 表现为「原生对话框流程走完、工作目录却没变」（此前多次复现，且时好时坏）。
+ * 实测：daemon 在应用启动后约 **30s** 才驻留（0 → 2 个进程），所以启动路径必须等它。
+ *
+ * 判据刻意用**产品自己的进程形态**（同一 exe 起的 `daemon-sidecar.mjs` / `--od-stamp-app=daemon`），
+ * 而不是猜内部 API：拿不到就当未就绪，由调用方决定是继续还是转 needs_user。
+ */
+export async function waitForDaemonReady(
+  options: OpenDesignInstanceOptions & {
+    /**
+     * 进程枚举（可注入）。**必须走注入依赖**：否则单测/集成测试会去读**本机真实进程** ——
+     * 于是「本机恰好开着 Open Design」时用例偶然通过，「没开」时一路等到 deadline 失败，
+     * 既违反计划里「全量测试不依赖本机是否安装 Open Design」，也让失败无法稳定复现。
+     */
+    listProcesses?: typeof listOpenDesignProcessesAsync;
+  } = {},
+  budgetMs = 90_000,
+): Promise<boolean> {
+  const list = options.listProcesses ?? listOpenDesignProcessesAsync;
+  const deadline = Math.min(options.deadline ?? Infinity, Date.now() + budgetMs);
+  while (Date.now() < deadline) {
+    const rows = await list(options).catch(() => []);
+    if (rows.some((row) => /daemon-sidecar\.mjs|od-stamp-app=daemon/.test(row.commandLine)))
+      return true;
+    // eslint-disable-next-line no-await-in-loop
+    await delay(1_000, undefined, { signal: options.signal });
+  }
+  return false;
+}
+
 export async function ensureOpenDesignInstance(
   exePath: string,
   gui: GuiProfile,

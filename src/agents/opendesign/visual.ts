@@ -61,6 +61,8 @@ function toPosix(p: string): string {
  */
 export function findStaticEntries(projectPath: string): StaticPageCandidate[] {
   const out: StaticPageCandidate[] = [];
+  /** 白名单未命中的根层 html（产物名由产品决定，见下方唯一性兜底） */
+  const rootHtml: string[] = [];
   const seenDirs: string[] = [];
   const queue: Array<{ dir: string; depth: number }> = [{ dir: projectPath, depth: 0 }];
   while (queue.length && seenDirs.length < MAX_DIRS) {
@@ -82,7 +84,14 @@ export function findStaticEntries(projectPath: string): StaticPageCandidate[] {
       }
       if (!entry.isFile()) continue;
       const rank = ENTRY_NAMES.indexOf(entry.name.toLowerCase());
-      if (rank < 0) continue;
+      const isHtml = /\.html?$/i.test(entry.name);
+      // 白名单未命中时，**根层的 html** 先记进兜底桶（稍后按唯一性决定要不要认）。
+      // 真机依据（2026-09-28）：从产物存储取回的设计稿名由产品决定（如 onboarding-guide.html），
+      // 白名单认不出它 —— 于是「取回成功了、视觉验收却仍报未找到入口」。
+      if (rank < 0) {
+        if (isHtml && current.depth === 0) rootHtml.push(entry.name);
+        continue;
+      }
       const relPath = toPosix(path.relative(projectPath, full));
       out.push({
         relPath,
@@ -94,11 +103,24 @@ export function findStaticEntries(projectPath: string): StaticPageCandidate[] {
     if (current.depth + 1 <= MAX_DEPTH)
       for (const dir of dirs) queue.push({ dir, depth: current.depth + 1 });
   }
+  // 兜底：白名单一个都没命中，且**根层 html 恰好唯一**时才认它。
+  // 唯一性是关键约束——多个 html 时猜测会指向错页面（原设计「不把任意 html 当入口」的顾虑成立），
+  // 而产品产物在项目根下就是唯一一份（真机：onboarding-guide.html）。
+  if (!out.length && rootHtml.length === 1) {
+    const name = rootHtml[0]!;
+    out.push({
+      relPath: name,
+      route: `/${name}`,
+      reason: `项目根下唯一的设计稿入口 \（白名单未命中，按产物兜底）`,
+    });
+  }
   // 入口文件名优先级 + 层级浅优先
   const rankOf = (c: StaticPageCandidate): number => {
     const name = c.relPath.split("/").at(-1)!.toLowerCase();
     const nameRank = ENTRY_NAMES.indexOf(name);
-    return nameRank * 100 + c.relPath.split("/").length;
+    // 白名单命中（0..n）优先；未命中的「根层 html」兜底统一排在其后
+    const bucket = nameRank < 0 ? 900 : nameRank * 100;
+    return bucket + c.relPath.split("/").length;
   };
   return out.sort((a, b) => rankOf(a) - rankOf(b));
 }

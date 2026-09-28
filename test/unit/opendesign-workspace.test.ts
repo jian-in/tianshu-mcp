@@ -230,6 +230,26 @@ describe("Open Design 工作目录绑定：成功路径", () => {
     expect(clicks).toEqual([]);
   });
 
+  it("触发区只显示末段目录名 + 产品旁证命中 → 也判 already-bound 且不点击（真机 2026-09-28 回归）", async () => {
+    // 真机现象：绑定成功后触发区只显示「test」。若 already-bound 判据不带旁证，
+    // 就会被误判成「需要重新绑定」→ 去展开面板、等「选择目录」项 → 直到预算耗尽失败。
+    // 修复后它与「绑定后回读」用同一份判据（末段 + recentLinkedDirs）。
+    const leaf = TARGET.split("\\").pop() ?? "";
+    const { page, clicks } = makePage(leaf);
+    const res = await bindWorkspace({
+      page,
+      targetPath: TARGET,
+      ownerPids: [1],
+      gui: gui(),
+      logger,
+      overrides: CAPTURED,
+      deps: deps({ readRecentLinkedDirs: async () => [TARGET] }),
+    });
+    expect(res.ok).toBe(true);
+    expect(res.reason).toBe("already-bound");
+    expect(clicks).toEqual([]);
+  });
+
   it("展开 → 点选择目录 → 原生对话框 → 回读一致 → 成功", async () => {
     const { page, clicks } = makePage(OTHER, {
       onNativeDialog: ({ setWorkspaceValue }) => setWorkspaceValue(TARGET),

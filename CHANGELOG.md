@@ -30,6 +30,17 @@
 - **探针也改用适配器同一套传输层**（`scripts/probe-opendesign.mjs` 的 `cdp` / `anchors`）：原先只走 HTTP `/json` 的旧客户端在真机上会**卡住**，与适配器行为不一致会让真机取证得出误导性结论（「探针读不到」被当成「适配器也读不到」）。现统一走 `OpenDesignTransport`（`/json` → 浏览器级 WS 双路径）。
 - **探针支持 `--save` 落盘真机证据**（`scripts/probe-opendesign.mjs`）：把本次全部输出写进 `docs/opendesign-evidence/`（文件名含时间戳，**成败都写**——失败现场本身就是证据）；新增该目录的**双语 README**，写清采集命令、要回填哪张表、命名约定与「先热覆盖后改源码」的处置顺序。真机验收解锁时，一条命令即可产出计划 §3.7 要求的证据。
 - **新增 `endReason`**：`version_mismatch`、`selector_drift`、`model_unavailable`、`model_mismatch`、`design_system_mismatch`、`input_mismatch`、`send_unknown`、`session_lost`、`reply_stable`、`idle_timeout`、`task_timeout`、`aborted`、`setup_failed`。
+- **产物取回（`artifact.ts`，让视觉验收真正拿到东西）**：Open Design 的设计稿**不会自动落到任务目录**，
+  而是在它自己的产物存储里：`<dataRoot>/projects/<projectId>/<entry>`
+  （`dataRoot` = `%APPDATA%\Open Design\namespaces\<namespace>\data`，`projectId` 取自产物 URL
+  `od://app/projects/<id>/...`，`entry`/`status` 由同目录的 `<entry>.artifact.json` 给出）。
+  新增 `fetchArtifactFromStore()` 在任务终态后把它复制到任务目录，`visual.ts` 随之可推导静态入口。
+  **真机实测（2026-09-28）**：`onboarding-guide.html`（37838 字节、自包含）落到
+  `D:\Trae项目\AI游戏\test\`，视觉验收识别出 `/onboarding-guide.html` 入口。
+  取回是**增值步骤**：失败只写进 `progressSummary`，**不改变任务终态**（不把产品侧可恢复问题误报成适配器失败）。
+- **`visual.ts` 增加「根层唯一 html」兜底**：白名单（`index.html`/`main.html`/…）认不出产品给产物起的名字，
+  于是「取回成功了、视觉验收却仍报未找到入口」。现当白名单一个都没命中、且**项目根下 html 恰好唯一**时认它；
+  多个 html 仍不猜（保持原设计「不把任意 html 当入口」的意图，深层 html 也不兜底——那多是示例/模板）。
 - **细粒度事件流上报补齐（对齐 issue #18 词表）**（`src/agents/opendesign/run.ts`）：除既有的 `task_dispatched` / `file_modification_started`，opendesign 现在在**全部「卡在等人」的出口**上报事件——既有实例无法接管（`close_existing_instance`）、停在登录/引导页（`login_required`）、工作目录绑定失败（`system_permission` / `setup_recovery`）、停止按钮久亮且对话与产物全静止转人工确认（`user_confirmation`）、初始化阶段环境不可自愈，五处统一上报 `awaiting_user_authorization`；清理残留原生对话框与经原生「选择文件夹」绑定工作目录时上报 `confirmation_dialog_detected`。`query_task` 的 `recentEvents` 因此能区分「agent 正在正常工作」与「agent 已卡死等人」。
 - **新增 `needsUserKind`**：`login_required`、`system_permission`、`setup_recovery`、`user_confirmation`（`close_existing_instance` 保持）。
 

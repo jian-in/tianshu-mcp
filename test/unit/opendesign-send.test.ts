@@ -34,6 +34,8 @@ interface StubState {
   sendUnavailableTimes?: number;
   /** 前 N 次输入回读返回「不含标记」的值（复刻编辑器晚一拍才反映 insertText） */
   staleInputTimes?: number;
+  /** 清空输入框失败（复刻输入框无法唯一定位）——此时**绝不能**发送 */
+  clearInputFails?: boolean;
 }
 
 function makePage(state: StubState) {
@@ -46,7 +48,13 @@ function makePage(state: StubState) {
       return state.inputText;
     },
     conversationText: async () => state.conversation,
+    clearInput: async () => {
+      if (state.clearInputFails) return false;
+      state.inputText = "";
+      return true;
+    },
     typeText: async (text) => {
+      // 与真机同语义：insertText 是**插到光标处**，不清空就会与残留文本混在一起
       state.inputText += text;
     },
     clickKey: async () => {
@@ -91,6 +99,50 @@ describe("judgeSendConfirmation：派发确认判据", () => {
 });
 
 describe("dispatchTask：输入并发送", () => {
+  it("输入框有残留模板 → 先清空再输入，标记读得到并正常发送（真机 2026-09-28 回归）", async () => {
+    // 真机现象：首页输入框残留产品模板（「游戏化习惯应用…」），insertText 插到光标处，
+    // 结果「模板 + 任务书」混成 55 字、回读不含标记 → fail-closed 放弃发送。
+    // 用户看到的现象就是「没有点击发送按钮」。
+    const state: StubState = {
+      inputText: "游戏化习惯应用 设计一款把每日习惯变成闯关任务的应用",
+      conversation: "",
+      effect: { conversationGrew: true },
+    };
+    const { page } = makePage(state);
+    const res = await dispatchTask({
+      page,
+      text: `${MARKER}\n任务书正文`,
+      marker: MARKER,
+      confirmBudgetMs: 200,
+      pollIntervalMs: 10,
+    });
+    expect(res.ok).toBe(true);
+    // 关键：输入框里**只有**本次任务（残留被清掉了），而不是模板与任务混杂
+    expect(state.conversation).toContain("任务书正文");
+    expect(state.conversation).not.toContain("游戏化习惯应用");
+  });
+
+  it("输入框无法唯一定位（清空失败）→ input_mismatch 且不发送", async () => {
+    const state: StubState = {
+      inputText: "残留文本",
+      conversation: "",
+      clearInputFails: true,
+    };
+    const { page, sendClicks } = makePage(state);
+    const res = await dispatchTask({
+      page,
+      text: `${MARKER}\n任务书正文`,
+      marker: MARKER,
+      confirmBudgetMs: 200,
+      pollIntervalMs: 10,
+    });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("input_mismatch");
+    // 清不掉旧文本就绝不输入、更不发送，避免把任务插进残留内容里
+    expect(state.inputText).toBe("残留文本");
+    expect(sendClicks()).toBe(0);
+  });
+
   it("输入框始终不含标记 → input_mismatch，且**不点发送**", async () => {
     const state: StubState = { inputText: "", conversation: "" };
     const { page, sendClicks } = makePage(state);

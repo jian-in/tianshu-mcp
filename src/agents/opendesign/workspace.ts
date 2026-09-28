@@ -17,6 +17,7 @@
 import type { GuiProfile } from "../../config/schema.js";
 import type { AgentRunLogger } from "../adapter.js";
 import type { SelectorOverrides } from "./dom.js";
+import type { OpenDesignSelectorKey } from "./selectors.js";
 import {
   exactMatchPointExpression,
   existsExpression,
@@ -158,6 +159,34 @@ export async function readWorkspaceValue(
 }
 
 /**
+ * 等元素的中心坐标连续两次一致再返回（过渡动画结束）。
+ *
+ * 为什么必须等：面板/菜单展开有过渡动画，动画期间读到的 `rect` 还在移动，
+ * 拿它去点就会落到空处。真机 2026-09-27 实测：手动序列在展开后隔 ~700ms 才点，
+ * 「最近使用的目录」列表每次都出；适配器紧跟着点，列表始终不挂载 —— 就是踩了这个。
+ */
+async function waitForStablePoint(
+  page: OpenDesignPage,
+  key: OpenDesignSelectorKey,
+  overrides: SelectorOverrides,
+  sleep: (ms: number) => Promise<void>,
+): Promise<void> {
+  const read = async (): Promise<string> => {
+    const r = await page.evaluate<{ count: number; point?: { x: number; y: number } }>(
+      singlePointExpression(selectorSpecFor(key, overrides)),
+    );
+    return r.count === 1 && r.point ? `${Math.round(r.point.x)},${Math.round(r.point.y)}` : "";
+  };
+  let prev = await read();
+  for (let attempt = 0; attempt < 6; attempt++) {
+    await sleep(150);
+    const now = await read();
+    if (now && now === prev) return;
+    prev = now;
+  }
+}
+
+/**
  * 试着用「最近使用的目录」切换工作目录：点入口 → 在列表里按文本**精确**点目标 → 回读校验。
  *
  * 为什么优先它：这是纯 DOM 点击，不碰 Win32 自动化。真机 2026-09-27 实测原生对话框路线
@@ -172,13 +201,25 @@ async function bindViaRecentDirs(
   deps: WorkspaceBindDeps,
   logger: AgentRunLogger,
 ): Promise<WorkspaceBindOutcome | null> {
+  // 面板刚展开时入口还在动画中，先等它停稳再读坐标（见 waitForStablePoint 注释）
+  await waitForStablePoint(page, "recentDirTrigger", overrides, deps.sleep);
   const entry = await page.evaluate<{ count: number; point?: { x: number; y: number } }>(
     singlePointExpression(selectorSpecFor("recentDirTrigger", overrides)),
   );
   if (entry.count !== 1 || !entry.point) return null;
   const opened = await page.clickAt(entry.point, { expect: "working-dir-recent-list" });
   if (!opened) return null;
-  await deps.sleep(400);
+  // 等列表**真的挂载**再匹配：盲目 sleep 在慢环境会读到一个还没渲染的列表，
+  // 把「还没出来」误判成「列表里没有目标目录」（真机 2026-09-27 就栽在这里）。
+  const listed = await waitUntil(
+    () => page.evaluate<boolean>(existsExpression(selectorSpecFor("recentDirList", overrides))),
+    5_000,
+    deps.sleep,
+  );
+  if (!listed) {
+    logger.info("[opendesign] 「最近使用的目录」列表未挂载，回退原生对话框");
+    return null;
+  }
   const tail = normalizeWorkspacePath(targetPath).split("\\").filter(Boolean).pop() ?? "";
   // 列表项可能显示完整路径，也可能只显示末段目录名 —— 两种都试，命中唯一才算数
   const wanted = [...new Set([targetPath, tail].filter(Boolean))];
@@ -218,8 +259,12 @@ export async function bindWorkspace(input: BindWorkspaceInput): Promise<Workspac
   const panelBudget = gui.projectTriggerTimeoutMs;
 
   // 1) 已是目标目录 → 跳过（不做无意义点击，也不改动用户既有绑定）
+  //    这里必须与步骤 6 用**同一份判据与同一份旁证**：触发区只显示末段目录名（真机形态），
+  //    少了 `recentLinkedDirs` 旁证就会把「已经绑好了」误判成「需要重新绑定」，
+  //    接着去展开面板、等「选择目录」项，直到超时——真机 2026-09-28 就卡在这里。
   const before = await readWorkspaceValue(page, overrides);
-  if (workspaceMatches(before, targetPath)) {
+  const recentBefore = (await deps.readRecentLinkedDirs?.()) ?? [];
+  if (workspaceMatches(before, targetPath, { recentLinkedDirs: recentBefore })) {
     logger.info(`[opendesign] 工作目录已是目标值，跳过绑定：${before}`);
     return { ok: true, shown: before, reason: "already-bound" };
   }

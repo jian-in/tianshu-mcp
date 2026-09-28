@@ -116,11 +116,9 @@ export async function selectMenuItem(input: SelectMenuItemInput): Promise<MenuSe
 
   // 4) 需要过滤时先搜索（搜索只负责把目标行渲染出来，不参与身份判定）
   if (input.searchKey) {
-    const filtered = await page.clearAndType(input.searchKey, target);
-    if (!filtered) {
-      await page.dismissMenus();
-      return { ok: false, reason: "no-menu", message: `「${what}」面板的搜索框无法定位或输入` };
-    }
+    const filtered = await page.clearAndType(input.searchKey, target).catch(() => false);
+    if (!filtered)
+      log?.info(`[opendesign] ${what}的搜索框不可用，改为在未过滤列表里精确查找`);
   }
 
   // 5) 精确匹配并点击
