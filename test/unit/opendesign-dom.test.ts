@@ -7,6 +7,7 @@ import {
   directionItemVisibleExpression,
   dismissExpression,
   exactMatchExpression,
+  exactMatchPointExpression,
   existsExpression,
   firstPointExpression,
   inputValueExpression,
@@ -245,6 +246,27 @@ describe("Open Design 页面内表达式（真实 DOM 执行）", () => {
     ) as { count: number; point?: unknown };
     expect(multi.count).toBe(2);
     expect(multi.point).toBeUndefined();
+  });
+
+  it("最近目录项必须限定在列表容器内：面板顶层的同 role 项不得混入（真机 2026-09-27 回归）", () => {
+    // 真机形状：面板顶层的「选择目录」「最近使用的目录」两项与列表项**同样是 role=menuitem**。
+    // 不限定 scope 时命中集合是顶层那两项，目标项永远匹配不上 ——
+    // 结果把「列表里有目标」误判成「最近目录路线不可用」，白白退回不稳的 Win32 原生对话框。
+    const html = `
+      <button data-testid="working-dir-pick" role="menuitem">选择目录</button>
+      <button data-testid="working-dir-recent" role="menuitem">最近使用的目录</button>
+      <div data-testid="working-dir-recent-list" role="menu">
+        <div role="menuitem"><span>test</span><span>D:\\Trae项目\\AI游戏\\test</span></div>
+        <div role="menuitem"><span>tianshu-mcp</span><span>D:\\Trae项目\\tianshu-mcp</span></div>
+      </div>`;
+    // 走注册表的真实 spec（含 scope），而不是用 override（override 是单一选择器，覆盖掉 scope）
+    const res = evaluate(html, exactMatchPointExpression("recentDirItem", "test")) as {
+      count: number;
+      available: string[];
+      point?: unknown;
+    };
+    expect(res.count).toBe(1);
+    expect(res.point).toBeDefined();
   });
 
   it("多候选**按优先级**取用：primary 命中后不再并入 fallback 的命中（真机 2026-09-27 回归）", () => {
