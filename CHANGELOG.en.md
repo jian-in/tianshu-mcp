@@ -8,6 +8,35 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.7.3] - 2026-09-28
+
+### Fixed
+
+- **Skill docs had drifted from the implementation** (`skills/tianshu-mcp/`):
+  - `usage-examples.md` carried a **duplicate `### 2.9`** (codex-cli and the shared-conventions section
+    collided) → the latter is now `### 2.10`;
+  - `SKILL.md` §9 did not state that its error-code table is a subset — `endReason` is typed as an optional
+    `string` (`src/agents/adapter.ts:93`) with **no enum constraint**, so an adapter can add a value without a
+    type change. The doc now says so, and points readers at the adapter's `run.ts` for unknown values;
+  - added three high-frequency `endReason` values that were missing from the table: `input_mismatch`
+    (a leftover draft makes the task land inside stale text), `send_unknown` (delivery unconfirmable —
+    **never resends**), and `reply_stable` (normal completion, not an error).
+
+### Docs
+
+- **Documented Open Design artifact retrieval** (a `v0.7.1` capability, previously absent from the skill):
+  designs live in the product's artifact store `<dataRoot>/projects/<projectId>/<entry>`, **not** in the
+  task directory; once terminal the adapter copies it into `projectPath`.
+- **Documented the daemon-readiness precondition**: the product completes an auth handshake with its daemon
+  before opening the folder picker (measured ~30s after launch); when unready the product **opens no dialog
+  at all**.
+- **Marked the `zip` export as a known limitation** (the product's main process takes over downloads,
+  overriding CDP's handling; the `html` path is fully working).
+
+> This release contains **no runtime code changes** (only `skills/` docs and the version bump), so upgrading
+> from `0.7.2` changes no behaviour; it syncs docs with implementation and aligns tag / Release / npm on a
+> single commit.
+
 ## [0.7.2] - 2026-09-28
 
 ### Fixed

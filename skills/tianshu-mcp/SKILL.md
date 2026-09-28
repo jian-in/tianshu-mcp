@@ -264,6 +264,11 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 
 `agentEndReason` 与终态映射（先记住这张表，再看错误码表）：
 
+> **下面的错误码表是「常见子集」而非闭集**：`endReason` 在类型层面只是一个可选 `string`
+> （`src/agents/adapter.ts:93`），没有枚举约束，某个适配器新增分支时无需改类型就能引入新取值。
+> 因此看到表里没有的取值时，**按名字猜语义不如去读该适配器的 `run.ts`**，或看 `query_task` 的
+> 日志尾部与 `progressSummary`。
+
 | `agentEndReason` | 任务终态 |
 |---|---|
 | `task_timeout` | `needs_attention` + `errorType=timeout`（GUI：codex/zcode）；qoder 落 `failed(timeout)` |
@@ -273,6 +278,9 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 | `agentEndReason` | 含义 | 处置 |
 |---|---|---|
 | `setup_failed` | 找不到安装 / 实例未就绪 / 点不到「新对话」 | 让用户确认已安装且能手动打开；重试一次 |
+| `input_mismatch` | 任务输入框回读与本次标记不符（真机常见成因：输入框残留模板/草稿，任务被插进残文里） | 适配器已先清空再输入；若仍失败，让用户手动清空输入框后重派 |
+| `send_unknown` | 点了发送但**无法确认消息落地** | 适配器**绝不重发**（避免重复派活）；请用户在界面确认是否已发出，再决定重派或 `continue_task` |
+| `reply_stable` | **正常完成**：对话与产物均已静止 | 不是错误；去读验收报告 |
 | `project_ambiguous` | 项目同名或路径重复，无法消歧 | 已转 `needs_user(setup_recovery)`：请用户确认目标项目后 `continue_task` |
 | `project_mismatch` | 项目绑定或回读不一致，幂等重试仍失败 | 同上：请用户在 GUI 里确认/手工绑定 |
 | `project_create_failed` | 在 GUI 内新建项目失败 | 让用户手动把项目加进 agent，或换 `projectPath` |

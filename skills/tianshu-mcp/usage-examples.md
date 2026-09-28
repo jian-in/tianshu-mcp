@@ -193,7 +193,16 @@ run_task(projectPath=D:/repo/design, agentId=opendesign,
 - `designSystem` 传**设计系统名**（如 `Claude`、`Neutral Modern`），不是目录路径——与 codex 的 `designSystem` 语义不同（那边是目录）。
 - `mode` 不支持（那是 traework 的面板模式）；`model` 必填，按名字**精确匹配**菜单项，未命中会报错并**回显当前可见候选**，不会退化成模糊匹配。
 - 目录绑定按「展开工作目录 → 选择目录 → 原生『选择文件夹』填绝对路径 → **回读显示值校验**」；已是目标目录则跳过。
-- 视觉验收要求项目里有可截图的页面来源；适配器只**推导建议**（静态入口优先），**不会自动修改** `.tianshu-mcp/acceptance.json`。
+  （绑目录前适配器会先等 **daemon sidecar 就绪** —— 产品打开文件夹选择器前要与 daemon 完成鉴权握手，
+  实测启动后约 30s 才驻留；未就绪时产品只会显示自己的提示、**根本不弹对话框**。）
+- **产物会自动取回任务目录**（`v0.7.1` 起）：Open Design 的设计稿存在它自己的产物存储
+  `<dataRoot>/projects/<projectId>/<entry>`，**不在任务目录里**。终态后适配器把它复制到
+  `projectPath`，视觉验收随后可推导静态入口（`onboarding-guide.html` → 路由 `/onboarding-guide.html`）。
+  取回是**增值步骤**：失败只写进 `progressSummary`，**不改变任务终态**。
+- **`zip` 导出方式尚未打通**（已知限制）：产品的下载由主进程接管，CDP 的下载接管被覆盖；
+  `html` 路径完全可用，zip 待后续优化。
+- 视觉验收要求项目里有可截图的页面来源；适配器只**推导建议**（静态入口优先，白名单未命中时
+  若项目根下 html **恰好唯一**也认它），**不会自动修改** `.tianshu-mcp/acceptance.json`。
 - 修复/优化计划落项目根 `.opendesign/plans/`（Open Design 只能读它工作目录白名单内的文件）。
 - 可正常派活（Windows 真机取证；macOS 为 `research` 且禁止派发）。仍 **fail-closed**：选择器漂移时硬失败 `selector_drift` 并列出缺失键，模型未命中报 `model_unavailable` 并回显可见候选，设计方向非法在**入口**即拒绝。
   详见 [docs/opendesign-cdp.md](../../docs/opendesign-cdp.md) 与 `.dsh/plans/opendesign-gui-adapter-plan.md`。
@@ -212,7 +221,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 - 写入被 `workspace-write` 沙箱限制在项目目录内；POSIX 下取消/超时对进程组 `SIGTERM`→`SIGKILL`。
 - **无头路径没有 GUI 交互**：不存在 `user_confirmation` 这类等待，`continue_task` 不适用；失败直接看 `agentEndReason` 与日志。
 
-### 2.9 通用约定
+### 2.10 通用约定
 
 - `run_task` 是**异步契约**：立即返回 `taskId` + 队列位置，不要当同步调用等结果。
 - 轮询间隔 5–10 秒（`query_task` 缺省返回 agent 日志末 40 行）；同项目串行 + 全局并发默认 2，重复派单只会排队。
