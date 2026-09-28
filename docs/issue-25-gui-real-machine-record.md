@@ -254,6 +254,14 @@ JS 侧 `@tauri-apps/plugin-opener` 解析为 `2.6.0`（其要求 `@tauri-apps/ap
 
 **本机门禁**：`check:schema`（版本一致 `0.1.0-beta.8`）/ `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest`（**82 passed**，8 文件）/ `vite build` 全绿。本轮**无 Rust 侧改动**（`src-tauri/**` 仅版本号），但 `Rust format / clippy / tests` 仍会随 `gui.yml` 例行执行。
 
+**发布已跑通（2026-09-28）**：tag `gui-v0.1.0-beta.8` 的 GUI run
+[#65](https://github.com/lanlan0811/tianshu-mcp/actions/runs/36373608386) **全部 job success**：
+三平台 `Build`（含 `Rust format / clippy / tests`，本轮无 Rust 代码改动、仅版本号）均通过，`Publish beta pre-release (GitHub + Gitee)`
+的步骤全部 success（`Publish GitHub pre-release` / `Publish Gitee pre-release with attachments + write Gitee manifest` / `Commit GitHub manifest`）。
+GitHub pre-release `gui-v0.1.0-beta.8` 已创建（`prerelease: true`、`draft: false`），附 **8 个产物**（`0.1.0-beta.8_x64-setup.exe` + `.sig`、两个 `.dmg`、两个 `.app.tar.gz` + `.sig`）；
+两端更新清单 `update/gui/latest.json` 与 `latest-gitee.json` 均已更新为 `0.1.0-beta.8` 并分别指向各自宿主的附件，
+两份清单由各自发布 job 提交、已合并回同一提交推送两仓。
+
 **待办**：三项修改的桌面端观感需在 `0.1.0-beta.8` 的 Windows 产物上复核（居中弹窗在真实窗口尺寸下的观感、侧栏上移后的分组线）。
 
 ---
