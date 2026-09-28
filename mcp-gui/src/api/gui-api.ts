@@ -44,6 +44,8 @@ export interface GuiApi {
   probeUpdateSources(): Promise<ProbeSourceResult>;
   checkUpdate(source: string): Promise<CheckUpdateResult>;
   installUpdate(source: string): Promise<InstallUpdateResult>;
+  /** 用系统默认浏览器打开外部链接（仅两个发行页域名的白名单内） */
+  openExternal(url: string): Promise<void>;
   getPreferences(): Promise<Preferences>;
   setPreferences(prefs: Preferences): Promise<void>;
   watchStart(paths: string[]): Promise<void>;

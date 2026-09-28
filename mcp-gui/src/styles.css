@@ -462,14 +462,6 @@ button {
   white-space: nowrap;
 }
 
-.mark {
-  width: 14px;
-  height: 14px;
-  border-radius: var(--r-1);
-  background: var(--accent);
-  flex: none;
-}
-
 .omni {
   display: flex;
   align-items: center;

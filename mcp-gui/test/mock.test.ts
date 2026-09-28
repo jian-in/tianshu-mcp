@@ -161,6 +161,13 @@ describe("mock 数据出口", () => {
     expect(check.manualDownloadUrl).toContain("github.com");
   });
 
+  it("手动下载兜底入口跟随本次使用的更新源", async () => {
+    const gitee = await mockApi.checkUpdate("gitee");
+    expect(gitee.manualDownloadUrl).toContain("gitee.com");
+    const github = await mockApi.checkUpdate("github");
+    expect(github.manualDownloadUrl).toContain("github.com");
+  });
+
   it("默认窗口常量被用于尾部读取", async () => {
     const res = await mockApi.readLog({ dataHome: MOCK_HOME, relPath: "logs/server.log", mode: "tail" });
     expect(res.totalBytes).toBeLessThan(DEFAULT_WINDOW_BYTES);

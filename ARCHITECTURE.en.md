@@ -1043,7 +1043,7 @@ build**. The `GUI` workflow also triggers on the two truth files, so TS-side dri
 | `watcher.rs` | `notify` watching → `gui/log-changed` events (only the currently open log) |
 | `search.rs` | on-demand cross-task scanning + progress events + cancellation (**no full-text index**) |
 | `export.rs` | single-file export + whole-task zip (optionally excluding heavy raw logs) |
-| `updater.rs` | dual-source probing and selection + three-state switch + `tauri-plugin-updater` (signature gate) |
+| `updater.rs` | dual-source probing and selection + three-state switch + `tauri-plugin-updater` (signature gate); **the fallback download page follows the source actually used** (`manual_download_url_for`) |
 | `tray.rs` | tray icon creation + menu building / hot-update **per UI language** + window reveal (**touches no business data**; only window visibility and process exit) |
 
 ### 16.4 Dual-source auto-update
@@ -1063,6 +1063,11 @@ build**. The `GUI` workflow also triggers on the two truth files, so TS-side dri
   which silently runs the legacy uninstaller when it detects a legacy-named uninstall entry and then removes any
   leftover registry keys / shortcuts (it never deletes user data and never recursively deletes the old `$INSTDIR`);
 - **Failures never block**: any failure only affects updating; log viewing keeps working, with a "Manual download" entry.
+- **The fallback entry must follow the source actually used**: both the manifest endpoint and the fallback download page
+  are driven by `resolve_source()`'s result (the `UPDATE_ENDPOINT_*` and `MANUAL_DOWNLOAD_URL_*` constant pairs match up
+  one-to-one), and **unknown sources always fall back to GitHub**. Using "the source actually used" rather than the
+  literal preference value keeps the entry consistent with the "Source: {s}" already shown in the UI. "Manual download"
+  opens via the **system default browser** (see §16.8), **not** an in-webview navigation.
 
 ### 16.5 Build boundary (a hard constraint from issue #25)
 
@@ -1087,7 +1092,7 @@ website directory. Read this section before changing any UI styling.
 
 | Contract | Rule |
 |---|---|
-| **Layout paradigm** | **A permanent left sidebar plus a two-state content area**: the sidebar (brand · global search · main nav · task section nav · data home · refresh / settings) is always present, while the content area switches between state 1 "task overview" (metrics strip + status chips + filter popover + task card grid + search mode) and state 2 "full-page workspace" (breadcrumb + task summary bar + content, with `server.log` as the second form). **The task section nav shares that one sidebar — there is no second left column; no permanent task rail, no permanent detail column, no horizontal tab row**; the two states and search mode live in local `ref`s in `App.vue` and **add no store fields**; the `server.log` form is derived from `app.tab` (no separate state flag) |
+| **Layout paradigm** | **A permanent left sidebar plus a two-state content area**: the sidebar (brand · global search · main nav (tasks / server log / **settings**) · task section nav · data home · refresh) is always present, while the content area switches between state 1 "task overview" (metrics strip + status chips + filter popover + task card grid + search mode) and state 2 "full-page workspace" (breadcrumb + task summary bar + content, with `server.log` as the second form). **The task section nav shares that one sidebar — there is no second left column; no permanent task rail, no permanent detail column, no horizontal tab row**; the two states and search mode live in local `ref`s in `App.vue` and **add no store fields**; the `server.log` form is derived from `app.tab` (no separate state flag). **The settings entry belongs to the main nav** (just below "Server log", styled like its neighbours), leaving only the data home and "Refresh" at the bottom of the sidebar; the brand area **has no decorative colour square** |
 | Single source of truth | `mcp-gui/src/styles.css`: colors / fonts / spacing / radii / elevation / motion / layout constants are defined **here only** (`:root` holds theme-agnostic tokens; `:root[data-theme="light\|dark"]` holds one color set each; **dark is the default**) |
 | Theme mechanism | only `<html data-theme="light\|dark">` is written (`src/theme/index.ts`); components and stylesheets **must not contain hard-coded colors** — variable aliases only (`--bg-*` / `--line-*` / `--fg-*` / `--tone-*`) |
 | Accent vs. semantic tones | `--accent` (fluorescent green: `#3DFFA0` dark / `#0E9F6E` light) is used **only** for selection, primary actions, focus rings, the breadcrumb back affordance, and status rails; status labels and chips use **only** `--tone-*` (`active/ok/fail/warn/info/muted`). The two are told apart by **position and shape**, not hue. Tone classification stays in `src/core/status.ts` (mapping only, no copy) |
@@ -1115,6 +1120,20 @@ language bundles are updated together).
 | Preference compatibility | `Preferences.close_action` **must carry a serde default**: a deserialization failure in `preferences.rs` resets the whole file, so a missing field would also wipe language / theme / data homes |
 | Platform differences | Windows notification area / macOS menu bar; left-click reveals the window (the menu opens on right-click only, `show_menu_on_left_click(false)`); macOS additionally handles `RunEvent::Reopen` (clicking the Dock icon reveals the window) |
 | Failure isolation | A failed tray creation **does not block startup** (the error is ignored in `setup`); the log-viewing main flow takes priority |
+
+### 16.8 External-open capability and URL allow-list contract
+
+Tauri 2's webview **intercepts new-window requests** (`target="_blank"` / `window.open`); without an external-open
+capability wired up, the request is **silently dropped** — which is exactly why "Manual download" used to do nothing when
+clicked. Any GUI code that needs to open something externally must follow the table below.
+
+| Contract | Rule |
+|---|---|
+| Capability source | the official `tauri-plugin-opener` (Rust `tauri-plugin-opener = "2"` + JS `@tauri-apps/plugin-opener`), registered in `lib.rs` alongside dialog / updater |
+| Frontend exit point | **only** via `src/api/`: `GuiApi.openExternal(url)` → the Tauri implementation calls `openUrl()`, the mock implementation calls `window.open(..., "noopener,noreferrer")`; components must not import the plugin directly |
+| Permission allow-list (security boundary) | `capabilities/default.json` uses `opener:allow-open-url` **with an `allow` list** covering **only `https://github.com/**` and `https://gitee.com/**`**; plugin capabilities beyond `core:default` / `dialog:default` are **not granted wholesale** |
+| Scope of use | its only current use is the "Manual download" fallback entry (opening a release page); it **must not** be used to open business data paths (export / reveal has its own commands) |
+| Failure isolation | a failed open goes through the existing `setError` and **never blocks the log-viewing main flow** (same rule as the update path) |
 
 ---
 

@@ -3,7 +3,7 @@
 > **交接快照：2026-09-27 · 开发版本 `0.7.1`（**尚未打 tag、未发布 npm**）。**
 > **本轮（0.7.0 → 0.7.1）交付**：内置 agent `opendesign`（Open Design 桌面端）**从「开发中」推进到完整可派发**——
 > 选择器按产品产物取证落地、12 步执行链全部接线、并接入验收 → 自动返修 → 再验收闭环。
-> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.6`，独立 tag `gui-v*`，独立演进；最近一轮把**顶部导航栏改为常驻左侧栏**——概览页顶栏与工作区竖排分区导航合并为同一条侧栏，页面里不再有第二层左栏，`server.log` 形态改由 `app.tab` 派生）。
+> **同仓另有一条独立交付面**：日志台 GUI（`mcp-gui/`，`0.1.0-beta.7`，独立 tag `gui-v*`，独立演进；最近一轮修「手动下载」并把**设置入口迁入左侧栏导航**——兜底下载随实际更新源跳转且真正拉起系统默认浏览器，设置项从侧栏底部移到「运行日志」下方，同时删掉品牌区装饰绿块）。
 > **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包 GUI 侧零改动。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
 > **issue #25 已按 DoD 全部达成回复并关闭**（2026-09-27）：DoD 2（F1~F12）与 DoD 9（U4~U8）由维护者在 Windows 10 真机逐项验收通过；
 > 验收中发现并修掉「更新后旧版本不消失」（GUI `0.1.0-beta.4`），已发布并完成真机端到端复现——详见下方「升级路径修复」小节与 `docs/issue-25-gui-real-machine-record.md`。
@@ -70,6 +70,22 @@
   ② 改用 `IFileDialog` 的 COM 接口而非 Win32 消息；③ 在能稳定复现的机器上抓对话框的选中项控件。
 - **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**未打 tag、未发 npm**；
   `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。
+
+---
+
+### 独立交付面 · 日志台 GUI **手动下载修复 + 设置入口迁入侧栏导航**（`mcp-gui/`，`0.1.0-beta.7`）
+
+- **范围**：`mcp-gui/src/App.vue`、`src/styles.css`、`src/components/SettingsDrawer.vue`、`src/api/{gui-api,tauri,mock}.ts`、`src/stores/app.ts`、`src-tauri/src/{lib,models,updater}.rs`、`src-tauri/{Cargo.toml,capabilities/default.json}`、`package.json` / `package-lock.json`、`test/mock.test.ts`。**未改** `src/core/**`、`src/i18n/**`（零新增文案键）与 MCP 主包 `src/**`、`tianshu-mcp-web/`。
+- **三项修改**：
+  1. **删掉侧栏品牌区装饰绿块**（`App.vue` 的 `<span class="mark" />` + `styles.css` 的 `.mark` 规则整条移除，全局已无引用）。
+  2. **修「手动下载」两个缺陷**：① 入口原是 `<a target="_blank">`，Tauri 2 的 webview 会拦截新建窗口请求且此前**未接入任何外部打开能力**，故点了没有任何反应 —— 现接入官方 `tauri-plugin-opener`（JS 绑定经 `src/api` 出口，`GuiApi.openExternal`），并把入口改为 `<button>`；② 兜底地址原是**单常量恒指 GitHub**，与本次实际使用的源脱钩 —— 现拆成 `MANUAL_DOWNLOAD_URL_{GITHUB,GITEE}` 并由 `manual_download_url_for(&chosen)` 按 `resolve_source` 的结果取值（未知源回退 GitHub），前端 `mock` 同步该语义。
+  3. **设置（齿轮）入口从侧栏底部迁到「运行日志」下方**：由 `.rail-foot` 的图标按钮改为 `.rail-nav` 内的 `.navitem`（复用现成类，`styles.css` 零改动），面板打开时该条常亮；侧栏底部只剩「刷新」。
+- **权限口径（最小化）**：`capabilities/default.json` 追加的是**带白名单**的 `opener:allow-open-url`，只允许 `https://github.com/**` 与 `https://gitee.com/**` 两个发行页域名，**不整包放开** opener。
+- **兜底地址与「更新源」的一致性**：以 Rust 侧 `resolve_source()` 实际选出的源（`auto` 即实测择优结果）为准，而非偏好里的字面值 —— 与设置面板已显示的「更新源：{s}」不会自相矛盾。
+- **验证（本机）**：`check:schema`（版本一致 `0.1.0-beta.7`）/ `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest`（**82 passed**，8 文件，较上版 +1 条「兜底入口随源变化」）/ `vite build` 全绿；构建产物抽样确认 `.mark` 已不在 CSS、新 Gitee 发行页地址已进 JS。**未在本机执行任何 Rust 侧构建与检查**（issue #25 约束），Rust 门禁（新增 `manual_download_url_follows_source` 单测）与三平台打包交 `GUI` workflow。
+- **未完成（如实标注）**：真机「点击手动下载确实拉起系统默认浏览器」**需在 CI 产物上验收**（mock 预览只能验接线，不能验系统浏览器）；记录待回填 `docs/issue-25-gui-real-machine-record.md` §4.1。
+  已做的模拟真机：`puppeteer-core` + 本机无头 Edge 打开 dev server（mock 运行时），DOM 断言 **10/10 通过**（无 `.mark`、主导航为「任务列表 / 运行日志 / 设置」、底部只剩「刷新」、设置项可开面板且常亮、手动下载已非锚点、强制 Gitee/GitHub 各自经 `window.open` 打开对应发行页、无 `pageerror`）。
+- **版本边界**：`mcp-gui` 四处版本同步 `0.1.0-beta.6 → 0.1.0-beta.7`（`package.json` / `package-lock.json` 两处 / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`），随本版发布 tag `gui-v0.1.0-beta.7`；`update/gui/latest*.json` 由发布 job 自动生成并提交（`[skip ci]`）。**MCP 主包版本不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。
 
 ---
 

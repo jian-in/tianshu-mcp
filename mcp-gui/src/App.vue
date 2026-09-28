@@ -79,7 +79,7 @@ function onNavigated(): void {
   <div class="shell">
     <aside class="rail" :aria-label="t('nav.primary')">
       <div class="rail-head">
-        <span class="brand"><span class="mark" />{{ t("app.name") }}</span>
+        <span class="brand">{{ t("app.name") }}</span>
       </div>
 
       <div class="rail-search">
@@ -109,6 +109,10 @@ function onNavigated(): void {
           <AppIcon name="terminal" size="14" />
           <span class="grow truncate">{{ t("tabs.serverLog") }}</span>
         </button>
+        <button class="navitem" :class="{ 'is-on': settingsOpen }" @click="settingsOpen = true">
+          <AppIcon name="settings" size="14" />
+          <span class="grow truncate">{{ t("settings.title") }}</span>
+        </button>
 
         <template v-if="isTaskView">
           <div class="rail-label">{{ t("nav.sections") }}</div>
@@ -135,15 +139,6 @@ function onNavigated(): void {
             @click="refreshTasks"
           >
             <AppIcon name="refresh" />
-          </button>
-          <span class="grow" />
-          <button
-            class="ibtn"
-            :title="t('settings.title')"
-            :aria-label="t('settings.title')"
-            @click="settingsOpen = true"
-          >
-            <AppIcon name="settings" />
           </button>
         </div>
         <div

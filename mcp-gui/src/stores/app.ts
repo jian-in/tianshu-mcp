@@ -483,6 +483,16 @@ export async function installUpdate(source: string): Promise<void> {
   }
 }
 
+/** 用系统默认浏览器打开外部链接（失败不阻塞主流程） */
+export async function openExternalUrl(url: string): Promise<void> {
+  try {
+    await api.openExternal(url);
+    app.error = null;
+  } catch (err) {
+    setError(err);
+  }
+}
+
 /* ---------------- 启动 ---------------- */
 
 export async function bootstrap(): Promise<void> {

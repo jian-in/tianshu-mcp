@@ -1,7 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "日志台的默认能力：核心事件/路径能力 + 原生文件对话框（选择数据目录与导出位置）。",
+  "description": "日志台的默认能力：核心事件/路径能力 + 原生文件对话框 + 外部浏览器打开（限两个发行页域名，不整包放开）。",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default"]
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://github.com/**" },
+        { "url": "https://gitee.com/**" }
+      ]
+    }
+  ]
 }

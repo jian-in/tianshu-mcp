@@ -7,7 +7,7 @@
 import AppIcon from "./AppIcon.vue";
 import { useI18n } from "@/i18n";
 import { isMockRuntime } from "@/api";
-import { checkUpdate, installUpdate, probeUpdateSources, app } from "@/stores/app";
+import { checkUpdate, installUpdate, openExternalUrl, probeUpdateSources, app } from "@/stores/app";
 import { preferences, updatePreferences } from "@/stores/preferences";
 import type { CloseAction, Language, ThemeMode, UpdateSource } from "@/api/types-lite";
 
@@ -167,15 +167,13 @@ function probeText(side: "gitee" | "github"): string {
               <AppIcon name="download" />
               {{ app.update.installing ? t("update.installing") : t("update.install") }}
             </button>
-            <a
+            <button
               v-if="app.update.result?.manualDownloadUrl"
               class="tbtn"
-              :href="app.update.result.manualDownloadUrl"
-              target="_blank"
-              rel="noreferrer noopener"
+              @click="openExternalUrl(app.update.result.manualDownloadUrl)"
             >
               <AppIcon name="external" />{{ t("update.manualDownload") }}
-            </a>
+            </button>
           </div>
 
           <div v-if="app.update.result" class="notice">

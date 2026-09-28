@@ -79,7 +79,7 @@ The added directories are persisted in the **system application config directory
 
 ### 3.1 Task overview
 
-- **The UI is a permanent left sidebar plus two full pages**: a **task overview page** and a **full-page workspace**. The sidebar runs brand → global search → main nav (Tasks / Server log) → task section nav → data home → refresh / settings, while the overview runs four-cell metrics strip (total / active / finished / failed) → status chip row → task card grid;
+- **The UI is a permanent left sidebar plus two full pages**: a **task overview page** and a **full-page workspace**. The sidebar runs brand → global search → main nav (Tasks / Server log / **Settings**) → task section nav → data home → refresh, while the overview runs four-cell metrics strip (total / active / finished / failed) → status chip row → task card grid; the **settings entry sits inside the main nav, directly below "Server log"** (lit while the panel is open), leaving only the data home and "Refresh" at the bottom of the sidebar, and the brand row shows just the app name with no decorative colour square;
 - Tasks are shown as **cards**: the left rail carries the status color (semantic tone via `statusTone`), the title has a `›` prefix, and each card shows the status label, `agent · taskId`, `updated · rounds [· report round]` and a dry-run tag;
 - The **status chips** (all / running / succeeded / failed / needs attention / needs human) are **page-level grouping** and do not rewrite the filter conditions;
 - The `[Filter]` popover carries the full set: keyword, agent, status, project, time range, active-only, plus sorting (updated / created / task ID, ascending or descending) and "Reset filters";
@@ -191,6 +191,12 @@ China) hit **GitHub**.
   **a failed signature is always rejected** (the baseline against tampering on the Gitee side);
 - Any failure during check / download / install **never affects log viewing**, and a "Manual download" entry is
   provided;
+  - "Manual download" **follows the update source actually used**: Gitee when Gitee wins, GitHub when GitHub wins
+    (unknown sources fall back to GitHub) — consistent with the "Source" shown in the panel, so **users on
+    mainland-China networks are never sent back to GitHub**;
+  - That entry opens in the **system default browser** (it is not an in-window navigation — Tauri's webview intercepts
+    new-window requests, so the app ships an external-open capability constrained by an allow-list covering **only the
+    `github.com` and `gitee.com` domains**); a failed open only surfaces an error in the UI and never blocks log viewing.
 - The update channel maps one-to-one to **pre-releases**: the GUI is a beta product end to end.
 
 ### 6.3 When no update public key is configured

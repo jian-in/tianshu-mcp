@@ -104,15 +104,20 @@
 - **独立 `GUI` workflow**（`.github/workflows/gui.yml`）：`windows-latest` / `macos-15-intel` / `macos-15` 三平台矩阵；push 到 `master` 仅编译验证并上传 artifact，`gui-v*-beta.*` tag 才双端发布 pre-release。`gui-v*` **不以 `v` 开头**，**不触发** MCP 的 `release.yml`（workflow 内含显式断言）。
 - **三方词表一致性门禁**：`mcp-gui/scripts/check-schema-parity.mjs` 比对 **TS 真源（`src/tasks/task.ts` / `src/agents/agent-events.ts`）↔ 前端镜像 ↔ Rust 镜像**，任一漂移即 fail；`GUI` workflow 的触发路径含两个真源文件，故 TS 侧漂移也会被检出。
 - **`scripts/gitee-gui-release.mjs`**：Gitee 侧 GUI 预发布 + **安装包附件上传** + 更新清单写入（现有主包脚本只做发行版与正文，没有附件上传能力）。
+- **接入外部打开能力（GUI 独立版本 `0.1.0-beta.7`）**：引入官方 `tauri-plugin-opener`（Rust 侧 `Cargo.toml` 新增依赖并在 `lib.rs` 与 dialog / updater 并列注册），前端**只经 `src/api` 出口**（`GuiApi.openExternal`：Tauri 实现走 `openUrl()`，mock 实现走 `window.open(…, "noopener,noreferrer")`）；`capabilities/default.json` 用**带 `allow` 列表**的 `opener:allow-open-url`，**只放行 `https://github.com/**` 与 `https://gitee.com/**`**，不整包放开插件能力。
+- **侧栏结构微调（GUI 独立版本 `0.1.0-beta.7`）**：**设置（齿轮）入口从侧栏底部迁到主导航内「运行日志」下方**（由图标按钮改为与相邻项同款的导航项，面板打开时该条常亮），侧栏底部只留数据目录与「刷新」，`.rail-foot` 中为其撑位的占位元素一并移除；**删掉品牌区装饰绿块**（`App.vue` 的 `.mark` 与 `styles.css` 的对应规则整条移除，全局已无引用）。**零新增 i18n 键**（复用既有 `settings.title`），未改 `src/core/**`。
 
 ### 修复
 
+- **「手动下载」点击无任何反应（GUI 独立版本 `0.1.0-beta.7`）**：入口原是 `<a href target="_blank">`，而 **Tauri 2 的 webview 会拦截新建窗口请求**，此前又未接入任何外部打开能力（无 opener / shell 插件，也未处理 `on_new_window`），故请求被**静默丢弃**——表现为点了没反应。现改为 `<button>` 并经 `GuiApi.openExternal` 调 `openUrl()` 用**系统默认浏览器**打开；失败并入既有 `setError`，不影响日志查看主流程。
+- **「手动下载」不跳到对应的更新源（GUI 独立版本 `0.1.0-beta.7`）**：Rust 侧兜底地址原为**单常量 `MANUAL_DOWNLOAD_URL`，恒指 GitHub releases**，与本次实际使用的源脱钩；用户选「强制 Gitee」或实测择优命中 Gitee 时，兜底入口仍指向 GitHub（中国大陆网络下等于仍然不可用）。现拆为 `MANUAL_DOWNLOAD_URL_GITHUB` / `MANUAL_DOWNLOAD_URL_GITEE` 两个常量，由 `manual_download_url_for(&chosen)` 按 `resolve_source()` 的结果取值（**未知源一律回退 GitHub**），`check_update` 的 4 个返回分支全部改用该函数；前端 `mock` 的 `checkUpdate(source)` 同步该语义。
 - **`GUI` workflow 手动触发会被静默跳过**：`workflow_dispatch` 不带 `github.event.before`，原变更检测退化为 `git diff HEAD~1 HEAD`，若最近两次提交仅改文档，则三平台构建矩阵**全部 skipped**（运行显示 Success 却什么都没跑）。现改为**手动触发无条件构建**，tag 同样无条件构建，仅 push / PR 走 diff 过滤。
 - **升级后旧版本不消失：「应用和功能」残留两条记录（GUI 独立版本 `0.1.0-beta.4`，真机验收发现）**：Tauri 的 NSIS 模板用 `bundle.productName` 直接拼出卸载项注册表键（`…\CurrentVersion\Uninstall\${PRODUCTNAME}`），而 `0.1.0-beta.1 → 0.1.0-beta.2` 之间为修「发行资产名两端不一致」把 productName 由含空格的 `Tianshu-mcp Logs` 改成无空格的 `Tianshu-mcp-Logs` —— 键名随之改变，新安装器便不再把旧安装视为同一个应用，于是旧版本（本机实测为 0.1.0-beta.1，装在 `D:\Tianshu-mcp Logs`）**既不被覆盖也不被卸载**，与新版并存于列表，旧目录与旧快捷方式也留在磁盘上（Tauri 只处理 `mainBinaryName` 变更，不处理 productName 变更）。修法：新增 `mcp-gui/src-tauri/windows/installer-hooks.nsh` 并经 `bundle.windows.nsis.installerHooks` 挂载，在 `NSIS_HOOK_PREINSTALL` 中检测历史遗留名称的卸载项 → **静默运行它自己的卸载器（`/S`）** → 兜底删除残留的注册表键与快捷方式；只在检测到旧名称时动作，**全新安装与当前名称的版本更新不受影响**，静默卸载**不会删除用户数据**，也不对旧 `$INSTDIR` 做递归删除（旧安装位置是用户自选的）。`bundle.productName` 自此视为**冻结契约**（见 `ARCHITECTURE` §16.4）。
 
 ### 测试
 
 - `mcp-gui` 新增 **81 项前端用例**（8 文件：日志行解析 / 事件解析 / 字节与窗口 / 筛选排序 / 报告摘要 / i18n 完整性 / 沙箱 / mock 出口）；本机 `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest` / `vite build` 全绿（只依赖 Node；按 issue #25 约束**不在本机执行任何 Rust 侧构建与检查**）。
+- **`0.1.0-beta.7` 追加 1 条前端用例**（`test/mock.test.ts`：「手动下载兜底入口跟随本次使用的更新源」——`checkUpdate("gitee")` 必须给 Gitee 发行页），前端用例数 **81 → 82**，8 文件全绿；Rust 侧新增单测 `manual_download_url_follows_source`（覆盖 gitee / github / 未知源三分支），由 `GUI` workflow 的 `cargo test` 执行。
 - MCP 主工程全量 **1270 passed / 12 skipped**；`typecheck` / `lint` / `build` / `check:stdio` / `pack:check` 全绿。
 - GUI 侧 Rust 门禁（`cargo fmt --check` / `cargo clippy -D warnings` / `cargo test`）与三平台打包由 `GUI` workflow 执行。
 
@@ -121,6 +126,7 @@
 - 新增 `docs/gui-log-viewer.md` / `.en.md`（安装、数据目录、四类日志、搜索 / 导出、双源更新与故障自救、本地开发与 CI 构建边界）与 `docs/issue-25-gui-real-machine-record.md`（中文单语）。
 - `README` / `ARCHITECTURE` / `HANDOFF` / `CHANGELOG` 双语同步；ARCHITECTURE 新增「第 16 节 独立交付面：日志台 GUI」。
 - 根 `package.json` 的 `files` 白名单新增两份 GUI 文档（npm 包**不含** `mcp-gui/`）。
+- **`0.1.0-beta.7` 文档增补**：`ARCHITECTURE` 双语新增「§16.8 外部打开能力与 URL 白名单契约」，并在 §16.3 / §16.4 / §16.6 登记兜底地址按源取值、侧栏设置入口与品牌区无装饰色块；`docs/gui-log-viewer` 双语补侧栏构成与「手动下载」行为（含白名单与系统浏览器打开）。
 
 ---
 

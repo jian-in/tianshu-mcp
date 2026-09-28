@@ -4,6 +4,7 @@
  * 命令名与 `src-tauri/src/lib.rs` 的 `#[tauri::command]` 一一对应。
  */
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   AppVersionInfo,
   CheckUpdateResult,
@@ -39,6 +40,7 @@ export const tauriApi: GuiApi = {
   probeUpdateSources: () => invoke<ProbeSourceResult>("probe_update_sources"),
   checkUpdate: (source) => invoke<CheckUpdateResult>("check_update", { source }),
   installUpdate: (source) => invoke<InstallUpdateResult>("install_update", { source }),
+  openExternal: (url) => openUrl(url),
   getPreferences: () => invoke<Preferences>("get_preferences"),
   setPreferences: (prefs) => invoke<void>("set_preferences", { prefs }),
   watchStart: (paths) => invoke<void>("watch_start", { paths }),

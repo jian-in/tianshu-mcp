@@ -380,18 +380,27 @@ export const mockApi: GuiApi = {
     degraded: true,
   }),
 
-  checkUpdate: async (): Promise<CheckUpdateResult> => ({
+  checkUpdate: async (source: string): Promise<CheckUpdateResult> => ({
     available: false,
     currentVersion: MOCK_APP_VERSION,
     version: null,
     notes: null,
     source: null,
-    manualDownloadUrl: "https://github.com/lanlan0811/tianshu-mcp/releases",
+    // 与 Rust 侧同语义：兜底入口跟随本次实际使用的源（未知源回退 GitHub）
+    manualDownloadUrl:
+      source === "gitee"
+        ? "https://gitee.com/lan0811/tianshu-mcp/releases"
+        : "https://github.com/lanlan0811/tianshu-mcp/releases",
     error: null,
   }),
 
   installUpdate: async (): Promise<InstallUpdateResult> => {
     throw new Error("本地预览模式不支持安装更新");
+  },
+
+  // 浏览器预览下确实能打开外部链接，故如实实现（新窗口 + noopener）
+  openExternal: async (url: string): Promise<void> => {
+    window.open(url, "_blank", "noopener,noreferrer");
   },
 
   getPreferences: async () => loadPreferences(),

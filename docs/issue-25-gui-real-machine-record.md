@@ -154,7 +154,51 @@
 
 ---
 
-## 四、结论
+## 四、后续维护轮次
+
+### 4.1 `gui-v0.1.0-beta.7`：手动下载修复 + 设置入口迁入侧栏导航（2026-09-28）
+
+三项修改（详见 `CHANGELOG.md` 的 mcp-gui 段与 `HANDOFF.md` 的对应小节）：
+
+| # | 修改 | 根因 / 落点 | 本机可验的部分 | 待真机（CI 产物）验收的部分 |
+|---|---|---|---|---|
+| 1 | 删掉侧栏品牌区装饰绿块 | `App.vue` 的 `.mark` + `styles.css` 的对照规则整条移除（全局已无引用） | 构建产物 CSS 中已无 `.mark`（抽样断言 0 命中） | 目视品牌行只剩应用名 |
+| 2 | 「手动下载」点击无反应 | 原为 `<a target="_blank">`；**Tauri 2 的 webview 拦截新建窗口请求**，且此前未接入任何外部打开能力 → 请求被静默丢弃。现接入 `tauri-plugin-opener`（经 `src/api` 出口）+ 改为 `<button>` + 能力白名单 | 接线经 mock 与构建产物确认（`openExternal` 出口、插件的解析版本与 integrity 已入 lock） | **点击确实拉起系统默认浏览器**（本机无桌面运行时，无法验） |
+| 3 | 「手动下载」不跳对应的更新源 | Rust 侧兜底地址原为单常量恒指 GitHub，与 `resolve_source()` 结果脱钩。现拆 `MANUAL_DOWNLOAD_URL_{GITHUB,GITEE}` + `manual_download_url_for(&chosen)` | 前端用例「兜底入口跟随本次使用的更新源」（82 项全绿）；构建产物含 Gitee 发行页地址 | 分别以「强制 Gitee」「强制 GitHub」各验一次落点 |
+| 4 | 设置入口迁移 | 由 `.rail-foot` 图标按钮改为 `.rail-nav` 内「运行日志」下方同款 `.navitem`（`styles.css` 零改动） | `check:schema` / `typecheck` / `lint` / `test` / `build` 全绿 | 面板可开关、该条随面板常亮 |
+
+**本机门禁结果（2026-09-28）**：`check:schema`（版本一致 `0.1.0-beta.7`）/ `vue-tsc --noEmit` / `eslint . --max-warnings 0` /
+`vitest`（**82 passed**，8 文件）/ `vite build` **全绿**；构建产物抽样确认 `.mark` 已不在 CSS、Gitee 发行页地址已进 JS。
+按 issue #25 硬约束**未在本机执行任何 Rust 侧构建与检查**。
+
+**模拟真机（浏览器 mock + 无头 Edge，2026-09-28）**：以 `puppeteer-core` 驱动本机 Edge 打开 dev server（mock 运行时），
+DOM 断言 **10/10 通过**（探针脚本置于 `.rivet/scratch/`，该目录已被 gitignore、不入库）：
+
+| 断言 | 结果 |
+|---|---|
+| 品牌区 `.mark` 命中 0 个；品牌行仍显示应用名 | ✅ `brand="Tianshu-mcp 日志台"` |
+| 主导航为「任务列表 / 运行日志 / 设置」且顺序一致 | ✅ 实测 `["任务列表","运行日志","设置"]` |
+| 侧栏底部只剩「刷新」一个按钮 | ✅ 实测 `["刷新"]` |
+| 点击侧栏「设置」可开面板，且该导航项常亮（`is-on`） | ✅ |
+| 「手动下载」不再是 `<a target=_blank>` 锚点 | ✅ 页面已无含「手动下载」的 `<a>` |
+| 「强制 Gitee」下点「手动下载」→ 打开 `gitee.com/.../releases` | ✅ 经 `window.open` 桩捕获 |
+| 「强制 GitHub」下点「手动下载」→ 打开 `github.com/.../releases` | ✅ 经 `window.open` 桩捕获 |
+| 全程无 `pageerror` | ✅ |
+
+> 该探针覆盖的是**前端接线与 URL 选择逻辑**（用 `window.open` 桩捕获目标地址）；**系统浏览器是否真被拉起**属桌面运行时行为，
+> 仍须在 CI 产物上验收（见下条）。
+
+**如实披露（尚未完成）**：上表第 2/3/4 项的**真机行为**（系统浏览器是否真的被拉起、落点是否为所选源、设置条目的落位与常亮）
+**尚未在 Windows 10 上验收** —— 需 `GUI` workflow 打出 `gui-v0.1.0-beta.7` 后下载 NSIS 产物实测，结论待回填本节。
+
+**新增依赖与风险点（待 CI 确认）**：`src-tauri/Cargo.toml` 新增 `tauri-plugin-opener = "2"`（`Cargo.lock` 仍由 CI 生成，不入库）；
+JS 侧 `@tauri-apps/plugin-opener` 解析为 `2.6.0`（其要求 `@tauri-apps/api ^2.12.0`，lock 中 `@tauri-apps/api` 已解析为 `2.12.0`）。
+JS 绑定与 Rust crate 的版本匹配、`opener:allow-open-url` 白名单在运行时的实际放行范围，均由 `GUI` workflow 的 `cargo clippy` / `cargo test`
+与真机实测确认。
+
+---
+
+## 五、结论
 
 **CI 侧已跑通**（2026-09-27）：`GUI` workflow 的 `schema-parity` 与三平台 `cargo fmt` / `clippy -D warnings` / `cargo test` 全绿，
 且 **三个平台（windows-x86_64 / darwin-x86_64 / darwin-aarch64）全部 success**，均完成 `tauri build` 打包并上传产物。

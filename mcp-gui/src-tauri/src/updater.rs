@@ -16,7 +16,8 @@ use url::Url;
 
 use crate::models::{
     AppVersionInfo, CheckUpdateResult, InstallUpdateResult, ProbeSourceResult, SourceProbe,
-    MANUAL_DOWNLOAD_URL, UPDATE_ENDPOINT_GITEE, UPDATE_ENDPOINT_GITHUB,
+    MANUAL_DOWNLOAD_URL_GITHUB, MANUAL_DOWNLOAD_URL_GITEE, UPDATE_ENDPOINT_GITEE,
+    UPDATE_ENDPOINT_GITHUB,
 };
 use crate::AppState;
 
@@ -95,6 +96,15 @@ fn endpoint_for(source: &str) -> &'static str {
     }
 }
 
+/// 兜底下载页：与「本次实际使用的源」一一对应（未知源一律回退 GitHub）
+fn manual_download_url_for(source: &str) -> &'static str {
+    if source == "gitee" {
+        MANUAL_DOWNLOAD_URL_GITEE
+    } else {
+        MANUAL_DOWNLOAD_URL_GITHUB
+    }
+}
+
 /// 取探测结果（TTL 内直接用缓存）
 pub fn probe_sources(app: &AppHandle) -> ProbeSourceResult {
     let state = app.state::<AppState>();
@@ -142,14 +152,14 @@ fn resolve_source(requested: &str, probe: &ProbeSourceResult) -> String {
     }
 }
 
-fn failure_result(current_version: String, message: String) -> CheckUpdateResult {
+fn failure_result(current_version: String, source: &str, message: String) -> CheckUpdateResult {
     CheckUpdateResult {
         available: false,
         current_version,
         version: None,
         notes: None,
         source: None,
-        manual_download_url: Some(MANUAL_DOWNLOAD_URL.to_string()),
+        manual_download_url: Some(manual_download_url_for(source).to_string()),
         error: Some(message),
     }
 }
@@ -164,15 +174,15 @@ pub async fn check_update(app: AppHandle, source: String) -> CheckUpdateResult {
 
     let url = match Url::parse(endpoint_for(&chosen)) {
         Ok(u) => u,
-        Err(e) => return failure_result(current_version, format!("更新清单地址非法：{e}")),
+        Err(e) => return failure_result(current_version, &chosen, format!("更新清单地址非法：{e}")),
     };
     let builder = match app.updater_builder().endpoints(vec![url]) {
         Ok(b) => b,
-        Err(e) => return failure_result(current_version, format!("构造更新器失败：{e}")),
+        Err(e) => return failure_result(current_version, &chosen, format!("构造更新器失败：{e}")),
     };
     let updater = match builder.build() {
         Ok(u) => u,
-        Err(e) => return failure_result(current_version, format!("初始化更新器失败：{e}")),
+        Err(e) => return failure_result(current_version, &chosen, format!("初始化更新器失败：{e}")),
     };
 
     match updater.check().await {
@@ -184,8 +194,8 @@ pub async fn check_update(app: AppHandle, source: String) -> CheckUpdateResult {
                 current_version,
                 version: Some(update.version.clone()),
                 notes: update.body.clone(),
+                manual_download_url: Some(manual_download_url_for(&chosen).to_string()),
                 source: Some(chosen),
-                manual_download_url: Some(MANUAL_DOWNLOAD_URL.to_string()),
                 error: None,
             }
         }
@@ -196,8 +206,8 @@ pub async fn check_update(app: AppHandle, source: String) -> CheckUpdateResult {
                 current_version,
                 version: None,
                 notes: None,
+                manual_download_url: Some(manual_download_url_for(&chosen).to_string()),
                 source: Some(chosen),
-                manual_download_url: Some(MANUAL_DOWNLOAD_URL.to_string()),
                 error: None,
             }
         }
@@ -206,8 +216,8 @@ pub async fn check_update(app: AppHandle, source: String) -> CheckUpdateResult {
             current_version,
             version: None,
             notes: None,
+            manual_download_url: Some(manual_download_url_for(&chosen).to_string()),
             source: Some(chosen),
-            manual_download_url: Some(MANUAL_DOWNLOAD_URL.to_string()),
             error: Some(e.to_string()),
         },
     }
@@ -358,5 +368,15 @@ mod tests {
         assert_eq!(endpoint_for("gitee"), UPDATE_ENDPOINT_GITEE);
         assert_eq!(endpoint_for("github"), UPDATE_ENDPOINT_GITHUB);
         assert_eq!(endpoint_for("anything-else"), UPDATE_ENDPOINT_GITHUB);
+    }
+
+    #[test]
+    fn manual_download_url_follows_source() {
+        assert_eq!(manual_download_url_for("gitee"), MANUAL_DOWNLOAD_URL_GITEE);
+        assert_eq!(manual_download_url_for("github"), MANUAL_DOWNLOAD_URL_GITHUB);
+        assert_eq!(
+            manual_download_url_for("anything-else"),
+            MANUAL_DOWNLOAD_URL_GITHUB
+        );
     }
 }
