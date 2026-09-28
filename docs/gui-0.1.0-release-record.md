@@ -97,3 +97,35 @@
 
 **正文合成实测**：`node scripts/gui-release-body.mjs 0.1.0 github lanlan0811/tianshu-mcp` →
 272 行；相对链接已绝对化到 `blob/gui-v0.1.0/docs/`；**不含 npm registry 行**（GUI 不发 npm）。
+
+---
+
+## 五、Wave 4 — 预演验证（先 dispatch，不推 tag）
+
+**推送**：本地 3 个提交（`c1cd478` / `117688c` / `5ec8831`）推送到**双仓**，两仓均由
+`5e0d256` 快进到 `5ec8831`（推送前 `rev-list --left-right --count` 确认**无分叉**：behind=0）。
+
+**GitHub 侧构建（push 触发，非 tag）**：GUI run
+36471063339 —— 结论 **success**：
+
+| job | 结论 |
+|---|---|
+| `Schema parity (TS ↔ frontend ↔ Rust)` | success |
+| `Build (windows-x86_64)` | **success** |
+| `Build (darwin-x86_64)` | **success** |
+| `Build (darwin-aarch64)` | **success** |
+| `Publish release (GitHub + Gitee)` | skipped（非 tag，符合预期——发布只认 tag） |
+
+同提交的 `CI` run 36471063249 亦为 `completed/success`（MCP 主包门禁未被本次改动破坏）。
+
+**产物已上传（GitHub API 实测）**：
+
+| artifact | 大小 | 保留到期 |
+|---|---|---|
+| `gui-windows-x86_64` | 2.8 MB | 2026-10-12 |
+| `gui-darwin-aarch64` | 7.2 MB | 2026-10-12 |
+| `gui-darwin-x86_64` | 7.6 MB | 2026-10-12 |
+
+> 说明：三平台构建**真实执行**（非 skipped）；`Rust format / clippy / tests` 三步随 `Build` job 一并通过，
+> 即本次新增的 Rust 代码（`Preferences.ignored_update_version`）已通过 CI 的 `cargo fmt --check` /
+> `cargo clippy -D warnings` / `cargo test` ——这是本机无法执行的 Rust 侧门禁，按 issue #25 的约束一律由 CI 承担。
