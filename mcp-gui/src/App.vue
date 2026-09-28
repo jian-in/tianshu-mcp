@@ -2,7 +2,7 @@
 /**
  * 应用外壳：**常驻左侧栏 + 内容区**。
  *
- * 左栏（`aside.rail`）承载品牌 · 全局搜索 · 主导航（含「设置」）· 数据目录 · 任务分区 · 状态操作；
+ * 左栏（`aside.rail`）承载品牌 · 全局搜索 · 主导航（含「设置」）· 数据目录（与「刷新」同排）· 任务分区（底部仅在 mock 运行时留提示条）；
  * 右区（`main.stage`）是两态内容：态一 `OverviewPage`（指标仪 / 状态圆片 / 任务卡网格 / 搜索模式），
  * 态二 `WorkspacePage`（面包屑 / 摘要带 / 内容）。
  *
@@ -21,7 +21,7 @@ import ReportPanel from "./components/ReportPanel.vue";
 import SettingsDrawer from "./components/SettingsDrawer.vue";
 import { useI18n } from "@/i18n";
 import { isMockRuntime } from "@/api";
-import { app, clearError, openTab, refreshTasks, selectTask, type TabKey } from "@/stores/app";
+import { app, clearError, openTab, selectTask, type TabKey } from "@/stores/app";
 
 const { t } = useI18n();
 
@@ -131,22 +131,8 @@ function onNavigated(): void {
         </template>
       </nav>
 
-      <div class="rail-foot">
-        <div class="rail-row">
-          <button
-            class="ibtn"
-            :title="t('common.refresh')"
-            :aria-label="t('common.refresh')"
-            @click="refreshTasks"
-          >
-            <AppIcon name="refresh" />
-          </button>
-        </div>
-        <div
-          v-if="isMockRuntime"
-          class="tag tone-warn rail-mock"
-          :title="t('runtime.tauriUnavailable')"
-        >
+      <div v-if="isMockRuntime" class="rail-foot">
+        <div class="tag tone-warn rail-mock" :title="t('runtime.tauriUnavailable')">
           {{ t("runtime.mock") }}
         </div>
       </div>

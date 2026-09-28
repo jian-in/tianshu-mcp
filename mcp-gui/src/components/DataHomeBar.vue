@@ -1,14 +1,17 @@
 <script setup lang="ts">
 /**
- * 数据目录选择器（常驻侧栏内）：自动探测 + 手动多目录切换 / 追加 / 移除。
+ * 数据目录选择器 + 「刷新」按钮（常驻侧栏导航区内，紧接「设置」下方）。
  *
- * 侧栏是窄列，故为竖排形态：标签与「加 / 减」按钮同行，路径下拉独占一行。
+ * 自动探测 + 手动多目录切换 / 追加 / 移除；「刷新」在此与数据源操作同排，
+ * 使侧栏底部不再残留孤立按钮（刷新是**全局**动作，两态内容区都可用）。
+ *
+ * 侧栏是窄列，故为竖排形态：标签与「刷新 / 加 / 减」按钮同行，路径下拉独占一行。
  * 保留原生 `<select>`：跨 Windows/macOS 的稳定性与可访问性优先，样式由 `.select` 统一提供。
  */
 import { computed } from "vue";
 import AppIcon from "./AppIcon.vue";
 import { useI18n } from "@/i18n";
-import { addDataHome, app, removeDataHome, setActiveDataHome } from "@/stores/app";
+import { addDataHome, app, refreshTasks, removeDataHome, setActiveDataHome } from "@/stores/app";
 
 const { t } = useI18n();
 
@@ -25,6 +28,14 @@ async function onChange(event: Event): Promise<void> {
     <div class="rail-block-head">
       <span class="field-label">{{ t("dataHome.title") }}</span>
       <span class="grow" />
+      <button
+        class="ibtn"
+        :title="t('common.refresh')"
+        :aria-label="t('common.refresh')"
+        @click="refreshTasks"
+      >
+        <AppIcon name="refresh" />
+      </button>
       <button
         class="ibtn"
         :title="t('dataHome.add')"

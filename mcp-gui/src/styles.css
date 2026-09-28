@@ -444,13 +444,6 @@ button {
   min-width: 0;
 }
 
-.rail-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-width: 0;
-}
-
 /* mock 运行时提示：侧栏窄，允许折行 */
 .rail-mock {
   white-space: normal;
