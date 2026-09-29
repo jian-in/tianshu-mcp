@@ -8,7 +8,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## [Unreleased]
+## [0.7.5] - 2026-09-29
 
 ### Fixed
 
