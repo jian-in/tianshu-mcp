@@ -129,3 +129,73 @@
 > 说明：三平台构建**真实执行**（非 skipped）；`Rust format / clippy / tests` 三步随 `Build` job 一并通过，
 > 即本次新增的 Rust 代码（`Preferences.ignored_update_version`）已通过 CI 的 `cargo fmt --check` /
 > `cargo clippy -D warnings` / `cargo test` ——这是本机无法执行的 Rust 侧门禁，按 issue #25 的约束一律由 CI 承担。
+
+---
+
+## 六、Wave 5 — 正式发布（`gui-v0.1.0`）
+
+**用户决定**：维护者指示「直接打 tag」，**跳过 Windows 真机目测**（原计划里「稳」节奏的最后一道人工闸门）。
+本节如实记录由此产生的**未验证项**。
+
+**发布动作**：注解 tag `gui-v0.1.0`（消息 `Tianshu-mcp 日志台 0.1.0（首个正式版）`，
+指向 `3bba2d3`）推送 GitHub + Gitee 两仓。
+
+**GUI run 36500075023（ref=`gui-v0.1.0`）—— 5 个 job 全部 success**：
+
+| job | 结论 |
+|---|---|
+| `Schema parity (TS ↔ frontend ↔ Rust)` | success |
+| `Build (windows-x86_64)` | success |
+| `Build (darwin-x86_64)` | success |
+| `Build (darwin-aarch64)` | success |
+| `Publish release (GitHub + Gitee)` | **success**（正式版分流生效：不带 `--prerelease`） |
+
+### 6.1 双端发行版（API 实测）
+
+| 项 | GitHub | Gitee |
+|---|---|---|
+| tag | `gui-v0.1.0` | `gui-v0.1.0` |
+| Pre-release 标记 | **`prerelease=false`** | **`prerelease=false`** |
+| draft | `false` | — |
+| 资产/附件 | **8 个** | **10 个**（8 个产物 + Gitee 自动生成的 `gui-v0.1.0.zip` / `gui-v0.1.0.tar.gz` 源码归档） |
+| 正文 | 双语发行说明（13085 字符，含中英标题） | 双语发行说明（13084 字符，含中英标题） |
+| 正文含「测试版」 | 否 | 否 |
+| 正文内相对链接 | 已绝对化到 `blob/gui-v0.1.0/docs/` | 同 |
+| 正文含 npm registry 行 | 否（GUI 不发 npm） | 否 |
+
+GitHub 侧 8 个资产：`Tianshu-mcp-Logs_0.1.0_x64-setup.exe` + `.sig`、`Tianshu-mcp-Logs_0.1.0_x64.dmg`、
+`Tianshu-mcp-Logs_0.1.0_aarch64.dmg`、`Tianshu-mcp-Logs_darwin-aarch64.app.tar.gz` + `.sig`、
+`Tianshu-mcp-Logs_darwin-x86_64.app.tar.gz` + `.sig`。
+
+### 6.2 两端更新清单（逐一实测）
+
+| 检查 | GitHub `latest.json` | Gitee `latest-gitee.json` |
+|---|---|---|
+| `version` | **`0.1.0`** | **`0.1.0`** |
+| `notes` 含「测试版」 | 否 | 否 |
+| 平台键 | darwin-aarch64 / darwin-x86_64 / windows-x86_64 | 同 |
+| 6 个下载地址可达性 | 三个均 **HTTP 206**（Range 探测） | 三个均 **HTTP 200** |
+| 每个平台的 `signature` | 齐备 | 齐备 |
+
+核验脚本：`.rivet/scratch/verify-release.mjs`（**33 项断言全部 PASS**）。
+
+### 6.3 两仓一致性
+
+发布 job 会在两仓各写入一份清单提交（`d84e28d` 在 GitHub、`8c6a4d6` 在 Gitee），因此短暂分叉——
+已按项目既有做法合并回**同一提交 `dc9bba3`** 并推送到两仓（合并后 `github/master` = `gitee/master` = 本地 `dc9bba3`）。
+
+### 6.4 未验证项（如实披露）
+
+- ❌ **Windows 真机安装未执行**：维护者选择直接打 tag，安装包**未经真机安装与目测**
+  （原计划 Wave 4 的逐项清单未执行）。因此「设置面板显示 0.1.0 / 启动不误弹 / 弹窗尺寸与文案」
+  等观感项**仅有本机无头 Edge（mock）与单测证据**，无桌面真机证据；
+- ❌ **从 `0.1.0-beta.9` 升级到 `0.1.0` 的真机升级链路未验证**（自动更新下载 → 安装 → 版本变更）；
+- ❌ **macOS 未做真机功能验收**（与 0.1.0 之前各版本一致，属已披露的长期限制）。
+
+### 6.5 一次性探针的处置
+
+本次创建了三个一次性探针：`gui-update-probe.mjs`（更新面板三分支）、`wait-gui-run.mjs`（run 轮询）、
+`verify-release.mjs`（发行版与清单核验）。三者均位于 `.rivet/scratch/`（**该目录已 gitignore、不入库**）。
+计划原写「收尾清空探针」，实际**保留**在本机该目录中——理由：它们是本次结论（尤其 6.1 / 6.2 的核验）
+的**可复现手段**，删掉只会让后续复核成本更高；而它们既不进仓库也不进 npm 包，不构成交付残留。
+如需彻底清空，删除该目录下这三个文件即可。
