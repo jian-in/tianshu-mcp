@@ -1,0 +1,58 @@
+name: Download stats
+
+# 每日刷新 update/stats.json —— README 的「MCP 压缩包下载次数」与「GUI 下载次数」
+# 两个徽章经 shields 的 dynamic/json 读取该文件。
+#
+# 为什么自建数据源：shields 内置的 github/downloads 徽章只能统计「全仓合计」或
+# 「单个 tag」，无法只算 MCP（`v*`）前缀（全仓会把 GUI 的下载混进来，单 tag 又
+# 只能绑定某一具体版本）。详见 scripts/gh-download-stats.mjs 的头部说明。
+on:
+  schedule:
+    # 每天 03:23 UTC；错开整点以降低与其它定时任务撞车的概率
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    name: Refresh update/stats.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Refresh stats
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/gh-download-stats.mjs
+      - name: Commit stats
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add update/stats.json
+          if git diff --cached --quiet; then
+            echo "统计无变化，跳过提交"
+          else
+            # [skip ci]：统计数据提交无需再触发一次主 CI
+            git commit -m "chore(stats): 刷新下载统计 [skip ci]"
+            # 定时任务运行期间 master 可能被其它提交推进（本 job 的检出点是启动时的
+            # master），直接 push 会因 non-fast-forward 被拒；故失败即拉取最新 master
+            # 变基后重推，连续失败才判定为真故障。
+            for attempt in 1 2 3; do
+              if git push origin HEAD:master; then
+                echo "统计已推送（第 ${attempt} 次尝试）"
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "::error::统计推送连续 ${attempt} 次失败，请检查 master 上的并发提交"
+                exit 1
+              fi
+              echo "::warning::推送被拒（master 已前进），拉取最新 master 后重试（第 ${attempt} 次）"
+              git fetch origin master
+              git rebase origin/master
+            done
+          fi
