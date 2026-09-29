@@ -2,7 +2,7 @@
   <img src="./assets/tianshu-mcp-banner.svg" alt="天枢编排 MCP tianshu-mcp" width="100%">
 </p>
 
-<h1 align="center">天枢编排 MCP <sub>tianshu-mcp</sub></h1>
+<h1 align="center">天枢编排 MCP tianshu-mcp</h1>
 
 <p align="center">
   <b>把开发交给 AI-Agent，把验收交给运行时 · Dispatch with agents, verify with evidence.</b>

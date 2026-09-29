@@ -2,7 +2,7 @@
   <img src="./assets/tianshu-mcp-banner.svg" alt="Tianshu Orchestration MCP tianshu-mcp" width="100%">
 </p>
 
-<h1 align="center">Tianshu Orchestration MCP <sub>tianshu-mcp</sub></h1>
+<h1 align="center">Tianshu Orchestration MCP tianshu-mcp</h1>
 
 <p align="center">
   <b>Dispatch with agents, verify with evidence. · 把开发交给 AI-Agent，把验收交给运行时</b>
