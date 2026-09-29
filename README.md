@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://lanaiw.top"><b>官网</b></a> ·
   <a href="https://github.com/lanlan0811/tianshu-mcp"><b>GitHub 主仓</b></a> ·
   <a href="https://gitee.com/lan0811/tianshu-mcp"><b>Gitee 镜像</b></a> ·
   <a href="https://github.com/huiliyi37/Tianshu-harness"><b>天枢 Tianshu</b></a> ·
