@@ -44,7 +44,7 @@
 <p align="center">
   <img src="./assets/mcp-running.png" alt="Tianshu Harness desktop orchestrating ZCode through tianshu-mcp" width="100%">
   <br>
-  <sub>Tianshu Harness desktop in action — <b>Tianshu</b> calls <b>tianshu-mcp</b> over MCP to orchestrate <b>ZCode</b> through a development task: tasks dispatched and tracked on the left, tianshu-mcp tool calls and event stream in the middle (<code>mcp__tianshu-mcp__query_task</code> polling a running task), and ZCode doing the actual work on the right</sub>
+  Tianshu Harness desktop in action — <b>Tianshu</b> calls <b>tianshu-mcp</b> over MCP to orchestrate <b>ZCode</b> through a development task: tasks dispatched and tracked on the left, tianshu-mcp tool calls and event stream in the middle (<code>mcp__tianshu-mcp__query_task</code> polling a running task), and ZCode doing the actual work on the right
 </p>
 
 ### An orchestration layer and objective acceptance gate for AI agents
