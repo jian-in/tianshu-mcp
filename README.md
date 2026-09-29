@@ -41,6 +41,12 @@
 
 ---
 
+<p align="center">
+  <img src="./assets/mcp-running.png" alt="天枢 harness 桌面端通过 tianshu-mcp 调用 ZCode 完成开发" width="100%">
+  <br>
+  <sub>天枢 harness 桌面端实况 —— <b>天枢</b>经 MCP 调用 <b>tianshu-mcp</b> 编排 <b>ZCode</b> 完成一次开发任务：左侧派发与跟踪任务，中间是 tianshu-mcp 的工具调用与事件流（<code>mcp__tianshu-mcp__query_task</code> 轮询运行中的任务），右侧 ZCode 正在执行实际开发</sub>
+</p>
+
 ### 面向 AI-Agent 的编排层与客观验收仪
 
 > **tianshu-mcp** 是被 **天枢（Tianshu）** 当作标准 MCP server 接入的编排层。天枢是总指挥与用户交互面，本 server 承担三件事：**调度**（队列 / 并发闸 / 状态机 / 取消）、**执行面**（把任务书送达外部 AI-Agent）、**客观验收仪**（相对 git 基线做命令检查、代码分析与可选视觉比对）。

@@ -41,6 +41,12 @@
 
 ---
 
+<p align="center">
+  <img src="./assets/mcp-running.png" alt="Tianshu Harness desktop orchestrating ZCode through tianshu-mcp" width="100%">
+  <br>
+  <sub>Tianshu Harness desktop in action — <b>Tianshu</b> calls <b>tianshu-mcp</b> over MCP to orchestrate <b>ZCode</b> through a development task: tasks dispatched and tracked on the left, tianshu-mcp tool calls and event stream in the middle (<code>mcp__tianshu-mcp__query_task</code> polling a running task), and ZCode doing the actual work on the right</sub>
+</p>
+
 ### An orchestration layer and objective acceptance gate for AI agents
 
 > **tianshu-mcp** is an orchestration layer plugged into **Tianshu** as a standard MCP server. Tianshu is the commander and the user-facing surface; this server does three jobs: **scheduling** (queues / concurrency gate / state machine / cancellation), the **execution surface** (delivering task briefs to external AI agents), and the **objective acceptance gate** (command checks, code analysis and optional visual comparison, all relative to a git baseline).
