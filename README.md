@@ -40,7 +40,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lanlan0811/tianshu-mcp/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-MCP%20%E5%8E%8B%E7%BC%A9%E5%8C%85%20.tgz-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="下载 MCP 压缩包（.tgz）"></a>
+  <a href="https://www.npmjs.com/package/tianshu-mcp"><img src="https://img.shields.io/npm/d18m/tianshu-mcp?style=for-the-badge&logo=npm&logoColor=white&label=MCP%20%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&color=cb3837" alt="MCP 下载次数（npm）"></a>
   <a href="https://github.com/lanlan0811/tianshu-mcp/releases?q=gui-v&expanded=true"><img src="https://img.shields.io/github/downloads-pre/lanlan0811/tianshu-mcp/gui-v0.1.0/total?style=for-the-badge&logo=github&logoColor=white&label=GUI%20%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&color=1f6feb" alt="日志台 GUI 下载次数（Windows / macOS）"></a>
 </p>
 

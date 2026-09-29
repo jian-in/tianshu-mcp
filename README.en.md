@@ -40,7 +40,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lanlan0811/tianshu-mcp/releases/latest"><img src="https://img.shields.io/badge/Download-MCP%20tarball%20.tgz-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download the MCP tarball (.tgz)"></a>
+  <a href="https://www.npmjs.com/package/tianshu-mcp"><img src="https://img.shields.io/npm/d18m/tianshu-mcp?style=for-the-badge&logo=npm&logoColor=white&label=mcp%20downloads&color=cb3837" alt="MCP downloads (npm)"></a>
   <a href="https://github.com/lanlan0811/tianshu-mcp/releases?q=gui-v&expanded=true"><img src="https://img.shields.io/github/downloads-pre/lanlan0811/tianshu-mcp/gui-v0.1.0/total?style=for-the-badge&logo=github&logoColor=white&label=gui%20downloads&color=1f6feb" alt="Log viewer GUI download count (Windows / macOS)"></a>
 </p>
 
