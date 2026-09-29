@@ -22,6 +22,7 @@
   <a href="docs/acceptance-config.md"><b>验收配置</b></a> ·
   <a href="docs/visual-acceptance.md"><b>视觉验收</b></a> ·
   <a href="docs/event-stream.md"><b>事件流</b></a> ·
+  <a href="docs/gui-log-viewer.md"><b>日志台 GUI</b></a> ·
   <a href="HANDOFF.md"><b>交接文档</b></a>
 </p>
 
@@ -75,6 +76,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design
 - [权限与安全边界](#权限与安全边界)
 - [运行时契约](#运行时契约)
 - [里程碑](#里程碑)
+- [日志台 GUI](#日志台-gui)
 - [文档导航](#文档导航)
 - [面向开发者](#面向开发者)
 - [安全](#安全)
@@ -123,6 +125,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design
 - **终态通知 webhook**（issue #22）—— 可选 `notifications.webhook`（全局 `config.json`）：任务完成 / 失败 / 进入 `needs_attention` 时向指定 URL **异步 POST** 一条 JSON（含 `taskId` / `event` / `status` / 时间戳 / 报告路径），可选 HMAC-SHA256 签名。**默认关闭**，发送失败只记日志、**绝不影响状态机**。详见 [任务终态通知](docs/notifications.md)。
 - **视觉验收（可选模块，v0.5.0 起）** —— 页面截图对比、静态图片规格校验、基准两阶段批准与规则冻结；缺基准不得判通过，自动返修禁止调用批准入口。另有**可选 AI 内容校验**（v0.5.4，默认关闭）：判定完全**委托给你自备的本地命令**，MCP 不读取 / 不存储 / 不转发任何密钥、不内置模型客户端，默认**仅告警**。详见 [视觉验收](docs/visual-acceptance.md)。
 - **技能自检安装**（issue #16）—— 启动时把**包内** `skills/tianshu-mcp/` 幂等同步到 `~/.rivet/skills/tianshu-mcp/`；仅在**可证未被改动**时自动升级，**检出本地修改或来源不明一律保留 + 告警**。详见 [运行时契约](#运行时契约)。
+- **独立交付面：日志台 GUI** —— `mcp-gui/` 提供**本地只读**的桌面应用，把四类日志与任务产物统一到一个界面（Tauri 2.x + Vue 3，独立版本与 tag，不随 MCP 主包发布）；详见 [日志台 GUI](#日志台-gui)。
 - **不碰密钥** —— 各 agent 使用自己的登录态，本 server 不保存 / 转发任何 API key（详见 [SECURITY.md](SECURITY.md)）。
 - **想理解内部结构** —— 见 [ARCHITECTURE.md](ARCHITECTURE.md)（分层模型、模块边界、状态机、验收流水线、扩展点与已知缺口）。
 
@@ -354,6 +357,42 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | 日志台 GUI | `gui-v*`（独立线） | `mcp-gui/` 本地只读日志台（Tauri 2.x + Vue 3），独立版本与 tag，**不随 MCP 主包发布** |
 
 > 完整逐版记录见 [CHANGELOG.md](CHANGELOG.md)，交接状态与排障手册见 [HANDOFF.md](HANDOFF.md)，工程质量口径见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## 日志台 GUI
+
+`mcp-gui/` 是本仓库的**第二个交付面**（issue #25）：一个**本地只读**的桌面应用（Tauri 2.x + Vue 3 + Vite + TypeScript），把 MCP 落盘的日志与任务产物统一到一个界面里查看。它与 MCP server 的关系只有一条——**共享同一批落盘事实，不产生第二个事实来源**：
+
+- **不依赖 server 在运行** —— 纯读文件系统，数据目录按与 server **完全相同的规则**解析（`TIANSHU_MCP_HOME` → `~/.tianshu-mcp`），并可在多个数据目录之间切换 / 追加 / 移除。
+- **只读消费方** —— 全程不改动任何业务数据（唯一写入是应用自身偏好，落在系统应用配置目录），也不替代面向机器的 `query_task` / `get_task_report`。
+- **四类日志与产物** —— 全局运行日志、任务事件流、原始执行日志、验收报告；视觉离线 HTML 在 **sandbox iframe** 中渲染（禁用脚本、阻断外部资源）。
+
+| 数据源 | 路径（相对数据目录） | 界面位置 |
+|---|---|---|
+| 全局运行日志 | `logs/server.log` | 工作区 · 运行日志 |
+| 任务事件流 | `tasks/<taskId>/task.jsonl` | 工作区 · 事件流 |
+| 原始执行日志 | `tasks/<taskId>/agent-<轮次>.log`、`verify-<轮次>.log` | 工作区 · Agent 日志 / 验收日志 |
+| 验收报告 | `tasks/<taskId>/report-<轮次>.{md,json,html}`、`dry-run-report-<轮次>.{md,json}` | 工作区 · 验收报告 |
+
+主要能力：
+
+- **大日志与实时跟随** —— 首屏只读尾部 64 KiB 窗口、向前按块加载并显示「已加载 N / 共 M」；文件被追加时增量刷新，**上翻自动暂停跟随**，可一键「跳到最新」。
+- **跨任务搜索 / 导出** —— 按需扫描（**不建本地全文索引**）+ 进度反馈 + 可取消，命中按「任务 → 文件 → 行」分组并可跳转；支持单文件导出与任务整包 zip（可排除体积大的原始日志）。
+- **报告与多轮对比** —— `.md` 渲染、`.json` 结构化卡片、视觉 `.html` 沙箱预览；`dry-run-report-*` 与 `report-*` **分开展示**（静态分析 vs 真实命令验收，结论口径不同），多轮报告可并排对比。
+- **界面与主题** —— 中英双语、**跟随系统 / 浅色 / 深色**三选一；自研「黑曜石终端」设计系统，**零 UI 库、零外链、零字体文件**，图标一律内联 SVG。
+- **系统托盘与关闭行为** —— 常驻托盘（「显示日志台 / 退出日志台」，文案随界面语言即时切换），默认 **关闭窗口 = 缩小到托盘**，可在设置面板改为「关闭应用」。
+- **更新日志窗口与双源自动更新** —— 启动静默检查更新，命中即弹「更新日志」（下载并安装 / 忽略此版本 / 稍后），正文即该版本的双语发行说明；更新源由 **Gitee / GitHub 并发实测择优**（不依赖系统区域）决定并如实展示，包体经 **minisign 验签**，**验签不通过一律拒绝安装**。
+
+解耦与发布边界（改这里之前先读）：
+
+| 边界 | 约定 |
+|---|---|
+| 数据 | GUI **只读**业务目录；唯一写入是应用自身偏好与用户显式选择的导出 / 更新文件 |
+| 代码 | `mcp-gui/` 有自己的 `package.json` / `tsconfig` / eslint / vitest，**不参与根工程门禁** |
+| 打包 | 根 `package.json` 的 `files` 白名单不含 `mcp-gui`，**不被打入 MCP 主包 npm 产物** |
+| 发版 | GUI 独立版本号与独立 tag（`gui-v*`），**不随 MCP 主包发布**（`release.yml` 只认 `v*`） |
+| 构建 | 本机**不执行** Rust 侧构建与检查（`cargo fmt` / `clippy` / `tauri build` 全在 `GUI` workflow），本地只做前端预览与前端门禁 |
+
+> **双份 schema 的防漂移**：事件分类在 Rust 侧与前端各有一份镜像，真源始终是 `src/tasks/task.ts` 与 `src/agents/agent-events.ts`；`mcp-gui/scripts/check-schema-parity.mjs` 在 CI 中做三方集合比对，**任一不一致即 fail**。使用与开发说明见 [日志台文档](docs/gui-log-viewer.md)，真机记录见 [issue-25 记录](docs/issue-25-gui-real-machine-record.md)。
 
 ## 文档导航
 

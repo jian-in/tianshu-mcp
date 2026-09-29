@@ -22,6 +22,7 @@
   <a href="docs/acceptance-config.en.md"><b>Acceptance config</b></a> ·
   <a href="docs/visual-acceptance.en.md"><b>Visual acceptance</b></a> ·
   <a href="docs/event-stream.en.md"><b>Event stream</b></a> ·
+  <a href="docs/gui-log-viewer.en.md"><b>Log viewer GUI</b></a> ·
   <a href="HANDOFF.md"><b>Handoff</b></a>
 </p>
 
@@ -75,6 +76,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design
 - [Permissions and safety boundaries](#permissions-and-safety-boundaries)
 - [Runtime contract](#runtime-contract)
 - [Milestones](#milestones)
+- [Log viewer GUI](#log-viewer-gui)
 - [Documentation](#documentation)
 - [For developers](#for-developers)
 - [Security](#security)
@@ -123,6 +125,7 @@ The shape of this project is not a free design: it was forced by a handful of **
 - **Terminal-state webhook** (issue #22) — an optional `notifications.webhook` (global `config.json`): on completion, failure or entry into `needs_attention`, an **asynchronous POST** of a JSON body (with `taskId` / `event` / `status` / timestamp / report paths) is sent to the configured URL, with optional HMAC-SHA256 signing. **Off by default**, and a failed send only logs — it **never affects the state machine**. See [task notifications](docs/notifications.en.md).
 - **Visual acceptance (optional module, since v0.5.0)** — page screenshot comparison, static image spec validation, two-phase baseline approval and rule freezing; a missing baseline can never pass, and automatic rework may not call the approval entry. An **optional AI content validation** (v0.5.4, off by default) delegates judgement entirely to **a local command you supply** — the MCP reads, stores and forwards no keys and ships no model client — and it only **warns** by default. See [visual acceptance](docs/visual-acceptance.en.md).
 - **Skill self-install** (issue #16) — on startup the **in-package** `skills/tianshu-mcp/` is synced idempotently to `~/.rivet/skills/tianshu-mcp/`; it auto-upgrades **only a provably untouched copy**, and **detected local edits or an unknown source are always kept with a warning**. See the [runtime contract](#runtime-contract).
+- **Second delivery surface: the log viewer GUI** — `mcp-gui/` ships a **local read-only** desktop app that unifies the four log types and task artifacts in one interface (Tauri 2.x + Vue 3, with its own version and tag, not released with the MCP main package); see the [log viewer GUI](#log-viewer-gui).
 - **No key handling** — each agent uses its own login state; this server never stores or forwards any API key (see [SECURITY.en.md](SECURITY.en.md)).
 - **Want the internals?** — see [ARCHITECTURE.en.md](ARCHITECTURE.en.md) (layering, module boundaries, state machine, acceptance pipeline, extension points, known gaps).
 
@@ -354,6 +357,42 @@ Allowing and disabling (a CLI flag or its equivalent environment variable; `--no
 | Log viewer GUI | `gui-v*` (separate line) | `mcp-gui/` local read-only log viewer (Tauri 2.x + Vue 3), independent version and tag, **not released with the MCP main package** |
 
 > The complete per-version record is in [CHANGELOG.en.md](CHANGELOG.en.md); handoff status and the troubleshooting handbook are in [HANDOFF.md](HANDOFF.md); engineering-metric definitions are in [ARCHITECTURE.en.md](ARCHITECTURE.en.md).
+
+## Log viewer GUI
+
+`mcp-gui/` is this repository's **second delivery surface** (issue #25): a **local read-only** desktop app (Tauri 2.x + Vue 3 + Vite + TypeScript) that unifies the logs MCP writes to disk and the task artifacts in one interface. Its only relationship with the MCP server is that it **shares the same set of on-disk facts and creates no second source of truth**:
+
+- **It does not need the server to be running** — it reads the filesystem directly, resolving the data directory by **exactly the same rules** as the server (`TIANSHU_MCP_HOME` → `~/.tianshu-mcp`), and can switch between, add, or remove multiple data directories.
+- **A read-only consumer** — it never modifies any business data (its only writes are its own preferences, stored in the system application config directory), and it does not replace the machine-facing `query_task` / `get_task_report`.
+- **Four log types and artifacts** — the global run log, the task event stream, raw execution logs and acceptance reports; the visual offline HTML is rendered inside a **sandbox iframe** (scripts disabled, external resources blocked).
+
+| Source | Path (relative to the data directory) | Where in the UI |
+|---|---|---|
+| Global run log | `logs/server.log` | Workspace · run log |
+| Task event stream | `tasks/<taskId>/task.jsonl` | Workspace · event stream |
+| Raw execution logs | `tasks/<taskId>/agent-<round>.log`, `verify-<round>.log` | Workspace · agent log / verify log |
+| Acceptance reports | `tasks/<taskId>/report-<round>.{md,json,html}`, `dry-run-report-<round>.{md,json}` | Workspace · acceptance reports |
+
+Key capabilities:
+
+- **Large logs and live tail** — the first paint reads only a 64 KiB tail window, loading earlier blocks on demand with a "loaded N / M" indicator; appended content refreshes incrementally, **scrolling up pauses following automatically**, and one click jumps back to the latest.
+- **Cross-task search / export** — scanned on demand (**no local full-text index**) with progress and cancellation, results grouped by "task → file → line" and clickable; single-file export and whole-task zip export (optionally excluding the bulky raw logs).
+- **Reports and multi-round comparison** — `.md` rendering, `.json` structured cards and a sandboxed `.html` visual preview; `dry-run-report-*` and `report-*` are shown **separately** (static analysis vs real command acceptance, which have different verdict semantics), and multiple rounds can be compared side by side.
+- **Interface and theme** — bilingual (Chinese / English) with **follow-system / light / dark** themes; a self-built "Obsidian Terminal" design system with **zero UI libraries, zero external links and zero font files**, and all icons as inline SVG.
+- **System tray and close behaviour** — a resident tray ("Show log viewer" / "Quit log viewer", with labels following the UI language immediately); by default **closing the window minimizes to tray**, switchable to "quit the app" in settings.
+- **Update-notes window and dual-source auto-update** — a silent update check at startup pops the "update notes" window when a new version is found (download and install / ignore this version / later), whose body is that version's bilingual release notes; the update source is chosen by **concurrently probing Gitee / GitHub and picking the better one** (never relying on system region) and is shown truthfully, and every package is **minisign-verified** — **a failed signature is never installed**.
+
+Decoupling and release boundaries (read before changing anything here):
+
+| Boundary | Convention |
+|---|---|
+| Data | The GUI **reads** business directories only; its only writes are its own preferences and the export / update files the user explicitly chooses |
+| Code | `mcp-gui/` has its own `package.json` / `tsconfig` / eslint / vitest and **does not take part in the root project's gates** |
+| Packaging | The root `package.json` `files` allowlist excludes `mcp-gui`, so it is **not shipped in the MCP main package's npm artifact** |
+| Release | The GUI has its own version and its own tag (`gui-v*`) and is **not released with the MCP main package** (`release.yml` only matches `v*`) |
+| Build | Rust-side builds and checks are **never run locally** (`cargo fmt` / `clippy` / `tauri build` all live in the `GUI` workflow); locally only the frontend preview and frontend gates run |
+
+> **Schema parity across the two copies**: the event classification exists as a mirror on the Rust side and in the frontend, while the source of truth always remains `src/tasks/task.ts` and `src/agents/agent-events.ts`; `mcp-gui/scripts/check-schema-parity.mjs` compares all three sets in CI and **fails on any mismatch**. Usage and development notes are in the [log viewer docs](docs/gui-log-viewer.en.md); the real-machine record is in the [issue #25 record](docs/issue-25-gui-real-machine-record.md).
 
 ## Documentation
 
