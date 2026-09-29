@@ -8,6 +8,27 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Qoder CN 0.4.2/0.4.3 support** (PR #26, contributed by jian-in): from 0.4.2 the model menu drops
+  the "default/custom" group tabs (candidates become a flat list and the model name moves to the trigger
+  text); in 0.4.3 the composer picker loses its `aria-label` and the bound-workspace container loses its
+  `title`. The selector candidate order now puts the stable marker `[data-workspace-picker-trigger]` before
+  the broad aria heuristic (otherwise it matches the sidebar "Workspace" section header and surfaces as
+  `qoder_stage_timeout: workspace-menu`); the "menu is open" check is narrowed to the search box
+  `workspaceSearch` (a generic `[role=menu][data-state=open]` can be matched by an unrelated overlay and
+  pass falsely); bound-workspace readback lists title-less container candidates and falls back to
+  `aria-label`/text. `QoderCdpClient` gains `resolveKey()`/`textKey()` for compound queries that need the
+  first matching candidate.
+- **Verify engine normalises the `cwd` drive-letter case on Windows** (same PR): a project path may be
+  registered with a lowercase drive letter (e.g. `e:/proj` in `projects.json`), and vite/vitest key their
+  module graph by path string, so `e:\proj` and `E:\proj` count as two locations, the same module appears
+  twice, and collection crashes. `runVerifyCommand` now normalises with `fs.realpathSync.native` before
+  spawning (the non-native variant returns the lowercase drive letter unchanged on Windows); when the path
+  cannot be resolved it falls back to the original value, so normalisation never blocks acceptance.
+
 ## [0.7.4] - 2026-09-28
 
 ### Fixed

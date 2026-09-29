@@ -7,6 +7,23 @@
 
 ---
 
+## [Unreleased]
+
+### 修复
+
+- **Qoder CN 0.4.2/0.4.3 适配**（PR #26，贡献者 jian-in）：0.4.2 起模型菜单移除「默认/自定义」
+  分组 tab（候选为平铺列表、模型名移到触发器文本），0.4.3 的输入栏 picker 去掉 `aria-label`、
+  已绑定工作区容器去掉 `title`。选择器候选顺序把稳定标记 `[data-workspace-picker-trigger]`
+  提到宽泛 aria 启发式之前（否则会点中侧栏「工作区」区域头，表现为 `qoder_stage_timeout: workspace-menu`）；
+  「菜单已打开」判定收窄为只认搜索框 `workspaceSearch`（泛化的 `[role=menu][data-state=open]`
+  会被无关浮层误命中而假通过）；已绑定工作区读回并列无 `title` 容器候选并回退 `aria-label`/文本。
+  `QoderCdpClient` 新增 `resolveKey()`/`textKey()`，供组合式查询取首个命中候选。
+- **验收引擎在 Windows 上归一 check 的 `cwd` 盘符大小写**（同 PR）：项目路径可能以小写盘符登记
+  （如 `projects.json` 里的 `e:/proj`），而 vite/vitest 按路径字符串建模块图与缓存键，
+  `e:\proj` 与 `E:\proj` 会被当成两个位置、同一模块出现两份实例，表现为收集期崩溃。
+  `runVerifyCommand` 在 spawn 前用 `fs.realpathSync.native` 归一（非 native 版本在 Windows 上
+  原样返回小写盘符，不纠正大小写）；路径不可解析时退回原值，归一失败不阻断验收。
+
 ## [0.7.4] - 2026-09-28
 
 ### 修复

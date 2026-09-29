@@ -19,7 +19,7 @@ Qoder 适配器通过桌面应用的 CDP 界面执行开发任务，并复用天
 
 `projectPath` 必须是已有目录，`planDoc` 必须是可读取文件；相对计划路径基于项目根目录解析。适配器会发送完整项目路径、完整计划路径与任务要求。不会替用户创建缺失的磁盘目录。
 
-模型参数均可省略。省略模型、思考等级时沿用当前值；指定模型但不提供 `modelSource` 时，必须在“默认”和“自定义”两组中唯一精确匹配。重复名称需要指定 `default` 或 `custom`，不能仅靠模型名称猜测来源。
+模型参数均可省略。省略模型、思考等级时沿用当前值；指定模型但不提供 `modelSource` 时，必须在“默认”和“自定义”两组中唯一精确匹配。重复名称需要指定 `default` 或 `custom`，不能仅靠模型名称猜测来源。0.4.2 起模型菜单移除了「默认/自定义」分组 tab，候选是一张平铺列表——此时不存在跨组重名，`modelSource` 可省略。
 
 支持输入 `低/low`、`中/medium`、`高/high`、`极高/xhigh`、`最大/max`、`关闭思考/off`。可用等级以当前模型在“模型管理”中实际展示的选项为准；某个自定义模型不一定提供全部等级。适配器拒绝不支持的档位，不自动降级。
 
@@ -33,9 +33,13 @@ Qoder 适配器通过桌面应用的 CDP 界面执行开发任务，并复用天
 
 工作区使用完整路径确认身份。名称只作为候选，不作为目录身份；中文、空格、同名目录均需核对实际路径。未登记的已有目录通过“新的任务 → 工作区入口 → 新建工作区 → 添加可读写文件夹 → 选择文件夹 → 创建”登记。原生对话框必须同时匹配进程归属、新出现的窗口和标题，随后回读源目录。
 
-选择器采用与 Codex 同构的分层结构（`primary`/`fallbacks`/`texts`/`ariaLabels`/`ariaPatterns`/`verifiedVersion`，共 27 键），`QoderCdpClient` 的 `selector()` 仍返回字符串首选，另增 `candidates()`/`existsKey()`/`clickKey()` 按候选顺序“先探测后点击”。
+选择器采用与 Codex 同构的分层结构（`primary`/`fallbacks`/`texts`/`ariaLabels`/`ariaPatterns`/`verifiedVersion`，共 27 键），`QoderCdpClient` 的 `selector()` 仍返回字符串首选，另增 `candidates()`/`existsKey()`/`clickKey()` 按候选顺序“先探测后点击”，以及 `resolveKey()`/`textKey()` 供需要把选择器拼进组合式查询的调用方取**首个命中候选**（只用 `selector()` 取 primary 会让多候选形同虚设）。
 
-**工作区入口（issue #23 真机重探更正）**：0.3.4 页面上存在**两个** `[data-workspace-picker-trigger]` 按钮，旧的唯一点击判定会判歧义而失败——这才是「工作区菜单不渲染」表象的真因（实测点中输入栏 picker 后菜单正常出现，搜索框亦出现）。现主选择器用唯一的 `button[aria-label^="切换或清空当前工作区"]`（带 `aria-expanded`），`[data-workspace-picker-trigger]` 仅作回退；“菜单已打开”判定放宽为“搜索框 **或** 浮层（`[role=menu][data-state=open]`）”。生产 `bindWorkspace` 已在真实 Qoder 0.3.4 上跑通，详见 [issue #23 验证记录](issue-23-selector-drift-record.md)。
+**工作区入口（0.3.4 真机重探 → 0.4.2/0.4.3 适配）**：0.3.4 页面上存在**两个** `[data-workspace-picker-trigger]` 按钮，旧的唯一点击判定会判歧义而失败——这才是最初「工作区菜单不渲染」表象的真因（实测点中输入栏 picker 后菜单正常出现，搜索框亦出现）。据此主选择器改用唯一的 `button[aria-label^="切换或清空当前工作区"]`（带 `aria-expanded`），`[data-workspace-picker-trigger]` 降为回退；该结论与当时的真机记录见 [issue #23 验证记录](issue-23-selector-drift-record.md)。
+
+0.4.3 的输入栏 picker 去掉了上述 `aria-label`，主选择器 0 命中后会落到宽泛回退 `button[aria-expanded][aria-label*="工作区"]`——它命中的是**侧栏「工作区」区域头**（`aria-label` 恰为「工作区」、`aria-expanded="true"`），点击不弹下拉，表现为 `qoder_stage_timeout: workspace-menu`。故把稳定标记 `[data-workspace-picker-trigger]` 提到宽泛启发式之前（0.4.3 实测该标记唯一命中，点击可正常打开菜单）。同时「菜单已打开」的判定**收窄为只认搜索框**（`workspaceSearch`）：泛化的 `[role=menu][data-state=open]` 会被页面无关浮层命中而假通过；点击落空时短促复核并重试一次，两次都不成立才判失败。
+
+已绑定工作区的读回：0.4.2 及以前路径挂在 `[data-conversation-workspace][title]` 上；0.4.3 该容器无 `title`、路径落在内层 `aria-label`。故容器侧并列全部候选并回退 `aria-label`/文本，picker 侧仍只认 `title`（其 `aria-label` 是提示语「切换或清空当前工作区…」，不是路径）。候选项点击后同样加短促复核，未关闭再点一次。
 
 初次任务新建会话。返修和续答恢复持久化的原会话，并重新核对目录；不能确认原会话时停止派发。
 
@@ -70,3 +74,5 @@ Qoder 自述完成不能代替验收通过。验收使用项目配置的检查�
 构建后可运行 `npm run probe:qoder -- install` 检查安装发现，或 `npm run probe:qoder -- state --port 9777` 检查已有实例（端口按实际配置替换）。探针不启动应用、不发送任务、不点击审批；连接时可能将已有工作台置前。输出省略任务及回复正文，分享路径和会话标识前仍应检查个人信息。
 
 自动化测试使用可控 GUI 替身，不依赖登录或真实桌面。2026-09-22 在 Windows 10 / Qoder CN 0.3.4 上通过公共 MCP 工具完成真机验收：已有工作区使用默认模型 Qwen3.8-Flash / 低完成开发与验收；新登记工作区使用自定义模型 deepseek-v4-flash / 高完成开发、受控错误验收失败、生成计划、原会话返修和再次验收。工作区外计划读取由用户审批，恢复时未重发消息。见[脱敏状态与报告](qoder-evidence/windows-smoke.json)、[默认模型设置截图](qoder-evidence/default-model-settings.png)、[自定义模型设置截图](qoder-evidence/custom-model-settings.png)。模型名称仅为本次样例，不是默认要求。macOS 的路径及平台分支测试不代表真实 GUI 已通过验证。
+
+0.4.2/0.4.3 适配（2026-09-29）：0.4.2 的模型菜单移除「默认/自定义」分组 tab，候选为平铺列表、模型名移到触发器文本；0.4.3 的输入栏 picker 去掉 `aria-label`，已绑定工作区容器去掉 `title`、路径落在内层 `aria-label`。上述选择器结论来自 issue #23 真机重探与本轮真机探针；纯单测只能锁定查询契约（测试替身不解析真实 DOM），0.4.3 的读回行为依赖真机复验。
