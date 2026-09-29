@@ -346,21 +346,35 @@ jobs:
             exit "$CODE"
           fi
 
-      - name: Commit GitHub manifest (update/gui/latest.json)
-        if: steps.manifest.outputs.built == 'true'
+      - name: Commit release artifacts (update manifest + README badge tag)
+        if: success()
         shell: bash
         run: |
           TAG="${{ github.ref_name }}"
-          mkdir -p update/gui
-          cp latest.json update/gui/latest.json
+          # README 的 GUI 下载次数徽章绑定具体 tag（shields 不支持按 tag 前缀匹配），
+          # 发版时把双语 README 同步为本次 tag —— 否则徽章会静默停留旧版本的累计数。
+          sed -i -E "s|(downloads-pre/lanlan0811/tianshu-mcp/)gui-v[0-9A-Za-z._-]+|\1${TAG}|g" README.md README.en.md
+          for f in README.md README.en.md; do
+            if ! grep -q "downloads-pre/lanlan0811/tianshu-mcp/${TAG}/" "$f"; then
+              echo "::error::README 徽章 tag 同步失败：$f 中未出现 ${TAG}"
+              exit 1
+            fi
+          done
+          if [ "${{ steps.manifest.outputs.built }}" = "true" ]; then
+            mkdir -p update/gui
+            cp latest.json update/gui/latest.json
+          else
+            echo "::warning::本次未生成更新清单，仅同步 README 徽章 tag"
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add update/gui/latest.json
+          git add README.md README.en.md
+          if [ -f update/gui/latest.json ]; then git add update/gui/latest.json; fi
           if git diff --cached --quiet; then
-            echo "清单无变化，跳过提交"
+            echo "无变化，跳过提交"
           else
             # [skip ci]：避免清单提交再触发一次主 CI（GUI 发版与 MCP 发版互不干扰）
-            git commit -m "chore(gui): 发布 ${TAG} 并更新更新清单 [skip ci]"
+            git commit -m "chore(gui): 发布 ${TAG}，同步更新清单与 README 徽章 [skip ci]"
             # 发版期间 master 可能被其它提交推进（本 job 的检出点是启动时的 master），
             # 直接 push 会因 non-fast-forward 被拒并使整条发布流水线失败。
             # 这里失败即拉取最新 master 变基后重推；连续失败才判定为真故障。
