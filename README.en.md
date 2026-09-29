@@ -390,21 +390,15 @@ Key capabilities:
 - **Update-notes window and dual-source auto-update** — a silent update check at startup pops the "update notes" window when a new version is found (download and install / ignore this version / later), whose body is that version's bilingual release notes; the update source is chosen by **concurrently probing Gitee / GitHub and picking the better one** (never relying on system region) and is shown truthfully, and every package is **minisign-verified** — **a failed signature is never installed**.
 
 <p align="center">
-  <img src="./assets/tianshu-mcp-gui-overview.png" alt="Log viewer · task overview page" width="88%">
+  <a href="./assets/tianshu-mcp-gui-overview.png"><img src="./assets/tianshu-mcp-gui-overview.png" alt="Log viewer · task overview page" width="32%"></a>
+  <a href="./assets/tianshu-mcp-gui-event-stream.png"><img src="./assets/tianshu-mcp-gui-event-stream.png" alt="Log viewer · task event stream workspace" width="32%"></a>
+  <a href="./assets/tianshu-mcp-gui-agent-log.png"><img src="./assets/tianshu-mcp-gui-agent-log.png" alt="Log viewer · agent raw log workspace" width="32%"></a>
   <br>
-  <sub>Task overview page — resident left rail · five-cell metrics (total / running / finished / succeeded / failed) · status chips · task card grid</sub>
-</p>
-
-<p align="center">
-  <img src="./assets/tianshu-mcp-gui-event-stream.png" alt="Log viewer · task event stream workspace" width="88%">
+  <b>Task overview page</b> — resident left rail · five-cell metrics (total / running / finished / succeeded / failed) · status chips · task card grid
   <br>
-  <sub>Full-screen workspace · event stream — line / time / event / detail columns, with status transitions and progress records colour-coded</sub>
-</p>
-
-<p align="center">
-  <img src="./assets/tianshu-mcp-gui-agent-log.png" alt="Log viewer · agent raw log workspace" width="88%">
+  <b>Full-screen workspace · event stream</b> — line / time / event / detail columns, with status transitions and progress records colour-coded
   <br>
-  <sub>Full-screen workspace · agent log — level filtering · line numbers and word wrap · "loaded N / M" with "jump to latest"</sub>
+  <b>Full-screen workspace · agent log</b> — level filtering · line numbers and word wrap · "loaded N / M" with "jump to latest"
 </p>
 
 Decoupling and release boundaries (read before changing anything here):
