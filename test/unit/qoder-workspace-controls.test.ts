@@ -10,6 +10,8 @@ class WorkspaceControls extends QoderCdpClient {
   matches=0;
   picker=false;
   form=false;
+  menuOverlay=false;
+  clickOpensPicker=true;
   selectedFolder=false;
   name='';
   search='';
@@ -25,7 +27,7 @@ class WorkspaceControls extends QoderCdpClient {
   override async exists(css:string){
     // issue #23：选择器升级为多候选，桩按候选集合匹配（候选顺序由生产代码决定，这里只需回答「在不在」）。
     if(this.candidates('workspaceSearch').includes(css))return this.picker;
-    if(this.candidates('workspaceMenu').includes(css))return false;
+    if(this.candidates('workspaceMenu').includes(css))return this.menuOverlay;
     if(this.candidates('workspaceForm').includes(css))return this.form;
     if(this.candidates('workspace').includes(css))return true;
     if(css.includes('[title='))return this.selectedFolder;
@@ -38,7 +40,7 @@ class WorkspaceControls extends QoderCdpClient {
   }
   override async click(css:string,text?:string){
     this.clicks.push(text??css);
-    if(css===this.selector('workspace'))this.picker=true;
+    if(css===this.selector('workspace'))this.picker=this.clickOpensPicker;
     else if(css===this.selector('workspaceItem')){this.bound=this.candidate;this.picker=false;}
     else if(text==='新建工作区'){this.form=true;this.picker=false;}
     else if(css===this.selector('workspaceCreate')){this.bound=this.candidate;this.form=false;}
@@ -78,5 +80,13 @@ describe('Qoder workspace identity and registration',()=>{
     const c=new WorkspaceControls(project);
     await expect(bindWorkspace(c,project,wait,{pids:[123],timeoutMs:100,list:async()=>[],select:async()=>({ok:true,message:'selected'})})).rejects.toThrow('source-folder-readback');
     expect(c.clicks).not.toContain(c.selector('workspaceCreate'));
+  });
+  it('does not treat a generic open overlay as proof the workspace menu opened',async()=>{
+    // 2026-09-24 真机复现：页面无关浮层 [role=menu][data-state=open] 曾让「菜单已开」假通过；
+    // 现判定只认搜索框，点击落空时必须判失败，而不是带着假象继续找搜索框。
+    const c=new WorkspaceControls(project);
+    c.menuOverlay=true;       // 页面存在无关的 open 浮层
+    c.clickOpensPicker=false; // 点击没有真的打开工作区下拉
+    await expect(bindWorkspace(c,project,wait,{pids:[],timeoutMs:100})).rejects.toThrow('workspace-menu');
   });
 });

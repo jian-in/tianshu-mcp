@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { QoderCdpClient } from './cdp.js';
 import type { WaitFor } from './model.js';
 import { listOwnedDialogs, selectQoderFolder } from './dialog.js';
@@ -14,21 +15,56 @@ export async function assertWorkspace(c:QoderCdpClient,project:string):Promise<v
   const actual=await boundWorkspace(c);
   if(!actual||normalizeWorkspacePath(actual)!==normalizeWorkspacePath(project)) throw new Error(`qoder_workspace_mismatch: expected=${project}, actual=${actual}`);
 }
-export async function bindWorkspace(c:QoderCdpClient,project:string,wait:WaitFor,native:{pids:number[];timeoutMs:number;signal?:AbortSignal;list?:typeof listOwnedDialogs;select?:typeof selectQoderFolder}):Promise<void> {
-  const current=await boundWorkspace(c);
-  if(current&&normalizeWorkspacePath(current)===normalizeWorkspacePath(project))return;
-  // issue #23 真机重探修正：0.3.4 有 2 个 [data-workspace-picker-trigger]，旧代码点它即歧义失败；
-  // 现主选择器为唯一的 aria-label「切换或清空当前工作区…」。index=0 保留原索引语义（多候选时取首个可见）。
-  await c.clickKey('workspace', undefined, 0);
-  // 菜单打开判定：搜索框出现 **或** 任一浮层（menu/dialog 的 data-state=open）出现（多形态并列，避免误判）。
+/** 工作区下拉就绪的唯一可靠证据：搜索框出现。泛化的 [data-state=open] 会被页面其他浮层误命中。 */
+const workspaceMenuOpen=(c:QoderCdpClient):Promise<boolean>=>c.existsKey('workspaceSearch');
+
+/** 点击后的短促复核（不占用 wait 的全局预算）：下拉是否已经出现。 */
+async function workspaceMenuAppeared(c:QoderCdpClient,timeoutMs=2500):Promise<boolean> {
+  const deadline=Date.now()+timeoutMs;
+  for(;;){
+    if(await workspaceMenuOpen(c))return true;
+    if(Date.now()>=deadline)return false;
+    await delay(100);
+  }
+}
+
+/**
+ * 打开工作区下拉，并确认它**真的**打开了。
+ *
+ * 2026-09-24 真机诊断（本机 Qoder CN 0.4.2）：
+ *  1. 「菜单已开」的旧判定 `workspaceSearch || workspaceMenu` 里的 workspaceMenu 形如
+ *     [role=menu][data-state=open]，会被页面无关浮层命中，造成假通过，随后找搜索框才发现没有。
+ *     → 判定收窄为只认搜索框；点击落空时复核并再点一次。
+ *  2. 曾试过让 click() 要求「可见匹配恰好为 1」来避坑，但实测 0.4.2 的回退候选
+ *     （[data-workspace-picker-trigger] / [aria-expanded][aria-label*=工作区]）**都是 2 个可见**，
+ *     一旦主选择器未就绪而回退，要求唯一就必然超时。故保留 index=0（多匹配取首个可见），
+ *     点对了没有交给下面的复核回答。
+ */
+async function openWorkspaceMenu(c:QoderCdpClient,wait:WaitFor):Promise<void> {
+  // 页面刚切过来时触发器可能尚未就绪，先等它出现再点（避免一次空点）。
+  await wait(()=>c.existsKey('workspace'),'workspace-picker');
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      await c.clickKey('workspace',undefined,0);
+      if(await workspaceMenuAppeared(c))return;
+    }catch{
+      // 点击未能发出（元素未就绪/被遮挡）；交给下一轮重试或下方的 wait 定调
+    }
+  }
   try {
-    await wait(async()=>await c.existsKey('workspaceSearch')||await c.existsKey('workspaceMenu'),'workspace-menu');
+    await wait(()=>workspaceMenuOpen(c),'workspace-menu');
   } catch (error) {
     // 附页面可见候选，便于定位 UI 漂移
     const labels = await c.visibleLabels();
     const hint = labels.length ? `；页面可见候选=[${labels.join(' | ')}]` : '';
     throw new Error(`${(error as Error).message}${hint}`);
   }
+}
+
+export async function bindWorkspace(c:QoderCdpClient,project:string,wait:WaitFor,native:{pids:number[];timeoutMs:number;signal?:AbortSignal;list?:typeof listOwnedDialogs;select?:typeof selectQoderFolder}):Promise<void> {
+  const current=await boundWorkspace(c);
+  if(current&&normalizeWorkspacePath(current)===normalizeWorkspacePath(project))return;
+  await openWorkspaceMenu(c,wait);
   await c.fill(c.selector('workspaceSearch'),process.platform==='win32'?path.win32.normalize(project):project);
   // UI filters by name OR path; selection is always followed by full-path verification.
   await wait(async()=>await c.evaluate<boolean>(`document.querySelector(${JSON.stringify(c.selector('workspaceSearch'))})?.value===${JSON.stringify(process.platform==='win32'?path.win32.normalize(project):project)}`),'workspace-search');

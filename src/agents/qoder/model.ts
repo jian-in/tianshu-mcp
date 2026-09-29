@@ -21,43 +21,59 @@ export type WaitFor = (check:()=>Promise<boolean>,stage:string)=>Promise<void>;
 
 export async function configureModel(c: QoderCdpClient, requested: {model?:string;source?:QoderModelSource;level?:string},wait: WaitFor): Promise<{model:string;source:QoderModelSource;level?:QoderLevel;globalChanged:boolean}> {
   const level=normalizeLevel(requested.level);
-  const trigger=await c.text(c.selector('model'));
+  // 0.3.4 触发器 aria-label=「模型:<名>」；0.4.2 退化为「模型」，模型名移到按钮文本。按候选探测读取。
+  const trigger=await c.textKey('model');
   const name=requested.model ?? trigger.split('\n')[0]?.trim();
   if(!name)throw new Error('qoder_model_unreadable');
-  await c.click(c.selector('model'));
-  await wait(()=>c.exists(c.selector('modelMenu')),'model-menu');
-  const selectedSource=await c.evaluate<QoderModelSource>(`document.querySelector('[data-chat-model-selector-menu] [role="tab"][aria-selected="true"]')?.getAttribute('data-value')`);
+  await c.clickKey('model');
+  await wait(()=>c.existsKey('modelMenu'),'model-menu');
+  const menu=(await c.resolveKey('modelMenu'))??c.selector('modelMenu');
+  const list=(await c.resolveKey('modelList'))??c.selector('modelList');
   const items:ModelChoice[]=[];
-  for(const source of ['default','custom'] as const){
-    await c.click(`${c.selector('modelMenu')} [role="tab"][data-value="${source}"]`);
-    await wait(()=>c.exists(`${c.selector('modelMenu')} [role="tab"][data-value="${source}"][aria-selected="true"]`),'model-source');
-    const names=await c.evaluate<string[]>(`[...document.querySelectorAll(${JSON.stringify(c.selector('modelList'))})].map(e=>e.innerText.trim().split('\\n')[0])`);
-    names.forEach((n,index)=>items.push({name:n,source,index}));
+  // 0.3.4 菜单内置「默认/自定义」分组 tab；0.4.2 已移除，模型是一张平铺列表。
+  const grouped=await c.exists(`${menu} [role="tab"][data-value="default"]`);
+  let selectedSource:QoderModelSource|undefined;
+  if(grouped){
+    selectedSource=await c.evaluate<QoderModelSource>(`document.querySelector(${JSON.stringify(menu)})?.querySelector('[role="tab"][aria-selected="true"]')?.getAttribute('data-value')`);
+    for(const source of ['default','custom'] as const){
+      await c.click(`${menu} [role="tab"][data-value="${source}"]`);
+      await wait(()=>c.exists(`${menu} [role="tab"][data-value="${source}"][aria-selected="true"]`),'model-source');
+      const names=await c.evaluate<string[]>(`[...document.querySelectorAll(${JSON.stringify(list)})].map(e=>e.innerText.trim().split('\\n')[0])`);
+      names.forEach((n,index)=>items.push({name:n,source,index}));
+    }
+  }else{
+    const names=await c.evaluate<string[]>(`[...document.querySelectorAll(${JSON.stringify(list)})].map(e=>e.innerText.trim().split('\\n')[0])`);
+    names.forEach((n,index)=>items.push({name:n,source:'default',index}));
   }
   // Omitting model retains the current group, even when the same name exists in both groups.
   const choice=matchModel(items,name,requested.source??(requested.model?undefined:selectedSource));
-  await c.click(`${c.selector('modelMenu')} [role="tab"][data-value="${choice.source}"]`);
-  await wait(()=>c.exists(`${c.selector('modelMenu')} [role="tab"][data-value="${choice.source}"][aria-selected="true"]`),'model-source');
-  await c.click(c.selector('modelList'),undefined,choice.index);
-  await wait(async()=>!await c.exists(c.selector('modelMenu')),'model-menu-closed');
-  await wait(async()=>exactName((await c.text(c.selector('model'))).split('\n')[0]??'',choice.name),'model-readback');
+  if(grouped){
+    await c.click(`${menu} [role="tab"][data-value="${choice.source}"]`);
+    await wait(()=>c.exists(`${menu} [role="tab"][data-value="${choice.source}"][aria-selected="true"]`),'model-source');
+  }
+  await c.click(list,undefined,choice.index);
+  await wait(async()=>!await c.existsKey('modelMenu'),'model-menu-closed');
+  await wait(async()=>exactName((await c.textKey('model')).split('\n')[0]??'',choice.name),'model-readback');
   let globalChanged=false;
   if(level!==undefined){
-    await c.click(c.selector('model'));
-    await wait(()=>c.exists(c.selector('modelMenu')),'model-menu');
-    await c.click(`${c.selector('modelMenu')} [role="menuitem"]`,'模型管理');
-    await wait(()=>c.exists(c.selector('modelDialog')),'model-management');
-    const dialog=c.selector('modelDialog');
-    await c.click(`${dialog} [role="tab"][data-value="${choice.source}"]`);
+    await c.clickKey('model');
+    await wait(()=>c.existsKey('modelMenu'),'model-menu');
+    await c.click(`${menu} [role="menuitem"]`,'模型管理');
+    await wait(()=>c.existsKey('modelDialog'),'model-management');
+    const dialog=(await c.resolveKey('modelDialog'))??c.selector('modelDialog');
     const levelButton=`${dialog} button[aria-label=${JSON.stringify(`设置 ${choice.name} 的思考强度`)}]`;
-    await wait(()=>c.exists(`${dialog} [role="tab"][data-value="${choice.source}"][aria-selected="true"]`),'management-source');
+    if(grouped){
+      await c.click(`${dialog} [role="tab"][data-value="${choice.source}"]`);
+      await wait(()=>c.exists(`${dialog} [role="tab"][data-value="${choice.source}"][aria-selected="true"]`),'management-source');
+    }
     if(!await c.exists(levelButton))throw new Error(`qoder_reasoning_unsupported: ${choice.name}`);
     const before=await c.text(levelButton);
     await c.click(levelButton);
-    await wait(()=>c.exists(c.selector('levelItem')),'reasoning-options');
-    const labels=await c.evaluate<string[]>(`[...document.querySelectorAll(${JSON.stringify(c.selector('levelItem'))})].map(e=>e.innerText.trim())`);
+    await wait(()=>c.existsKey('levelItem'),'reasoning-options');
+    const levelItem=(await c.resolveKey('levelItem'))??c.selector('levelItem');
+    const labels=await c.evaluate<string[]>(`[...document.querySelectorAll(${JSON.stringify(levelItem)})].map(e=>e.innerText.trim())`);
     if(!labels.includes(LEVEL_LABELS[level]))throw new Error(`qoder_reasoning_unsupported: ${LEVEL_LABELS[level]}; available=${labels.join(',')}`);
-    await c.click(c.selector('levelItem'),LEVEL_LABELS[level]);
+    await c.click(levelItem,LEVEL_LABELS[level]);
     await wait(async()=>(await c.text(levelButton)).trim()===LEVEL_LABELS[level],'reasoning-readback');
     globalChanged=before.trim()!==LEVEL_LABELS[level];
     if(globalChanged){
@@ -65,15 +81,17 @@ export async function configureModel(c: QoderCdpClient, requested: {model?:strin
     }else await c.click(`${dialog} button[aria-label="关闭"]`);
     await wait(async()=>!await c.exists(dialog),'settings-saved');
     // Reopen persisted preferences, not just the draft row, to prove saving took effect.
-    await c.click(c.selector('model')); await wait(()=>c.exists(c.selector('modelMenu')),'model-menu');
-    await c.click(`${c.selector('modelMenu')} [role="menuitem"]`,'模型管理');
-    await wait(()=>c.exists(dialog),'model-management');
-    await c.click(`${dialog} [role="tab"][data-value="${choice.source}"]`);
+    await c.clickKey('model'); await wait(()=>c.existsKey('modelMenu'),'model-menu');
+    await c.click(`${menu} [role="menuitem"]`,'模型管理');
+    await wait(()=>c.existsKey('modelDialog'),'model-management');
+    if(grouped){
+      await c.click(`${dialog} [role="tab"][data-value="${choice.source}"]`);
+    }
     await wait(async()=>await c.exists(levelButton)&&(await c.text(levelButton)).trim()===LEVEL_LABELS[level],'persisted-reasoning');
     await c.click(`${dialog} button[aria-label="关闭"]`);
     await wait(async()=>!await c.exists(dialog),'settings-closed');
   }
-  const actual=(await c.text(c.selector('model'))).split('\n').map(s=>s.trim());
+  const actual=(await c.textKey('model')).split('\n').map(s=>s.trim());
   if(!exactName(actual[0]??'',choice.name))throw new Error('qoder_model_readback_failed');
   return {model:choice.name,source:choice.source,level:level??(actual[1]?normalizeLevel(actual[1]):undefined),globalChanged};
 }
