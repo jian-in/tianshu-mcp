@@ -80,13 +80,15 @@ describe("runVerifyCommand 的 cwd 归一（Windows 盘符大小写）", () => {
   it("以小写盘符路径作 cwd：子进程拿到磁盘真实大小写，不原样透传", async () => {
     if (process.platform !== "win32") return; // 只有 Windows 有盘符大小写语义
     const root = await makeTmpRoot("runner-cwd-case");
-    const head = root.charAt(0);
-    const lower = head.toLowerCase() + root.slice(1);
-    // 前置条件：临时目录盘符本为大写，该用例才有区分度（否则退回小写等于没变）
-    expect(head).toBe(head.toUpperCase());
-    expect(lower).not.toBe(root);
+    // 以磁盘真实形式为基准：CI 的临时目录可能含 8.3 短名（如 RUNNER~1），
+    // realpathSync.native 会把它展开成长名——归一的目标正是这个真实形式。
+    const real = fs.realpathSync.native(root);
+    const head = real.charAt(0);
+    const lower = head.toLowerCase() + real.slice(1);
+    // 前置条件：真实盘符为大写且小写形式确实不同，否则该用例无区分度（静默跳过，不算失败）
+    if (head !== head.toUpperCase() || lower === real) return;
     try {
-      const logFile = path.join(root, "c.log");
+      const logFile = path.join(real, "c.log");
       const res = await runVerifyCommand(
         "pwd",
         [process.execPath, "-e", "process.stdout.write(process.cwd())"],
@@ -96,7 +98,7 @@ describe("runVerifyCommand 的 cwd 归一（Windows 盘符大小写）", () => {
       const printed = fs.readFileSync(logFile, "utf8");
       // 探针实测：父进程给 "c:\\..."，子进程 process.cwd() 会原样返回小写——
       // 所以修复后必须看到磁盘真实大小写，而不是 lower。
-      expect(printed).toContain(root);
+      expect(printed).toContain(real);
       expect(printed).not.toContain(lower);
     } finally {
       await rmrf(root);
