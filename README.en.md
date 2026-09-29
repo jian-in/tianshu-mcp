@@ -39,6 +39,11 @@
   <img src="https://img.shields.io/badge/Tests-1383%20Passed-green?style=for-the-badge" alt="Tests">
 </p>
 
+<p align="center">
+  <a href="https://github.com/lanlan0811/tianshu-mcp/releases/latest"><img src="https://img.shields.io/badge/Download-MCP%20tarball%20.tgz-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Download the MCP tarball (.tgz)"></a>
+  <a href="https://github.com/lanlan0811/tianshu-mcp/releases?q=gui-v&expanded=true"><img src="https://img.shields.io/badge/Download-Log%20viewer%20GUI%20%C2%B7%20Win%2FmacOS-1f6feb?style=for-the-badge&logo=github&logoColor=white" alt="Download the log viewer GUI (Windows / macOS)"></a>
+</p>
+
 ---
 
 <p align="center">
