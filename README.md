@@ -383,6 +383,24 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 - **系统托盘与关闭行为** —— 常驻托盘（「显示日志台 / 退出日志台」，文案随界面语言即时切换），默认 **关闭窗口 = 缩小到托盘**，可在设置面板改为「关闭应用」。
 - **更新日志窗口与双源自动更新** —— 启动静默检查更新，命中即弹「更新日志」（下载并安装 / 忽略此版本 / 稍后），正文即该版本的双语发行说明；更新源由 **Gitee / GitHub 并发实测择优**（不依赖系统区域）决定并如实展示，包体经 **minisign 验签**，**验签不通过一律拒绝安装**。
 
+<p align="center">
+  <img src="./assets/tianshu-mcp-gui-overview.png" alt="日志台 · 任务概览页" width="88%">
+  <br>
+  <sub>任务概览页 —— 常驻左侧栏 · 五格指标仪（任务总数 / 进行中 / 已结束 / 已成功 / 已失败）· 状态圆片 · 任务卡网格</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/tianshu-mcp-gui-event-stream.png" alt="日志台 · 任务事件流工作区" width="88%">
+  <br>
+  <sub>全屏工作区 · 事件流 —— 行 / 时间 / 事件 / 详情四列，状态跃迁与进度记录分色标注</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/tianshu-mcp-gui-agent-log.png" alt="日志台 · Agent 原始日志工作区" width="88%">
+  <br>
+  <sub>全屏工作区 · Agent 日志 —— 级别过滤 · 行号与自动换行 · 「已加载 N / 共 M」与「跳到最新」</sub>
+</p>
+
 解耦与发布边界（改这里之前先读）：
 
 | 边界 | 约定 |
