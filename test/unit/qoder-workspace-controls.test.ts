@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import path from 'node:path';
 import os from 'node:os';
 import {QoderCdpClient} from '../../src/agents/qoder/cdp.js';
-import {bindWorkspace} from '../../src/agents/qoder/workspace.js';
+import {bindWorkspace,boundWorkspace} from '../../src/agents/qoder/workspace.js';
 import type {WaitFor} from '../../src/agents/qoder/model.js';
 
 class WorkspaceControls extends QoderCdpClient {
@@ -15,9 +15,11 @@ class WorkspaceControls extends QoderCdpClient {
   selectedFolder=false;
   name='';
   search='';
+  lastExpr='';
   clicks:string[]=[];
   constructor(readonly candidate:string){super(1,1);}
   override async evaluate<T>(expr:string):Promise<T>{
+    this.lastExpr=expr;
     if(expr.includes('new Set(a)'))return this.bound as T;
     if(expr.includes('getAttribute(\'title\')'))return (this.selectedFolder?[this.candidate]:[]) as T;
     if(expr.includes('?.value==='))return true as T;
@@ -88,5 +90,15 @@ describe('Qoder workspace identity and registration',()=>{
     c.menuOverlay=true;       // 页面存在无关的 open 浮层
     c.clickOpensPicker=false; // 点击没有真的打开工作区下拉
     await expect(bindWorkspace(c,project,wait,{pids:[],timeoutMs:100})).rejects.toThrow('workspace-menu');
+  });
+  it('0.4.3：已绑定工作区读回须覆盖无 title 容器并回退 aria-label',async()=>{
+    // 0.4.2 及以前，已绑定路径挂在 [data-conversation-workspace][title] 上；
+    // 0.4.3 真机（2026-09-29）该容器无 title，路径落在内层 aria-label。
+    // 锁定读回查询必须：① 并列无 title 的容器候选；② 允许回退读 aria-label。
+    const c=new WorkspaceControls(project);
+    const got=await boundWorkspace(c);
+    expect(got).toBe(c.bound);
+    expect(c.lastExpr).toContain(',[data-conversation-workspace],');
+    expect(c.lastExpr).toContain("getAttribute('aria-label')");
   });
 });
