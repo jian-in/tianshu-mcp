@@ -30,7 +30,6 @@
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/lanlan0811/tianshu-mcp/ci.yml?branch=master&style=for-the-badge&logo=github&label=CI" alt="CI">
   <img src="https://img.shields.io/npm/v/tianshu-mcp?style=for-the-badge&logo=npm&logoColor=white&label=npm&color=cb3837" alt="npm version">
-  <img src="https://img.shields.io/npm/dm/tianshu-mcp?style=for-the-badge&logo=npm&logoColor=white&label=downloads&color=cb3837" alt="npm downloads">
   <img src="https://img.shields.io/github/stars/lanlan0811/tianshu-mcp?style=for-the-badge&logo=github&label=stars&color=24292e" alt="GitHub stars">
   <img src="https://img.shields.io/badge/License-Apache%202.0-3B5BDB?style=for-the-badge&logo=apache" alt="License">
   <img src="https://img.shields.io/badge/TypeScript-5.7-3178c6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
@@ -41,7 +40,8 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/tianshu-mcp"><img src="https://img.shields.io/npm/d18m/tianshu-mcp?style=for-the-badge&logo=npm&logoColor=white&label=mcp%20downloads&color=cb3837" alt="MCP downloads (npm)"></a>
-  <a href="https://github.com/lanlan0811/tianshu-mcp/releases?q=gui-v&expanded=true"><img src="https://img.shields.io/github/downloads-pre/lanlan0811/tianshu-mcp/gui-v0.1.0/total?style=for-the-badge&logo=github&logoColor=white&label=gui%20downloads&color=1f6feb" alt="Log viewer GUI download count (Windows / macOS)"></a>
+  <a href="https://github.com/lanlan0811/tianshu-mcp/releases?q=v&expanded=true"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Flanlan0811%2Ftianshu-mcp%2Fmaster%2Fupdate%2Fstats.json&query=%24.mcpDownloads&style=for-the-badge&logo=github&logoColor=white&label=mcp%20tarball%20downloads&color=2ea44f" alt="MCP tarball downloads (GitHub releases)"></a>
+  <a href="https://github.com/lanlan0811/tianshu-mcp/releases?q=gui-v&expanded=true"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Flanlan0811%2Ftianshu-mcp%2Fmaster%2Fupdate%2Fstats.json&query=%24.guiDownloads&style=for-the-badge&logo=github&logoColor=white&label=gui%20downloads&color=1f6feb" alt="Log viewer GUI downloads (GitHub releases)"></a>
 </p>
 
 ---
