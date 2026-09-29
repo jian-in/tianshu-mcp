@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320" role="img" aria-label="tianshu-mcp banner">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-label="tianshu-mcp banner">
   <title>tianshu-mcp</title>
   <desc>tianshu-mcp —— 天枢 × AI-Agent 编排 MCP server：驱动外部 AI-Agent 完成 项目开发 → 验收 → 失败返修 → 再验收 闭环。</desc>
   <defs>
@@ -30,16 +30,16 @@
   </defs>
 
   <!-- 背景与边框 -->
-  <rect x="0" y="0" width="1280" height="320" fill="url(#bnBg)"/>
-  <rect x="1.5" y="1.5" width="1277" height="317" rx="26" fill="none" stroke="#2b3a63" stroke-width="3"/>
+  <rect x="0" y="0" width="1280" height="400" fill="url(#bnBg)"/>
+  <rect x="2" y="2" width="1276" height="396" rx="32" fill="none" stroke="#2b3a63" stroke-width="4"/>
 
   <!-- 氛围光 -->
-  <circle cx="200" cy="160" r="210" fill="url(#bnGlow)"/>
-  <circle cx="1080" cy="60" r="170" fill="url(#bnGlow2)"/>
+  <circle cx="200" cy="200" r="250" fill="url(#bnGlow)"/>
+  <circle cx="1080" cy="70" r="200" fill="url(#bnGlow2)"/>
 
   <!-- 左侧：图标标记（与 tianshu-mcp-icon.svg 同源缩略） -->
-  <g transform="translate(72 60)">
-    <rect x="0" y="0" width="200" height="200" rx="44" fill="#0b0f1f" stroke="#2b3a63" stroke-width="3"/>
+  <g transform="translate(80 80) scale(1.2)">
+    <rect x="0" y="0" width="200" height="200" rx="44" fill="#0b0f1f" stroke="#2b3a63" stroke-width="2.5"/>
     <circle cx="100" cy="100" r="70" fill="url(#bnGlow)"/>
     <!-- 连线 -->
     <g stroke="url(#bnEdge)" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.92">
@@ -68,31 +68,31 @@
 
   <!-- 右侧：字标 + 定位语 -->
   <g font-family="'Segoe UI','Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif">
-    <text x="316" y="128" font-size="72" font-weight="700" fill="url(#bnText)" letter-spacing="1.5">tianshu-mcp</text>
-    <text x="318" y="176" font-size="27" font-weight="500" fill="#9fb3d9" letter-spacing="0.6">Tianshu × AI-Agent orchestration MCP server</text>
-    <text x="318" y="216" font-size="22" fill="#7c8db3">天枢 × AI-Agent 编排 MCP server · Codex CLI / TraeWork GUI</text>
+    <text x="366" y="176" font-size="88" font-weight="700" fill="url(#bnText)" letter-spacing="1.5">tianshu-mcp</text>
+    <text x="368" y="228" font-size="31" font-weight="500" fill="#9fb3d9" letter-spacing="0.6">Tianshu × AI-Agent orchestration MCP server</text>
+    <text x="368" y="272" font-size="25" fill="#7c8db3">天枢 × AI-Agent 编排 MCP server</text>
   </g>
 
   <!-- 底部流程带 -->
-  <g font-family="'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif" font-size="19" fill="#cfe3ff">
-    <g transform="translate(316 246)">
-      <rect x="0" y="0" width="196" height="38" rx="19" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
-      <text x="98" y="25" text-anchor="middle">项目开发</text>
+  <g font-family="'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif" font-size="21" fill="#cfe3ff">
+    <g transform="translate(366 300)">
+      <rect x="0" y="0" width="200" height="48" rx="24" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
+      <text x="100" y="31" text-anchor="middle">项目开发</text>
     </g>
-    <text x="524" y="271" font-size="22" fill="#5eead4">→</text>
-    <g transform="translate(548 246)">
-      <rect x="0" y="0" width="150" height="38" rx="19" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
-      <text x="75" y="25" text-anchor="middle">验收</text>
+    <text x="578" y="331" font-size="24" fill="#5eead4" text-anchor="middle">→</text>
+    <g transform="translate(593 300)">
+      <rect x="0" y="0" width="150" height="48" rx="24" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
+      <text x="75" y="31" text-anchor="middle">验收</text>
     </g>
-    <text x="710" y="271" font-size="22" fill="#5eead4">→</text>
-    <g transform="translate(734 246)">
-      <rect x="0" y="0" width="196" height="38" rx="19" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
-      <text x="98" y="25" text-anchor="middle">失败返修</text>
+    <text x="757" y="331" font-size="24" fill="#5eead4" text-anchor="middle">→</text>
+    <g transform="translate(772 300)">
+      <rect x="0" y="0" width="200" height="48" rx="24" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
+      <text x="100" y="31" text-anchor="middle">失败返修</text>
     </g>
-    <text x="942" y="271" font-size="22" fill="#5eead4">→</text>
-    <g transform="translate(966 246)">
-      <rect x="0" y="0" width="196" height="38" rx="19" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
-      <text x="98" y="25" text-anchor="middle">再验收</text>
+    <text x="986" y="331" font-size="24" fill="#5eead4" text-anchor="middle">→</text>
+    <g transform="translate(1001 300)">
+      <rect x="0" y="0" width="200" height="48" rx="24" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
+      <text x="100" y="31" text-anchor="middle">再验收</text>
     </g>
   </g>
 </svg>
