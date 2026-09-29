@@ -1,98 +1,153 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-label="tianshu-mcp banner">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 600" width="1600" height="600" role="img" aria-label="tianshu-mcp banner">
   <title>tianshu-mcp</title>
   <desc>tianshu-mcp —— 天枢 × AI-Agent 编排 MCP server：驱动外部 AI-Agent 完成 项目开发 → 验收 → 失败返修 → 再验收 闭环。</desc>
   <defs>
     <linearGradient id="bnBg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#141a33"/>
-      <stop offset="50%" stop-color="#0e1329"/>
-      <stop offset="100%" stop-color="#080b16"/>
-    </linearGradient>
-    <linearGradient id="bnStar" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#ffe9a8"/>
-      <stop offset="100%" stop-color="#f5b942"/>
-    </linearGradient>
-    <linearGradient id="bnEdge" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#5eead4"/>
-      <stop offset="100%" stop-color="#38bdf8"/>
+      <stop offset="0%" stop-color="#16203f"/>
+      <stop offset="48%" stop-color="#0d1226"/>
+      <stop offset="100%" stop-color="#06080f"/>
     </linearGradient>
     <linearGradient id="bnText" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#bae6fd"/>
+      <stop offset="62%" stop-color="#e0f2fe"/>
+      <stop offset="100%" stop-color="#8ecbf5"/>
+    </linearGradient>
+    <linearGradient id="bnAccent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7ff3dc"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.1"/>
+    </linearGradient>
+    <linearGradient id="bnChip" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#17284e"/>
+      <stop offset="100%" stop-color="#0e1830"/>
     </linearGradient>
     <radialGradient id="bnGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.42"/>
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.40"/>
+      <stop offset="60%" stop-color="#38bdf8" stop-opacity="0.10"/>
       <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="bnGlow2" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#5eead4" stop-opacity="0.22"/>
+      <stop offset="0%" stop-color="#5eead4" stop-opacity="0.20"/>
       <stop offset="100%" stop-color="#5eead4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bnVig" cx="46%" cy="44%" r="78%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="62%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.42"/>
+    </radialGradient>
+    <pattern id="bnDots" width="30" height="30" patternUnits="userSpaceOnUse">
+      <circle cx="1.6" cy="1.6" r="1.3" fill="#7dd3fc"/>
+    </pattern>
+    <radialGradient id="bnDotFade" cx="30%" cy="42%" r="78%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="bnDotMask">
+      <rect x="0" y="0" width="1600" height="600" fill="url(#bnDotFade)"/>
+    </mask>
+
+    <!-- 以下四组与应用图标 tianshu-mcp-icon.svg 同源，勿单独修改 -->
+    <linearGradient id="tsBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1b2545"/>
+      <stop offset="55%" stop-color="#141a33"/>
+      <stop offset="100%" stop-color="#0b0f1f"/>
+    </linearGradient>
+    <linearGradient id="tsStar" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffe9a8"/>
+      <stop offset="100%" stop-color="#f5b942"/>
+    </linearGradient>
+    <linearGradient id="tsEdge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5eead4"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <radialGradient id="tsGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dd3fc" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#7dd3fc" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
-  <!-- 背景与边框 -->
-  <rect x="0" y="0" width="1280" height="400" fill="url(#bnBg)"/>
-  <rect x="2" y="2" width="1276" height="396" rx="32" fill="none" stroke="#2b3a63" stroke-width="4"/>
+  <!-- 底层：渐变背景 + 点阵 + 氛围光 + 暗角 -->
+  <rect x="0" y="0" width="1600" height="600" fill="url(#bnBg)"/>
+  <rect x="0" y="0" width="1600" height="600" fill="url(#bnDots)" opacity="0.13" mask="url(#bnDotMask)"/>
+  <circle cx="270" cy="250" r="340" fill="url(#bnGlow)"/>
+  <circle cx="1360" cy="120" r="280" fill="url(#bnGlow2)"/>
+  <rect x="0" y="0" width="1600" height="600" fill="url(#bnVig)"/>
 
-  <!-- 氛围光 -->
-  <circle cx="200" cy="200" r="250" fill="url(#bnGlow)"/>
-  <circle cx="1080" cy="70" r="200" fill="url(#bnGlow2)"/>
+  <!-- 边框：外描边 + 内层荧绿细线 -->
+  <rect x="2" y="2" width="1596" height="596" rx="38" fill="none" stroke="#2b3a63" stroke-width="4"/>
+  <rect x="16" y="16" width="1568" height="568" rx="28" fill="none" stroke="#5eead4" stroke-width="1" opacity="0.14"/>
 
-  <!-- 左侧：图标标记（与 tianshu-mcp-icon.svg 同源缩略） -->
-  <g transform="translate(80 80) scale(1.2)">
-    <rect x="0" y="0" width="200" height="200" rx="44" fill="#0b0f1f" stroke="#2b3a63" stroke-width="2.5"/>
-    <circle cx="100" cy="100" r="70" fill="url(#bnGlow)"/>
-    <!-- 连线 -->
-    <g stroke="url(#bnEdge)" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.92">
-      <path d="M100 100 L100 36"/>
-      <path d="M100 100 L154 136"/>
-      <path d="M100 100 L46 136"/>
+  <!-- 上排左：应用图标（与 tianshu-mcp-icon.svg 完全一致，等比放大 300/256） -->
+  <g transform="translate(105 90) scale(1.171875)">
+    <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#tsBg)"/>
+    <rect x="1.5" y="1.5" width="253" height="253" rx="54.5" fill="none" stroke="#2b3a63" stroke-width="3"/>
+    <circle cx="128" cy="128" r="86" fill="url(#tsGlow)"/>
+    <g stroke="url(#tsEdge)" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.92">
+      <path d="M128 128 L128 44"/>
+      <path d="M128 128 L196 172"/>
+      <path d="M128 128 L60 172"/>
     </g>
-    <!-- agent 节点 -->
-    <g fill="#0f172e" stroke="url(#bnEdge)" stroke-width="3">
-      <circle cx="100" cy="36" r="15"/>
-      <circle cx="154" cy="136" r="15"/>
-      <circle cx="46" cy="136" r="15"/>
+    <g stroke="#5eead4" stroke-width="3" stroke-linecap="round" opacity="0.5">
+      <path d="M128 128 L128 44" stroke-dasharray="2 12"/>
+      <path d="M128 128 L196 172" stroke-dasharray="2 12"/>
+      <path d="M128 128 L60 172" stroke-dasharray="2 12"/>
+    </g>
+    <g fill="#0f172e" stroke="url(#tsEdge)" stroke-width="4">
+      <circle cx="128" cy="44" r="20"/>
+      <circle cx="196" cy="172" r="20"/>
+      <circle cx="60" cy="172" r="20"/>
     </g>
     <g fill="#7dd3fc">
-      <circle cx="100" cy="36" r="4.5"/>
-      <circle cx="154" cy="136" r="4.5"/>
-      <circle cx="46" cy="136" r="4.5"/>
+      <circle cx="128" cy="44" r="6"/>
+      <circle cx="196" cy="172" r="6"/>
+      <circle cx="60" cy="172" r="6"/>
     </g>
-    <!-- 中枢星 -->
-    <g transform="translate(100 100)">
-      <path d="M0 -32 L7 -7 L32 0 L7 7 L0 32 L-7 7 L-32 0 L-7 -7 Z" fill="url(#bnStar)"/>
-      <circle cx="0" cy="0" r="10" fill="#fff7db"/>
-      <circle cx="0" cy="0" r="10" fill="none" stroke="#f5b942" stroke-width="2"/>
+    <g transform="translate(128 128)">
+      <path d="M0 -40 L9 -9 L40 0 L9 9 L0 40 L-9 9 L-40 0 L-9 -9 Z" fill="url(#tsStar)"/>
+      <circle cx="0" cy="0" r="13" fill="#fff7db"/>
+      <circle cx="0" cy="0" r="13" fill="none" stroke="#f5b942" stroke-width="2.5"/>
     </g>
   </g>
 
-  <!-- 右侧：字标 + 定位语 -->
+  <!-- 上排右：强调条 + 字标 + 定位语 -->
+  <rect x="470" y="112" width="110" height="7" rx="3.5" fill="url(#bnAccent)"/>
   <g font-family="'Segoe UI','Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif">
-    <text x="366" y="176" font-size="88" font-weight="700" fill="url(#bnText)" letter-spacing="1.5">tianshu-mcp</text>
-    <text x="368" y="228" font-size="31" font-weight="500" fill="#9fb3d9" letter-spacing="0.6">Tianshu × AI-Agent orchestration MCP server</text>
-    <text x="368" y="272" font-size="25" fill="#7c8db3">天枢 × AI-Agent 编排 MCP server</text>
+    <text x="468" y="224" font-size="124" font-weight="700" fill="url(#bnText)" letter-spacing="2">tianshu-mcp</text>
+    <text x="472" y="294" font-size="42" font-weight="500" fill="#9fb3d9" letter-spacing="0.8">Tianshu × AI-Agent orchestration MCP server</text>
+    <text x="472" y="346" font-size="32" fill="#7c8db3" letter-spacing="0.4">天枢 × AI-Agent 编排 MCP server</text>
   </g>
 
-  <!-- 底部流程带 -->
-  <g font-family="'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif" font-size="21" fill="#cfe3ff">
-    <g transform="translate(366 300)">
-      <rect x="0" y="0" width="200" height="48" rx="24" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
-      <text x="100" y="31" text-anchor="middle">项目开发</text>
+  <!-- 分隔细线 -->
+  <path d="M105 404 H1495" stroke="url(#bnAccent)" stroke-width="1.5" opacity="0.35"/>
+
+  <!-- 下排：通栏闭环流程带 -->
+  <g font-family="'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif" font-size="30" fill="#cfe3ff">
+    <g>
+      <rect x="105" y="440" width="300" height="72" rx="36" fill="url(#bnChip)" stroke="#2b3a63" stroke-width="2"/>
+      <text x="255" y="487" text-anchor="middle">项目开发</text>
     </g>
-    <text x="578" y="331" font-size="24" fill="#5eead4" text-anchor="middle">→</text>
-    <g transform="translate(593 300)">
-      <rect x="0" y="0" width="150" height="48" rx="24" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
-      <text x="75" y="31" text-anchor="middle">验收</text>
+    <g>
+      <rect x="495" y="440" width="220" height="72" rx="36" fill="url(#bnChip)" stroke="#2b3a63" stroke-width="2"/>
+      <text x="605" y="487" text-anchor="middle">验收</text>
     </g>
-    <text x="757" y="331" font-size="24" fill="#5eead4" text-anchor="middle">→</text>
-    <g transform="translate(772 300)">
-      <rect x="0" y="0" width="200" height="48" rx="24" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
-      <text x="100" y="31" text-anchor="middle">失败返修</text>
+    <g>
+      <rect x="805" y="440" width="300" height="72" rx="36" fill="url(#bnChip)" stroke="#2b3a63" stroke-width="2"/>
+      <text x="955" y="487" text-anchor="middle">失败返修</text>
     </g>
-    <text x="986" y="331" font-size="24" fill="#5eead4" text-anchor="middle">→</text>
-    <g transform="translate(1001 300)">
-      <rect x="0" y="0" width="200" height="48" rx="24" fill="#12203c" stroke="#2b3a63" stroke-width="2"/>
-      <text x="100" y="31" text-anchor="middle">再验收</text>
+    <g>
+      <rect x="1195" y="440" width="300" height="72" rx="36" fill="url(#bnChip)" stroke="#2b3a63" stroke-width="2"/>
+      <text x="1345" y="487" text-anchor="middle">再验收</text>
     </g>
+  </g>
+
+  <!-- 连接箭头 -->
+  <g stroke="#5eead4" stroke-width="2.5" stroke-linecap="round" opacity="0.85">
+    <path d="M426 476 H460"/>
+    <path d="M736 476 H770"/>
+    <path d="M1126 476 H1160"/>
+  </g>
+  <g fill="#5eead4" opacity="0.85">
+    <path d="M458 469.5 L472 476 L458 482.5 Z"/>
+    <path d="M768 469.5 L782 476 L768 482.5 Z"/>
+    <path d="M1158 469.5 L1172 476 L1158 482.5 Z"/>
   </g>
 </svg>
