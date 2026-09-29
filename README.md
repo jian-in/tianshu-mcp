@@ -481,7 +481,7 @@ npm run check:stdio  # 严格 stdio 冒烟（真实进程字节流校验）
 - **主仓库** → <https://github.com/lanlan0811/tianshu-mcp>（GitHub）
 - **镜像仓库** → <https://gitee.com/lan0811/tianshu-mcp>（Gitee）
 - **贡献代码** → [CONTRIBUTING.md](CONTRIBUTING.md) · **安全模型** → [SECURITY.md](SECURITY.md) · **行为准则** → [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- **交接状态 / 排障手册** → [HANDOFF.md](HANDOFF.md) · **版本变更** → [CHANGELOG.md](CHANGELOG.md)
+- **交接状态 / 排障手册** → [HANDOFF.md](HANDOFF.md) · **版本变更** → [CHANGELOG.md](CHANGELOG.md) · **依赖清单** → [DEPENDENCIES.md](DEPENDENCIES.md)
 
 ## 贡献者
 
@@ -516,7 +516,7 @@ npm run check:stdio  # 严格 stdio 冒烟（真实进程字节流校验）
 
 ### 第三方依赖许可
 
-运行时依赖的许可如下（均为与 Apache-2.0 兼容的宽松许可）：
+运行时依赖的许可如下（**完整依赖清单**——逐项版本、开发依赖、桌面端 Rust 依赖、间接依赖许可证分布与 SBOM 复现命令——见 [DEPENDENCIES.md](DEPENDENCIES.md)）：
 
 | 依赖 | 许可 | 用途 |
 |---|---|---|
@@ -527,6 +527,8 @@ npm run check:stdio  # 严格 stdio 冒烟（真实进程字节流校验）
 | [`@puppeteer/browsers`](https://github.com/puppeteer/puppeteer) | Apache-2.0 | 托管 Chrome/Edge 的安装与版本锁定 |
 | [`pixelmatch`](https://github.com/mapbox/pixelmatch) | ISC | 页面截图像素比对 |
 | [`sharp`](https://github.com/lovell/sharp)（optional） | Apache-2.0 | 图片解码与规格校验；缺失时视觉模块明确阻塞 |
+
+> `sharp` 本体为 Apache-2.0，但其**可选**平台二进制（`@img/sharp-*`）声明为 **LGPL-3.0-or-later**，以未修改的预编译动态库使用——不安装 `sharp` 时依赖树中不含任何 LGPL 组件。
 
 开发依赖（TypeScript、ESLint、Prettier、Vitest、Vite、tsx 等）各自遵循其开源许可，且不随 npm 发布产物分发。
 

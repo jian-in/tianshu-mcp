@@ -481,7 +481,7 @@ Please report security vulnerabilities privately as described in [SECURITY.en.md
 - **Primary repository** → <https://github.com/lanlan0811/tianshu-mcp> (GitHub)
 - **Mirror repository** → <https://gitee.com/lan0811/tianshu-mcp> (Gitee)
 - **Contributing** → [CONTRIBUTING.en.md](CONTRIBUTING.en.md) · **Security model** → [SECURITY.en.md](SECURITY.en.md) · **Code of conduct** → [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md)
-- **Handoff status / troubleshooting** → [HANDOFF.md](HANDOFF.md) · **Version changes** → [CHANGELOG.en.md](CHANGELOG.en.md)
+- **Handoff status / troubleshooting** → [HANDOFF.md](HANDOFF.md) · **Version changes** → [CHANGELOG.en.md](CHANGELOG.en.md) · **Dependency manifest** → [DEPENDENCIES.en.md](DEPENDENCIES.en.md)
 
 ## Contributors
 
@@ -516,7 +516,7 @@ This project is released under the **Apache License 2.0**; the full legal text i
 
 ### Third-party dependency licenses
 
-Runtime dependencies are licensed as follows (all permissive and Apache-2.0 compatible):
+Runtime dependencies are licensed as follows (the **full dependency manifest** — per-package versions, development dependencies, desktop Rust dependencies, indirect license distribution and SBOM commands — is in [DEPENDENCIES.en.md](DEPENDENCIES.en.md)):
 
 | Dependency | License | Purpose |
 |---|---|---|
@@ -527,6 +527,8 @@ Runtime dependencies are licensed as follows (all permissive and Apache-2.0 comp
 | [`@puppeteer/browsers`](https://github.com/puppeteer/puppeteer) | Apache-2.0 | Installing and version-pinning managed Chrome/Edge |
 | [`pixelmatch`](https://github.com/mapbox/pixelmatch) | ISC | Page screenshot pixel comparison |
 | [`sharp`](https://github.com/lovell/sharp) (optional) | Apache-2.0 | Image decoding and spec validation; the visual module blocks explicitly when absent |
+
+> `sharp` itself is Apache-2.0, but its **optional** platform binaries (`@img/sharp-*`) are declared **LGPL-3.0-or-later** and are used as unmodified prebuilt shared libraries — without `sharp` the dependency tree contains no LGPL component.
 
 Development dependencies (TypeScript, ESLint, Prettier, Vitest, Vite, tsx, etc.) each follow their own open-source license and are not distributed with the npm package.
 
