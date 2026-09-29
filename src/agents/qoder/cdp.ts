@@ -46,6 +46,20 @@ export class QoderCdpClient {
     return false;
   }
   /**
+   * 返回该语义键**第一个命中的候选选择器**（供需要把选择器拼进组合式查询的调用方使用，
+   * 例如「菜单容器 [role=tab]」，此时裸用 selector() 只取 primary，会让多候选形同虚设）。
+   * 都不命中返回 null。
+   */
+  async resolveKey(key: QoderSelectorKey): Promise<string | null> {
+    for (const css of this.candidates(key)) if (await this.exists(css)) return css;
+    return null;
+  }
+  /** 读取该语义键第一个命中候选的文本；无候选命中时返回空串。 */
+  async textKey(key: QoderSelectorKey): Promise<string> {
+    const css = await this.resolveKey(key);
+    return css ? this.text(css) : '';
+  }
+  /**
    * 按候选顺序点击某语义键：先探测哪个候选存在（避免每个候选各自打满超时），
    * 再对命中的那个执行坐标点击。全部候选都不存在则抛错并附诊断。
    */

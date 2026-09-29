@@ -4,6 +4,8 @@ import {configureModel,type QoderModelSource,type WaitFor} from '../../src/agent
 
 class ModelControls extends QoderCdpClient {
   groups={default:['Built-in'],custom:['Custom']};
+  grouped=true;
+  flat:string[]=[];
   source:QoderModelSource='custom';
   selectedSource:QoderModelSource='custom';
   selected='Custom';
@@ -23,17 +25,21 @@ class ModelControls extends QoderCdpClient {
   override async evaluate<T>(expr:string):Promise<T>{
     if(expr.includes("getAttribute('data-value')"))return this.selectedSource as T;
     if(expr.includes('menuitemradio'))return this.levels as T;
-    if(expr.includes('data-chat-model-selector-list'))return this.groups[this.source] as T;
+    if(expr.includes('data-chat-model-selector-list'))return (this.grouped?this.groups[this.source]:this.flat) as T;
     throw new Error(`Unexpected read: ${expr}`);
   }
   override async exists(css:string){
-    if(css.includes('[aria-selected="true"]'))return css.includes(`data-value="${this.source}"`);
-    if(css===this.selector('modelMenu')){
+    // 选择器已分层：桩按候选集回答「在不在」，与生产 resolveKey/existsKey/clickKey 对齐。
+    if(this.candidates('model').includes(css))return true;
+    if(this.candidates('modelList').includes(css))return true;
+    if(this.candidates('modelMenu').includes(css)){
       if(this.closingReads>0&&--this.closingReads===0)this.menu=false;
       return this.menu;
     }
-    if(css===this.selector('modelDialog'))return this.dialog;
-    if(css===this.selector('levelItem'))return this.options;
+    if(this.candidates('modelDialog').includes(css))return this.dialog;
+    if(this.candidates('levelItem').includes(css))return this.options;
+    if(css.includes('[aria-selected="true"]'))return css.includes(`data-value="${this.source}"`);
+    if(css.endsWith('[role="tab"][data-value="default"]'))return this.grouped;
     if(css.includes('思考强度'))return this.dialog;
     throw new Error(`Unexpected control: ${css}`);
   }
@@ -41,7 +47,7 @@ class ModelControls extends QoderCdpClient {
     const group=/data-value="(default|custom)"/.exec(css)?.[1] as QoderModelSource|undefined;
     if(group){this.source=group;return;}
     if(css===this.selector('model')){this.menu=!this.menu;this.source=this.selectedSource;return;}
-    if(css===this.selector('modelList')){this.selected=this.groups[this.source][index!]!;this.selectedSource=this.source;if(this.delayedClose)this.closingReads=2;else this.menu=false;return;}
+    if(css===this.selector('modelList')){this.selected=(this.grouped?this.groups[this.source]:this.flat)[index!]!;this.selectedSource=this.source;if(this.delayedClose)this.closingReads=2;else this.menu=false;return;}
     if(text==='模型管理'){this.dialog=true;this.menu=false;this.draft=this.stored;this.managementOpens++;return;}
     if(css.includes('思考强度')){this.options=true;return;}
     if(css===this.selector('levelItem')){this.draft=text!;this.options=false;return;}
@@ -79,5 +85,24 @@ describe('Qoder model management controls',()=>{
   it('rejects cross-group ambiguity for an explicitly named model',async()=>{
     const c=new ModelControls();c.groups.default=['Custom'];
     await expect(configureModel(c,{model:'Custom'},wait)).rejects.toThrow('model_ambiguous');expect(c.saves).toBe(0);
+  });
+  it('drives a flat (ungrouped) model menu as shipped by 0.4.2',async()=>{
+    // 0.4.2 菜单移除了「默认/自定义」分组 tab，模型是一张平铺列表。
+    const c=new ModelControls();
+    c.grouped=false;
+    c.flat=['Auto','Qwen3.8-Max','DeepSeek-Flash'];
+    c.selected='Auto';
+    const r=await configureModel(c,{},wait);
+    expect(r.model).toBe('Auto');
+    expect(c.managementOpens).toBe(0);
+    expect(c.saves).toBe(0);
+  });
+  it('finds an explicitly named model in a flat menu',async()=>{
+    const c=new ModelControls();
+    c.grouped=false;
+    c.flat=['Auto','Qwen3.8-Max'];
+    c.selected='Auto';
+    const r=await configureModel(c,{model:'Qwen3.8-Max'},wait);
+    expect(r.model).toBe('Qwen3.8-Max');
   });
 });

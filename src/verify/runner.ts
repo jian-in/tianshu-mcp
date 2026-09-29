@@ -10,6 +10,25 @@ import { mkdirp } from "../util/fs.js";
 import type { CheckResult } from "../tasks/task.js";
 import { killTree } from "../agents/spawn.js";
 
+/**
+ * Windows 上把 cwd 归一为磁盘真实大小写。
+ *
+ * 项目路径可能以小写盘符登记（例如 projects.json 里的 `e:/proj`），而相当一部分工具链
+ * （vite/vitest 等）按**路径字符串**建模块图与缓存键：`e:\proj` 与 `E:\proj` 会被当成两个位置，
+ * 同一模块出现两份实例，表现为收集期崩溃（如 `Cannot read properties of undefined (reading 'config')`）。
+ *
+ * 必须用 `realpathSync.native`：非 native 的 `realpathSync` 在 Windows 上原样返回小写盘符，不会纠正大小写。
+ * 路径不可解析时退回原值——归一失败不应阻断验收。
+ */
+export function normalizeCwdForSpawn(dir: string): string {
+  if (process.platform !== "win32") return dir;
+  try {
+    return fs.realpathSync.native(dir);
+  } catch {
+    return dir;
+  }
+}
+
 export interface RunCommandOpts {
   cwd: string;
   timeoutMs: number;
@@ -78,7 +97,7 @@ export function runVerifyCommand(name: string, argv: string[], opts: RunCommandO
       let spawnError: string | null = null;
       try {
         child = crossSpawn(argv[0]!, argv.slice(1), {
-          cwd: opts.cwd,
+          cwd: normalizeCwdForSpawn(opts.cwd),
           env: { ...process.env, ...opts.env },
           windowsHide: true,
           shell: false,

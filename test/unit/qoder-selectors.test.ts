@@ -27,6 +27,18 @@ describe("Qoder 选择器分层结构", () => {
     expect(QODER_SELECTORS.workspace.primary).not.toContain("[data-workspace-picker-trigger]");
   });
 
+  it("workspace 回退顺序：data-* 稳定标记须先于宽泛 aria 启发式", () => {
+    // 0.4.3 真机（本机 Qoder CN 0.4.3，端口 9777 实测）：主选择器 0 命中后，宽泛项
+    //   button[aria-expanded][aria-label*="工作区"] 会命中侧栏「工作区」区域头（aria-label 恰为「工作区」），
+    //   clickKey 按候选顺序取首个命中 → 点到侧栏 → 不弹下拉 → qoder_stage_timeout: workspace-menu。
+    //   修复：把稳定标记 [data-workspace-picker-trigger]（0.4.3 实测唯一命中，点击可正常开菜单）排到宽泛项之前。
+    const list = qoderCandidates("workspace");
+    const stable = list.indexOf("[data-workspace-picker-trigger]");
+    const broad = list.indexOf('button[aria-expanded][aria-label*="工作区"]');
+    expect(stable).toBeGreaterThanOrEqual(0);
+    if (broad >= 0) expect(stable).toBeLessThan(broad);
+  });
+
   it("workspaceSearch / workspaceMenu 标记 0.3.4 已实测", () => {
     expect(QODER_SELECTORS.workspaceSearch.primary).toBe('input[aria-label="搜索工作区"]');
     expect(QODER_SELECTORS.workspaceSearch.verifiedVersion).toBe("0.3.4");
