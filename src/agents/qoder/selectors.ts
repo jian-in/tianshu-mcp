@@ -114,16 +114,23 @@ export const QODER_SELECTORS = {
     //   而生产 click() 在「可见匹配数 !== 1」时判歧义并拒绝——这才是 workspace-menu 阶段超时的真因，
     //   并非「菜单不渲染」（实测点中输入栏 picker 后菜单正常出现，搜索框亦出现）。
     //   输入栏 picker 的权威、唯一标识是 aria-label「切换或清空当前工作区，当前为 <名>」（带 aria-expanded），故置于主选择器。
+    // 2026-09-29 真机重探（本机 Qoder CN 0.4.3，CDP 端口 9777）：
+    //   0.4.3 的输入栏 picker 去掉了 aria-label，主选择器 0 命中；此时候选落到回退项——
+    //   而宽泛项 button[aria-expanded][aria-label*="工作区"] 会命中**侧栏「工作区」区域头**
+    //   （实测该按钮 aria-label 恰为「工作区」、aria-expanded="true"），clickKey 取首个命中即点错，
+    //   点它不弹下拉 → qoder_stage_timeout: workspace-menu。
+    //   → 修复：把稳定标记 [data-workspace-picker-trigger] 排到宽泛启发式之前
+    //     （0.4.3 实测该标记唯一命中，且对它派发真实鼠标事件可正常打开 [role=menu][data-state=open] + 搜索框）。
     primary: 'button[aria-label^="切换或清空当前工作区"]',
     fallbacks: [
-      'button[aria-expanded][aria-label*="工作区"]',
       '[data-workspace-picker-trigger]',
+      'button[aria-expanded][aria-label*="工作区"]',
       'button[aria-label="工作区"]',
     ],
     ariaLabels: ['工作区'],
     ariaPatterns: ['切换或清空当前工作区', '工作区', 'workspace'],
-    verifiedVersion: '0.3.4',
-    note: '工作区选择触发器（输入栏 picker）；0.3.4 实测 aria-label=「切换或清空当前工作区，当前为 <名>」，唯一命中；[data-workspace-picker-trigger] 在 0.3.4 有 2 个需避免',
+    verifiedVersion: '0.4.3',
+    note: '工作区选择触发器（输入栏 picker）；primary 为 0.3.4 唯一 aria-label；0.4.3 已无该 aria-label，回退首选 [data-workspace-picker-trigger]（实测唯一命中且可开菜单）',
   },
   // 下拉浮层的「打开」证据（多形态并列）；0.3.4 实测：点中输入栏 picker 后正常出现
   workspaceMenu: {

@@ -9,7 +9,18 @@ export function normalizeWorkspacePath(value: string, platform:NodeJS.Platform=p
   return platform==='win32'?normalized.toLowerCase():normalized;
 }
 export async function boundWorkspace(c:QoderCdpClient):Promise<string> {
-  return c.evaluate(`(()=>{const a=[...document.querySelectorAll(${JSON.stringify(c.selector('conversationWorkspace')+','+c.selector('workspace'))})].filter(e=>e.getBoundingClientRect().width).map(e=>e.getAttribute('title')).filter(Boolean);return new Set(a).size===1?a[0]:''})()`);
+  // 0.3.4：已绑定工作区的路径在 title 上；0.4.3 真机（2026-09-29）改为
+  // [data-conversation-workspace] 的无 title 形态，路径落在其内层文案（aria-label/文本）。
+  // 容器一侧并列全部候选（含无 title 形态）并允许回退 aria-label/文本；输入栏 picker 的
+  // aria-label 是提示语（「切换或清空当前工作区…」）而非路径，故 picker 一侧仍只认 title。
+  const containers=c.candidates('conversationWorkspace').join(',');
+  return c.evaluate(`(()=>{
+    const vis=e=>!!e&&!!e.getBoundingClientRect().width;
+    const containers=[...document.querySelectorAll(${JSON.stringify(containers)})].filter(vis).map(e=>e.getAttribute('title')||e.getAttribute('aria-label')||e.textContent||'');
+    const pickers=[...document.querySelectorAll(${JSON.stringify(c.selector('workspace'))})].filter(vis).map(e=>e.getAttribute('title')||'');
+    const a=[...containers,...pickers].map(s=>s.trim()).filter(Boolean);
+    return new Set(a).size===1?a[0]:'';
+  })()`);
 }
 export async function assertWorkspace(c:QoderCdpClient,project:string):Promise<void> {
   const actual=await boundWorkspace(c);
@@ -61,6 +72,16 @@ async function openWorkspaceMenu(c:QoderCdpClient,wait:WaitFor):Promise<void> {
   }
 }
 
+/** 点击候选项后的短促复核（不占用 wait 的全局预算）：下拉是否已关闭。 */
+async function workspaceMenuClosed(c:QoderCdpClient,timeoutMs=2500):Promise<boolean> {
+  const deadline=Date.now()+timeoutMs;
+  for(;;){
+    if(!await c.exists(c.selector('workspaceSearch')))return true;
+    if(Date.now()>=deadline)return false;
+    await delay(100);
+  }
+}
+
 export async function bindWorkspace(c:QoderCdpClient,project:string,wait:WaitFor,native:{pids:number[];timeoutMs:number;signal?:AbortSignal;list?:typeof listOwnedDialogs;select?:typeof selectQoderFolder}):Promise<void> {
   const current=await boundWorkspace(c);
   if(current&&normalizeWorkspacePath(current)===normalizeWorkspacePath(project))return;
@@ -71,7 +92,12 @@ export async function bindWorkspace(c:QoderCdpClient,project:string,wait:WaitFor
   const count=await c.evaluate<number>(`document.querySelectorAll(${JSON.stringify(c.selector('workspaceItem'))}).length`);
   if(count>1)throw new Error('qoder_workspace_ambiguous');
   if(count===1){
-    await c.click(c.selector('workspaceItem'));
+    // 0.4.3 真机：候选项点击偶发落空（列表重排/动画期间坐标漂移），点后短促复核，
+    // 未关闭则再点一次；两次都不生效才交给下面的 wait 定调，避免白等一整个 stage 预算。
+    for(let attempt=0;attempt<2;attempt++){
+      await c.click(c.selector('workspaceItem'));
+      if(await workspaceMenuClosed(c))break;
+    }
     await wait(async()=>!await c.exists(c.selector('workspaceSearch')),'workspace-selected');
     await assertWorkspace(c,project);return;
   }
