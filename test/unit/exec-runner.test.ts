@@ -75,3 +75,31 @@ describe("runVerifyCommand 日志文件不可用降级", () => {
     await rmrf(root);
   }, 15_000);
 });
+
+describe("runVerifyCommand 的 cwd 归一（Windows 盘符大小写）", () => {
+  it("以小写盘符路径作 cwd：子进程拿到磁盘真实大小写，不原样透传", async () => {
+    if (process.platform !== "win32") return; // 只有 Windows 有盘符大小写语义
+    const root = await makeTmpRoot("runner-cwd-case");
+    const head = root.charAt(0);
+    const lower = head.toLowerCase() + root.slice(1);
+    // 前置条件：临时目录盘符本为大写，该用例才有区分度（否则退回小写等于没变）
+    expect(head).toBe(head.toUpperCase());
+    expect(lower).not.toBe(root);
+    try {
+      const logFile = path.join(root, "c.log");
+      const res = await runVerifyCommand(
+        "pwd",
+        [process.execPath, "-e", "process.stdout.write(process.cwd())"],
+        { cwd: lower, logFile, timeoutMs: 5_000 },
+      );
+      expect(res.passed).toBe(true);
+      const printed = fs.readFileSync(logFile, "utf8");
+      // 探针实测：父进程给 "c:\\..."，子进程 process.cwd() 会原样返回小写——
+      // 所以修复后必须看到磁盘真实大小写，而不是 lower。
+      expect(printed).toContain(root);
+      expect(printed).not.toContain(lower);
+    } finally {
+      await rmrf(root);
+    }
+  }, 15_000);
+});
