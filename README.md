@@ -247,7 +247,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model` / `reasoningLevel` / `planDoc` / `designSystem`；等待用户确认、取消与重派护栏均已真机验证 |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；支持无项目派发与 `allowCreateProject`；**v0.7.4 适配 ZCode 3.14.x**（旧 DOM 契约被产品删除 → 绑定判据改为「路径优先、无路径渠道时按显示名 + 全局同名消歧」，同名即 fail-closed） |
+| `zcode` | `gui` / `zcode-gui` | **ready**（Windows 真机闭环；macOS 未验证） | CDP GUI adapter；支持无项目派发、`allowCreateProject` 与 `reasoningLevel`（档位集合**随模型变化**，越权在**发送前**报错）；**v0.7.4 适配 3.14.x 的路径契约缺席**（绑定判据改为「路径优先、无路径渠道时按显示名 + 全局同名消歧」，同名即 fail-closed）；**v0.7.6 修掉绑定死锁**（侧边栏 `workspace-item-*` 滚出视口仍被采集 → 唯一可信的菜单渠道被短路）、**运行期 CDP 断连的恢复入口**（重连观察一次、绝不重发，失败落 `needs_user(setup_recovery)`）与**两级模型菜单**（provider 分组须 hover 才渲染子项） |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；支持 `mode`（Work / Code / Design，三种模式各自维护独立项目绑定）；三种面板模式真机验证通过 |
 | `kimicode` | `gui` / `kimicode-gui` | **ready**（macOS 为 `research`） | Kimi Code 桌面端（Electron）；**双渲染进程**（主窗口 + `Kimi Browser Overlay` 浮层承载模型 / 档位 / 模式菜单）；工作区以完整路径绑定；支持 `model` / `reasoningLevel`，**不支持 `mode`**，且**不支持无项目派发** |
 | `qoder` | `gui` / `qoder-gui` | Windows 真机闭环通过；macOS **research** | 仅 Qoder CN；必须提供已有 `projectPath` 与可读 `planDoc`；`modelSource=default\|custom` 消除同名模型歧义，思考等级经「模型管理」保存为全局偏好并回读 |

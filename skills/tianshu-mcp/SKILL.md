@@ -69,7 +69,7 @@ run_task（秒回 taskId，异步）
 | `projectPath` | 必填 | **可省略**（无项目模式，见 §3.4） | 必填 | 必填 | 必填 | 必填（无项目派发现仅支持 zcode） |
 | `model` | **必填**（面板模型名） | **必填**，`供应商/模型` | 可选 | **必填**（界面模型名） | 可选 | **必填**（界面模型名；精确匹配，未命中回显候选） |
 | `modelSource` | ✗ | ✗ | ✗ | ✗ | 可选 `default`/`custom` | ✗ |
-| `reasoningLevel` | `低/中/高`（`low/medium/high`） | ✗ | ✗ | `低/low`、`高/high`、`max`、`on`、`off` | `低/中/高/极高/最大/关闭思考` | ✗ |
+| `reasoningLevel` | `低/中/高`（`low/medium/high`） | `低/low`、`中/medium`、`高/high`、`max`、`on/off`（以界面实际档位为准） | ✗ | `低/low`、`高/high`、`max`、`on`、`off` | `低/中/高/极高/最大/关闭思考` | ✗ |
 | `mode` | ✗ | ✗ | **唯一支持**（`Work`/`Code`/`Design`） | ✗ | ✗ | ✗（用 `designDirection`） |
 | `designDirection` | ✗ | ✗ | ✗ | ✗ | ✗ | **必填**（`原型`/`文档`/`网站复刻`） |
 | `planDoc` | 可选 | ✗ | ✗ | ✗ | **必填**且必须可读 | ✗ |
@@ -92,6 +92,8 @@ run_task（秒回 taskId，异步）
 - **`codex`**（默认，推荐先试）：ChatGPT/Codex 桌面端，MSIX COM 激活 + CDP（Windows 冷启动实测 60–90 秒，首轮偏慢属正常；macOS spawn `.app` + CDP）。
   `model` 必填且用**面板里的模型名**；`planDoc`/`designSystem` 会拼进初始指令且必须存在、在项目内。**不支持 `mode`**。
 - **`zcode`**：ZCode 桌面端（Electron CDP）。`model` 必填 `供应商/模型`（如 `DeepSeek/deepseek-flash`）；发送前确认「完全访问」权限模式；**不支持 `mode`**。支持省略 `projectPath` 的无项目模式（§3.4）。
+  `reasoningLevel` 可选：档位集合**随模型变化**，以界面实际渲染的选项为准（真机实测 3.14.3：当前模型只有 `on`/`off` 两档，触发器 `chat-thought-level-select-trigger`）。传了界面不存在的档位在**发送前**报错（`reasoning_level_invalid`），绝不静默沿用；不传则不触碰档位界面（沿用当前值）。**换模型必须重开任务**（`model` 在 `run_task` 时固化）。
+  项目绑定按「路径优先、无路径时按显示名」分层判定；3.14.x 侧边栏的 `workspace-item-*` 可能仍挂在 DOM 里但被滚出视口（issue #27：实测 42 个中 40 个不可见），采集时按可见性过滤，不可达时回落「打开文件夹」导入路径。
 - **`traework`**：TraeWork / TRAE SOLO CN。`model` 可选；**唯一支持 `mode`**（不传时从任务书文本识别「切换 X 模式」，识别不到保持 `Work`）；实现顺序固定为「新建会话 → 切模式 → 在目标模式内绑定项目」。窗口必须保持可见（发送依赖模拟输入）。**`continue_task` 不支持**。
 - **`kimicode`**：Kimi Code 桌面端（普通 Electron，实测 1.0.2；CDP 基准端口 9666）。`model` 必填，直接填**界面模型名**（如 `K3`、`K2.8 Preview`、`stepfun/step-3.7-flash:free`）。
   `reasoningLevel` 取值域刻意**不含 `中`/`medium`**（那不是任何模型的合法档位）：官方模型 `低/low`、`高/high`、`max`；非官方模型只有 `on`/`off`。档位集合以**界面实际渲染的标签**为准，传了界面不存在的档位在发送前报错，绝不静默沿用；不传时官方档位沿用界面当前值、非官方强制 `on`。

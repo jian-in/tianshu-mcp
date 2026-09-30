@@ -8,6 +8,63 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.7.6] - 2026-09-30
+
+### Fixed
+
+- **Three ZCode adapter defects (issue #27), reproduced and fixed on real ZCode `3.14.3.7762` (Windows)**:
+  - **Split project-collection channels causing a binding deadlock**: on 3.14.3 the
+    `[data-testid^="workspace-item-"]` nodes are **not gone from the DOM** — they are scrolled out of
+    the viewport instead (measured on the real machine: **40 of 42 nodes invisible**). The old
+    implementation collected them without any visibility filter, so the ghost entries made
+    `if (!out.length)` permanently false and the only trustworthy channel (the dropdown menu) never
+    ran. `matchZcodeProject` then matched a ghost item, the working auto-import branch was skipped,
+    and the task died with `project_mismatch`. `projects()` now filters the legacy channel by
+    visibility, **always merges both channels**, and lets same-named menu items override sidebar
+    entries (only the menu's `aria-checked` is binding evidence rendered by ZCode itself).
+  - **Fall back to import when clicks never land**: `clickProject` now reports a distinguishable
+    reason (`trigger-unavailable` / `not-found` / `not-visible`). When the target is listed but not a
+    single click ever landed, the adapter falls back to the `selectZcodeFolder` import path instead
+    of declaring failure (still fail-closed when `allowCreateProject=false`).
+  - **Runtime CDP disconnects no longer declare death**: a single `Runtime.evaluate` timeout or an
+    endpoint hiccup does not mean CDP is dead (in the reported incident the agent kept writing
+    artifacts after MCP had already failed the task). The send phase and the runtime loop now share
+    one guard: the first disconnect reconnects **once, for observation only** (matching the existing
+    `codex`/`qoder` pattern — **never resending the task**); a failed reconnect or a second
+    disconnect lands on `needs_user(setup_recovery)` with both facts attached — whether the process
+    is still alive and whether the window still shows running signals — so "still running" is never
+    misread as "stopped".
+  - **`reasoningLevel` implemented end to end**: the tier set **varies per model**, so it is read
+    from the UI **after the model is confirmed** and validated. Out-of-range tiers and unreadable
+    tier sets are rejected **before sending** (`reasoning_level_invalid`) instead of silently reusing
+    the current value; omitting the tier never touches the UI. Real-machine contract:
+    trigger `chat-thought-level-select-trigger` (combobox), options
+    `chat-thought-level-select-item-{enabled,disabled}` (binary on/off), options mounted only while
+    the menu is open.
+  - **Root cause of the "two-level model menu is flaky" symptom**: model items live in the provider
+    group's **second-level submenu**, which renders only on **hover** — clicking selects the group
+    itself or collapses the menu. The provider group testid has also drifted to
+    `chat-model-select-group-registry-provider:`. Group expansion now uses hover
+    (`clickExact(..., "hover")`), and when two rounds both yield an empty candidate list the menu is
+    reopened for one more round instead of declaring `model_unavailable`.
+- **Permission-menu contract drift (surfaced by the real-machine run, fixed as the same class of defect)**:
+  on 3.14.3 the permission items use `menuitemradio` / `menuitemcheckbox` (**not** `option`), and the
+  visible name lives in the item's **direct text node**, followed by an explanatory sentence
+  (e.g. "Full access — fewer confirmations."). Both mismatched the old implementation and stalled
+  dispatch at `permission_unknown`. The selector now carries a role-agnostic fallback, and
+  `clickExact` resolves labels from direct text nodes first.
+
+### Real-machine verification
+
+- `npm run probe:zcode -- dom-contracts`: `workspaceItems=42` (2 visible / 40 invisible),
+  `dataProjectPath=0`; with the menu open `projects()` returns the menu items with correct checked
+  state — independently reproducing both the issue's geometric premise and the fixed collection.
+- `npm run probe:zcode -- models` / `permission` plus one-off probes: pinned the provider-group hover
+  semantics, the permission item role/text structure, and the binary tier shape
+  (`current=on`, `tiers=Off/On`).
+- `npm run smoke:zcode`: end-to-end real-machine dispatch (project binding → model switch →
+  permission confirm → send → poll to terminal state).
+
 ## [0.7.5] - 2026-09-29
 
 ### Fixed

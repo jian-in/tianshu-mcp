@@ -7,6 +7,45 @@
 
 ---
 
+## [0.7.6] - 2026-09-30
+
+### 修复
+
+- **ZCode 适配器三项缺陷（issue #27），已在真机 ZCode `3.14.3.7762`（Windows）上复现并修复**：
+  - **项目采集渠道分裂导致绑定死锁**：3.14.3 上 `[data-testid^="workspace-item-"]` **并未从 DOM 消失**，
+    只是被滚出视口（真机实测 **42 个节点中 40 个不可见**）。旧实现采集时不做可见性过滤，幽灵项入列使
+    `if (!out.length)` 短路恒为假，唯一可信的菜单渠道永不执行 → `matchZcodeProject` 命中幽灵项 →
+    可用的自动导入分支被跳过 → 任务卡死在 `project_mismatch`。现在 `projects()` 对旧契约项做可见性过滤、
+    两条渠道**始终合并**，且同名的菜单项覆盖侧边栏项（只有菜单的 `aria-checked` 是 ZCode 自己渲染的绑定证据）。
+  - **点击落空时回落导入**：`clickProject` 现在返回可区分的原因（`trigger-unavailable` / `not-found` /
+    `not-visible`）；目标项在列表里却一次都没真正点中时，回落 `selectZcodeFolder` 导入路径而不是直接判死
+    （`allowCreateProject=false` 时仍在下一道闸门 fail-closed）。
+  - **运行期 CDP 断连不再判死**：单次 `Runtime.evaluate` 超时或端点抖动不等于 CDP 已死（issue 现场是
+    「MCP 判定失败后 agent 仍在写产物」）。发送阶段与运行期统一护栏：首次断连重连**观察一次**
+    （对齐 `codex`/`qoder` 的既有范式，重连只用于观察、**绝不重发任务**），重连失败或再次断连落
+    `needs_user(setup_recovery)`，并附「进程是否仍在」「窗口是否仍有运行信号」两侧事实，避免把「仍在跑」
+    误读成「已停」。
+  - **`reasoningLevel` 端到端实现**：档位集合**随模型变化**，因此在**模型确认之后**才读取界面实际渲染的选项
+    并校验；越权档位与「集合读不到」都在**发送前**报错（`reasoning_level_invalid`），绝不静默沿用；
+    未指定档位时完全不触碰界面。真机契约：触发器 `chat-thought-level-select-trigger`（combobox），
+    选项 `chat-thought-level-select-item-{enabled,disabled}`（二值 开启/关闭），选项只在菜单展开时挂载。
+  - **「两级模型菜单点击不稳」根因**：模型项在 provider 分组的**二级子菜单**里，**必须 hover 分组**才渲染，
+    用 click 会选中分组本身或收起菜单；provider 分组 testid 也已漂移为
+    `chat-model-select-group-registry-provider:`。现在展开分组改用 hover（`clickExact(..., "hover")`），
+    并在两轮候选皆空时把菜单重开一次再试一轮，不凭一轮空列表判 `model_unavailable`。
+- **权限菜单契约漂移（真机测试暴露，同类问题一并修复）**：3.14.3 的权限项 role 是
+  `menuitemradio` / `menuitemcheckbox`（**不是** `option`），且可见名写在项内的**直接文本节点**里、
+  后面还跟一句说明（如「完全访问减少确认次数。」）。旧实现两处都会 0 命中，导致派发卡在 `permission_unknown`。
+  候选选择器补无 role 限制的兜底，`clickExact` 的标签解析优先取直接文本节点。
+
+### 真机验证
+
+- `npm run probe:zcode -- dom-contracts`：`workspaceItems=42`（可见 2 / 不可见 40）、`dataProjectPath=0`、
+  菜单展开后 `projects()` 返回菜单项且勾选态正确 —— 独立复现了 issue 的几何前提与修复后的采集结果。
+- `npm run probe:zcode -- models` / `permission` 与一次性探针：锁定 provider 分组 hover 语义、
+  权限项 role 与文本结构、档位二值形态（`current=on`、`tiers=Off/On`）。
+- `npm run smoke:zcode`：真机端到端派发（项目绑定 → 模型切换 → 权限确认 → 发送 → 轮询终态）。
+
 ## [0.7.5] - 2026-09-29
 
 ### 修复

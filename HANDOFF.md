@@ -1,5 +1,22 @@
 # HANDOFF.md — 项目交接说明
 
+> **交接快照：2026-09-30 · 已发布版本 `0.7.6`（tag `v0.7.6` + npm `tianshu-mcp@0.7.6`）。**
+> **本轮（0.7.5 → 0.7.6）交付**：修掉 **issue #27** 的三条 ZCode 缺陷 —— ① 项目采集渠道分裂导致的绑定死锁
+> （3.14.3 上 `workspace-item-*` **并未从 DOM 消失**，只是被滚出视口：真机实测 **42 个节点中 40 个不可见**；
+> 旧实现不做可见性过滤，幽灵项使 `if(!out.length)` 短路恒为假，唯一可信的菜单渠道永不执行，任务卡死在
+> `project_mismatch`）；② 运行期 CDP 断连无恢复入口（现在**首次断连重连观察一次、绝不重发**，
+> 重连失败或再次断连落 `needs_user(setup_recovery)`，并附「进程是否仍在」「窗口是否仍有运行信号」两侧事实）；
+> ③ `reasoningLevel` 未实现（现在在**模型确认之后**读界面实际档位集合校验，越权在**发送前**报错，
+> 未指定则不触碰界面）与**两级模型菜单**（模型项在 provider 分组二级子菜单里，**必须 hover 才渲染**，
+> 分组 testid 已漂移为 `chat-model-select-group-registry-provider:`）。此外回落导入路径（点击始终不落地时）也已接线。
+> **真机测试另暴露权限菜单契约漂移**（3.14.3 权限项 role 是 `menuitemradio`/`menuitemcheckbox` 而非 `option`，
+> 可见名在项内**直接文本节点**里、后面跟说明文本），一并修复。
+> **✅ 真机端到端已跑通**（ZCode `3.14.3.7762` / Windows 10）：`npm run smoke:zcode` → `succeeded` /
+> `reply_stable`，权限落在「完全访问」，耗时约 40 秒，**产物 `done.txt` 内容为 `issue27-ok`**。
+> 取证入口：`npm run probe:zcode -- dom-contracts|models|permission`。
+> 详见 `CHANGELOG.md` 的 `[0.7.6]` 与 `docs/release-v0.7.6.md`。
+>
+> **历史快照（0.7.4）**
 > **交接快照：2026-09-28 · 已发布版本 `0.7.4`（tag `v0.7.4` + npm `tianshu-mcp@0.7.4`）。**
 > **本轮（0.7.3 → 0.7.4）交付**：修掉 **issue #24** —— ZCode `3.14.x` 删除了 `data-project-path` 与
 > `data-testid^="workspace-item-"` 两处 DOM 契约，而 `pathOf()` 只认这两个来源，于是
@@ -41,6 +58,35 @@
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 内置 agent · ZCode 项目绑定 / CDP 恢复 / 思考档位（`0.7.6`，**已发布** 2026-09-30）
+
+- **范围**：`src/agents/zcode/**`（`cdp.ts` / `run.ts` / `model.ts` / `selectors.ts`）、`src/mcp/handlers.ts`
+  的 zcode 参数级校验；测试 `test/unit/zcode-dom.test.ts`、`test/unit/zcode-thought-level.test.ts`（新）、
+  `test/integration/zcode-flow.test.ts`。**未改** `traework/cdp/client.ts`（重连是适配器层职责）、
+  **未改** `pathOf()` 的既有语义。
+- **根因（真机取证，不是静态推理）**：`scripts/probe-zcode.mjs` 与三个一次性探针在 ZCode `3.14.3.7762`
+  上实测到 —— `[data-testid^="workspace-item-"]` **42 个节点中 40 个不可见**（`rect.top` 从 720 起，
+  视口高 640）、`data-project-path` 为 0；模型菜单的 provider 分组 testid 是
+  `chat-model-select-group-registry-provider:new-provider`，模型项**只在 hover 分组后**才渲染
+  （`chat-model-select-item-custom:new-provider:step-5-preview`）；权限项 role 为
+  `menuitemradio`/`menuitemcheckbox`、可见名是项内直接文本节点；思考档位是二值
+  `chat-thought-level-select-item-{disabled,enabled}`，选项仅在菜单展开时挂载。
+- **改法**：① `projects()` 加 `ZCODE_DOM.visible` 过滤、去掉 `if(!out.length)` 短路、两渠道合并且
+  同名菜单项覆盖侧边栏项；② `clickProject` 返回 `{clicked, reason}`，`ensureProjectBound` 在
+  「从未成功点中」时放开回落导入；③ 新增 `guardRuntimeCdp()` 统一护栏（发送阶段 + 主循环），
+  首次断连走 `reconnectOnce()`（`launchTimeoutMs` 夹到 20s）继续观察，否则抛
+  `ZcodeRuntimeDisconnect` 由外层归位 `needs_user(setup_recovery)`；④ `parseZcodeModel(model, level)` +
+  `thoughtTierSetOf/assertZcodeLevelSupported` 的 fail-closed 档位校验，`cdp.thoughtLevelSnapshot()`
+  按需展开档位菜单读取后关闭；⑤ `clickExact(key, value, "hover")` 支持只 hover 不发键，
+  模型段用 hover 展开 provider 分组，两轮候选皆空时重开菜单再试一轮；⑥ 权限候选补无 role 限制的兜底、
+  `clickExact` 标签解析优先取直接文本节点。
+- **验证**：`npm run typecheck` / `npm run lint` 全绿；zcode 相关 unit + integration 全绿（新增
+  issue #27 的采集、reasoningLevel、两级菜单、权限契约用例）；**反向验证**过回落导入用例
+  （去掉 `unclickable` 判定即红）。真机：`probe:zcode -- dom-contracts|models|permission` 取证，
+  `smoke:zcode` 端到端 `succeeded`（产物 `done.txt` = `issue27-ok`）。
+- **遗留**：真机上窗口被遮挡时合成点击仍会被吞（Chromium 节流），派发前请把 ZCode 窗口置前台；
+  `max`/`低` 等档位在当前模型（step-5-preview）不存在，会按设计报 `reasoning_level_invalid`。
 
 ### 内置 agent · Open Design 适配器接线完成（`0.7.1`，**已发布** 2026-09-28）
 
