@@ -424,7 +424,8 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 
 | 文档 | 说明 |
 |---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 架构说明：分层模型与模块边界、状态机、验收流水线、驱动层契约、扩展点与已知缺口 |
+| [ARCHITECTURE.md](<ARCHITECTURE.md>) | 架构说明：分层模型与模块边界、状态机、验收流水线、驱动层契约、扩展点与已知缺口 |
+| [docs/core-principles.md](<docs/core-principles.md>) | 核心原理分析：四条硬约束如何逼出当前架构、核心机制逐条拆解与自洽性总结 |
 | [docs/tianshu-integration.md](docs/tianshu-integration.md) | 天枢 config.json 两种接入模式、UI / API 操作、冒烟步骤、FAQ |
 | [docs/agent-profiles.md](docs/agent-profiles.md) | agent profile 字段说明 + 真实机器样例 |
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵 |

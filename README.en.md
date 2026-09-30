@@ -424,7 +424,8 @@ Decoupling and release boundaries (read before changing anything here):
 
 | Document | Contents |
 |---|---|
-| [ARCHITECTURE.en.md](ARCHITECTURE.en.md) | Architecture: layering and module boundaries, state machine, acceptance pipeline, driver-layer contracts, extension points, known gaps |
+| [ARCHITECTURE.en.md](<ARCHITECTURE.en.md>) | Architecture: layering and module boundaries, state machine, acceptance pipeline, driver-layer contracts, extension points, known gaps |
+| [docs/core-principles.en.md](<docs/core-principles.en.md>) | Core principles: how four hard constraints forced the current architecture, the core mechanisms one by one, and why they are self-consistent |
 | [docs/tianshu-integration.en.md](docs/tianshu-integration.en.md) | The two Tianshu `config.json` integration modes, UI / API steps, smoke procedure, FAQ |
 | [docs/agent-profiles.en.md](docs/agent-profiles.en.md) | Agent profile field reference plus real-machine samples |
 | [docs/adapter-matrix.en.md](docs/adapter-matrix.en.md) | Capability research matrix for each agent |
