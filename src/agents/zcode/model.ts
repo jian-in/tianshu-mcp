@@ -1,9 +1,138 @@
 export interface ZcodeModelSpec {
   provider: string;
   model: string;
+  /** 归一后的思考档位；未指定为 undefined（沿用界面当前值，不切换） */
+  level?: ZcodeThoughtLevel;
+  /** 请求了但取值域无法识别的原始值（用于发送前报错，绝不静默丢弃） */
+  unsupportedLevel?: string;
 }
 
 export class ZcodeModelReadbackError extends Error {}
+
+/** 思考档位校验失败（值域外或不在界面实际档位集合内）。 */
+export class ZcodeReasoningLevelError extends Error {}
+
+/**
+ * 规范档位。集合的**唯一判据**是界面实际渲染出来的选项，因此这里不内置模型名单：
+ * 真机实测（2026-09-30，ZCode 3.14.3-Windows，模型 step-plan/step-5-preview）是二值
+ * `chat-thought-level-select-item-{disabled,enabled}`（关闭/开启）；官方多档模型若渲染
+ * Low/High/Max 也能被同一套归一覆盖。
+ */
+export type ZcodeThoughtLevel = "off" | "on" | "low" | "medium" | "high" | "max";
+
+export interface ZcodeThoughtTierSet {
+  tiers: ZcodeThoughtLevel[];
+  /** onoff=界面只有开关两档；multi=多档；unknown=读不到标签（fail-closed） */
+  kind: "onoff" | "multi" | "unknown";
+}
+
+/** 界面 token（testid 后缀或可见文本）→ 规范档位。中英双语都接受。 */
+const THOUGHT_LEVEL_ALIASES: Record<string, ZcodeThoughtLevel> = {
+  关闭: "off",
+  关闭思考: "off",
+  off: "off",
+  disabled: "off",
+  开启: "on",
+  on: "on",
+  enabled: "on",
+  低: "low",
+  low: "low",
+  中: "medium",
+  medium: "medium",
+  高: "high",
+  high: "high",
+  max: "max",
+  最大: "max",
+  极高: "max",
+  xhigh: "max",
+};
+
+/** 档位在错误文案里的界面写法 */
+const THOUGHT_LEVEL_UI: Record<ZcodeThoughtLevel, string> = {
+  off: "Off",
+  on: "On",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  max: "Max",
+};
+
+/** 规范顺序（读到的集合按此排序，便于比较与展示） */
+const THOUGHT_LEVEL_ORDER: ZcodeThoughtLevel[] = ["off", "on", "low", "medium", "high", "max"];
+
+function thoughtKey(value: string): string {
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+/** 界面 token → 档位；无法识别返回 undefined（绝不猜） */
+export function thoughtLevelOfToken(token: string): ZcodeThoughtLevel | undefined {
+  const key = thoughtKey(token ?? "");
+  return key ? THOUGHT_LEVEL_ALIASES[key] : undefined;
+}
+
+/**
+ * 请求值归一。取值域外的值**不归一**，原值放进 unsupportedLevel 供发送前报错——
+ * 静默丢弃会让「请求高档却被沿用当前档」这种偏差无人察觉。
+ */
+export function normalizeZcodeReasoningLevel(value: string | undefined): {
+  level?: ZcodeThoughtLevel;
+  unsupported?: string;
+} {
+  const raw = value?.normalize("NFKC").trim() ?? "";
+  if (!raw) return {};
+  const level = thoughtLevelOfToken(raw);
+  return level ? { level } : { unsupported: raw };
+}
+
+/** 由界面实际档位标签集合归类 */
+export function thoughtTierSetOf(labels: string[]): ZcodeThoughtTierSet {
+  const levels = new Set<ZcodeThoughtLevel>();
+  for (const label of labels) {
+    const level = thoughtLevelOfToken(label);
+    if (level) levels.add(level);
+  }
+  const tiers = THOUGHT_LEVEL_ORDER.filter((level) => levels.has(level));
+  if (levels.has("on") && levels.has("off")) return { tiers, kind: "onoff" };
+  return tiers.length ? { tiers, kind: "multi" } : { tiers, kind: "unknown" };
+}
+
+export function thoughtTierLabels(tiers: ZcodeThoughtTierSet): string {
+  return tiers.tiers.map((level) => THOUGHT_LEVEL_UI[level]).join("/") || "（空）";
+}
+
+export function thoughtLevelUiName(level: ZcodeThoughtLevel): string {
+  return THOUGHT_LEVEL_UI[level];
+}
+
+/**
+ * 校验请求档位是否落在**界面实际档位集合**内。
+ * 读不到档位标签（unknown）一律 fail-closed：宁可报错也不按内置名单猜，
+ * 否则模型/UI 升级后会把不支持的值"成功"发出去。
+ */
+export function assertZcodeLevelSupported(
+  spec: ZcodeModelSpec,
+  tiers: ZcodeThoughtTierSet,
+): void {
+  if (tiers.kind === "unknown")
+    throw new ZcodeReasoningLevelError(
+      `无法从界面读到模型 ${spec.model} 的思考档位（读到 ${thoughtTierLabels(tiers)}），拒绝猜测档位；请检查 ZCode 版本与选择器`,
+    );
+  const labels = thoughtTierLabels(tiers);
+  if (spec.unsupportedLevel !== undefined)
+    throw new ZcodeReasoningLevelError(
+      `模型 ${spec.model} 的思考档位仅支持 ${labels}，收到「${spec.unsupportedLevel}」`,
+    );
+  if (spec.level && !tiers.tiers.includes(spec.level))
+    throw new ZcodeReasoningLevelError(
+      `模型 ${spec.model} 的思考档位仅支持 ${labels}，收到「${spec.level}」`,
+    );
+}
+
+/** 参数级（handlers）可取值的取值域错误文案；无错时返回 undefined。 */
+export function describeZcodeLevelValueError(spec: ZcodeModelSpec): string | undefined {
+  if (spec.unsupportedLevel === undefined) return undefined;
+  return `ZCode 的思考档位不支持「${spec.unsupportedLevel}」：仅支持 低/low、中/medium、高/high、max、on/off，且必须落在所选模型界面实际渲染的档位集合内`;
+}
 
 export interface ZcodeModelSelectionRaw {
   display: string;
@@ -15,12 +144,18 @@ export interface ZcodeModelSelectionRaw {
   ambiguous?: boolean;
 }
 
-export function parseZcodeModel(value: string | undefined): ZcodeModelSpec {
+export function parseZcodeModel(value: string | undefined, level?: string): ZcodeModelSpec {
   if (!value) throw new Error("ZCode 必须指定 model，格式为 供应商/模型");
   const parts = value.split("/");
   if (parts.length !== 2 || !parts[0]!.trim() || !parts[1]!.trim())
     throw new Error(`ZCode model 格式错误：${value}（应为 供应商/模型）`);
-  return { provider: parts[0]!.trim(), model: parts[1]!.trim() };
+  const normalized = normalizeZcodeReasoningLevel(level);
+  return {
+    provider: parts[0]!.trim(),
+    model: parts[1]!.trim(),
+    level: normalized.level,
+    unsupportedLevel: normalized.unsupported,
+  };
 }
 
 export function exactUiName(a: string, b: string): boolean {

@@ -115,10 +115,14 @@ class FakeZcode {
   async projects(): Promise<ZcodeProjectItem[]> {
     return [{ name: path.basename(this.projectPath), path: this.projectPath, id: "p1" }];
   }
-  async clickProject() {
+  /**
+   * 契约与 `ZcodeCdpClient.clickProject` 对齐：返回 { clicked, reason }。
+   * 替身直接返回宿主对象会绕过这层契约——签名漂移时用例会静默通过（issue #27 修复期间踩过）。
+   */
+  async clickProject(): Promise<{ clicked: boolean; reason: string }> {
     this.projectClicks++;
     this.projectClickTarget = "menuitemcheckbox";
-    return true;
+    return { clicked: true, reason: "clicked" };
   }
   async boundProjectPath() {
     return this.projectPath;
@@ -209,6 +213,21 @@ class FakeZcode {
       inputEnabled: true,
       sendEnabled: true,
     };
+  }
+  /**
+   * 思考档位（issue #27 问题三）。默认视为「界面没有档位控件」——未指定 reasoningLevel 时
+   * run.ts 根本不会调用它；契约变化（签名/字段）会在这里显式暴露，而不是静默通过。
+   */
+  async thoughtLevelSnapshot(): Promise<{
+    triggerMounted: boolean;
+    opened: boolean;
+    triggerText: string;
+    options: { id: string; token: string; text: string; checked: boolean }[];
+  }> {
+    return { triggerMounted: false, opened: false, triggerText: "", options: [] };
+  }
+  async clickThoughtLevelOption(_id: string): Promise<boolean> {
+    return false;
   }
 }
 
@@ -444,6 +463,112 @@ class DisconnectedZcode extends FakeZcode {
   override async poll() {
     if (this.sent) throw new CdpDisconnectedError("test disconnect");
     return super.poll();
+  }
+}
+
+/** 运行期 CDP 抖动一次后恢复：重连只用于继续观察，绝不重发任务。 */
+class FlakyCdpZcode extends FakeZcode {
+  disconnects = 0;
+  override async poll() {
+    if (this.sent && this.disconnects === 0) {
+      this.disconnects++;
+      throw new CdpUnavailableError("Runtime.evaluate timeout");
+    }
+    return super.poll();
+  }
+}
+
+/** 端点彻底消失（重连也失败）：进程查询与页面回读都不可用。 */
+class DeadEndpointZcode extends FakeZcode {
+  override async poll() {
+    if (this.sent) throw new CdpDisconnectedError("ECONNREFUSED");
+    return super.poll();
+  }
+  override async exists(key: string): Promise<boolean> {
+    if (this.sent) throw new CdpUnavailableError("ECONNREFUSED");
+    return key === "chatInput";
+  }
+}
+
+/**
+ * 思考档位（issue #27 问题三）：真机实测为二值 开启/关闭，
+ * testid 后缀 enabled/disabled，且档位集合随模型变化。
+ */
+class ThoughtLevelZcode extends FakeZcode {
+  thoughtCurrent: "on" | "off" = "on";
+  thoughtClicks: string[] = [];
+  tierOptions: { id: string; token: string; text: string; checked: boolean }[] = [
+    {
+      id: "chat-thought-level-select-item-disabled",
+      token: "disabled",
+      text: "关闭",
+      checked: false,
+    },
+    {
+      id: "chat-thought-level-select-item-enabled",
+      token: "enabled",
+      text: "开启",
+      checked: true,
+    },
+  ];
+  override async thoughtLevelSnapshot() {
+    return {
+      triggerMounted: true,
+      opened: false,
+      triggerText: this.thoughtCurrent === "on" ? "开启" : "关闭",
+      options: this.tierOptions.map((option) => ({
+        ...option,
+        checked: option.token === (this.thoughtCurrent === "on" ? "enabled" : "disabled"),
+      })),
+    };
+  }
+  override async clickThoughtLevelOption(id: string) {
+    this.thoughtClicks.push(id);
+    this.thoughtCurrent = id.endsWith("enabled") ? "on" : "off";
+    return true;
+  }
+}
+
+/** 模型菜单首轮被吞（候选为空），重开菜单后才可选中。 */
+class SwallowedModelMenuZcode extends FakeZcode {
+  modelMenuOpens = 0;
+  override async click(key: string) {
+    if (key === "modelTrigger") {
+      this.modelMenuOpens++;
+      return true;
+    }
+    return super.click(key);
+  }
+  override async clickExact(key: string, value: string) {
+    // 子菜单收回时「模型项」与「供应商分组」都会查不到：两轮都空才该走重开分支。
+    if ((key === "modelOption" || key === "providerOption") && this.modelMenuOpens < 2)
+      return { clicked: false, count: 0 };
+    return super.clickExact(key, value);
+  }
+}
+
+/**
+ * 真机 3.14.3 的两级模型菜单：模型项只在 **hover** provider 分组后才渲染。
+ * 用 click 展开（按下鼠标）会选中分组本身或收起菜单，模型永远选不中。
+ */
+class HoverProviderModelZcode extends FakeZcode {
+  providerHovered = false;
+  clickAttempts = 0;
+  override async clickExact(key: string, value: string, mode?: string) {
+    if (key === "providerOption") {
+      if (mode !== "hover") {
+        this.clickAttempts++;
+        return {
+          clicked: false,
+          count: 0,
+          testids: ["chat-model-select-group-registry-provider:new-provider"],
+        };
+      }
+      this.providerHovered = true;
+      return { clicked: true, count: 1, available: [value] };
+    }
+    if (key === "modelOption" && !this.providerHovered) return { clicked: false, count: 0 };
+    return super.clickExact(key, value);
   }
 }
 
@@ -1072,7 +1197,7 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(created).toBe(false);
     expect(result.keptInstance).toBe(true);
   });
-  it("CDP 断开时 fail-closed 并保留实例", async () => {
+  it("运行期 CDP 持续断开：重连观察一次后落可恢复出口并保留实例", async () => {
     const project = await makeTmpRoot("zcode-cdp-disconnect");
     cleanup.push(project);
     const fake = new DisconnectedZcode(project);
@@ -1083,8 +1208,51 @@ describe("ZCode 假 CDP 单轮", () => {
       logFile: path.join(project, "agent.log"),
       deps: depsFor(fake),
     });
-    expect(result.endReason).toBe("cdp_disconnected");
+    // issue #27：运行期断连不再直接判死（needs_attention），而是落到可恢复出口，
+    // 消息里同时给出进程侧与窗口侧的事实，避免把「仍在跑」误读成「已停」。
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("setup_recovery");
+    expect(result.pendingQuestion).toMatch(/调试连接/);
+    expect(result.pendingQuestion).toMatch(/ZCode 进程仍在/);
     expect(result.keptInstance).toBe(true);
+    expect(fake.sent).toBe(1);
+  });
+  it("运行期 CDP 抖动一次时重连继续观察，且不重发任务", async () => {
+    const project = await makeTmpRoot("zcode-cdp-flaky");
+    cleanup.push(project);
+    const fake = new FlakyCdpZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.disconnects).toBe(1);
+    // 不重发不变量：整轮任务只发一次。
+    expect(fake.sent).toBe(1);
+  });
+  it("重连失败且 ZCode 进程已退出时，消息点明进程已退出并提示重启", async () => {
+    const project = await makeTmpRoot("zcode-cdp-dead");
+    cleanup.push(project);
+    const fake = new DeadEndpointZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        listProcesses: async () => [],
+      },
+    });
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("setup_recovery");
+    expect(result.pendingQuestion).toMatch(/ZCode 进程已退出/);
+    expect(result.pendingQuestion).toMatch(/重启 ZCode 客户端/);
+    expect(result.pendingQuestion).toMatch(/窗口状态不可读/);
+    expect(result.session?.boundProjectPath).toBe(project);
     expect(fake.sent).toBe(1);
   });
   it("静态回复且 composer 未就绪达到阈值时收敛为空闲超时", async () => {
@@ -1970,5 +2138,271 @@ describe("ZCode 无项目（default 工作区）派发", () => {
     expect(result.endReason).toBe("setup_failed");
     expect(fake.sidebarClicks).toBe(1);
     expect(fake.sent).toBe(0);
+  });
+});
+
+/**
+ * issue #27：目标项目项**在候选列表里**、却每一次点击都不落地（3.14.x 幽灵项被采集时的现场）。
+ * 采集层的可见性过滤已消除主因；这里锁住兜底：当绑定始终无法通过点击建立时，回落
+ * `selectZcodeFolder` 导入路径，而不是把任务判死在 project_mismatch。
+ */
+describe("ZCode 项目项点击不落地时的导入回落（issue #27）", () => {
+  class UnclickableProjectZcode extends FakeZcode {
+    folderSelected = false;
+    chooseFolderClicked = false;
+    clickReasons: string[] = [];
+    constructor(private readonly root: string) {
+      super(root);
+    }
+    override async click(key: string) {
+      if (key === "addProject") return true;
+      return super.click(key);
+    }
+    override async clickExact(key: string, value: string) {
+      if (key === "chooseFolder" && ["打开文件夹", "Open Folder"].includes(value)) {
+        this.chooseFolderClicked = true;
+        return { clicked: true, count: 1, available: [value] };
+      }
+      return super.clickExact(key, value);
+    }
+    /** 候选列表里始终有目标项（无路径渠道：按显示名匹配），但点击永远不落地。 */
+    override async projects(): Promise<ZcodeProjectItem[]> {
+      return [{ name: path.basename(this.root), id: "ghost-item" }];
+    }
+    override async boundProjectPath() {
+      return this.folderSelected ? super.boundProjectPath() : "";
+    }
+    override async clickProject(): Promise<{ clicked: boolean; reason: string }> {
+      this.projectClicks++;
+      this.projectClickTarget = "not-visible";
+      this.clickReasons.push("not-visible");
+      return { clicked: false, reason: "not-visible" };
+    }
+  }
+
+  it("点击始终不落地时回落导入路径并完成派发", async () => {
+    const project = await makeTmpRoot("zcode-ghost-unclickable");
+    cleanup.push(project);
+    const fake = new UnclickableProjectZcode(project);
+    let selectedPath = "";
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        listDialogs: async () => [],
+        selectFolder: async (folder) => {
+          selectedPath = folder;
+          fake.folderSelected = true;
+          return { ok: true, message: "selected" };
+        },
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.projectClicks).toBeGreaterThan(0);
+    expect(fake.clickReasons.every((reason) => reason === "not-visible")).toBe(true);
+    expect(fake.chooseFolderClicked).toBe(true);
+    expect(selectedPath).toBe(project);
+    expect(fake.sent).toBe(1);
+  });
+
+  it("allowCreateProject=false 时点击不落地也不产生导入副作用", async () => {
+    const project = await makeTmpRoot("zcode-ghost-unclickable-no-create");
+    cleanup.push(project);
+    const fake = new UnclickableProjectZcode(project);
+    let folderCalls = 0;
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), allowCreateProject: false },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        selectFolder: async () => {
+          folderCalls++;
+          return { ok: true, message: "selected" };
+        },
+      },
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("project_not_registered");
+    expect(fake.chooseFolderClicked).toBe(false);
+    expect(folderCalls).toBe(0);
+    expect(fake.sent).toBe(0);
+  });
+
+  it("点击确实落地但绑定回读不符时仍 fail-closed（不回落导入）", async () => {
+    const project = await makeTmpRoot("zcode-clicked-but-mismatch");
+    cleanup.push(project);
+    const fake = new WrongBoundProjectZcode(project);
+    let folderCalls = 0;
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        selectFolder: async () => {
+          folderCalls++;
+          return { ok: true, message: "selected" };
+        },
+      },
+    });
+    expect(result.endReason).toBe("project_mismatch");
+    expect(folderCalls).toBe(0);
+    expect(fake.sent).toBe(0);
+  });
+});
+
+/**
+ * issue #27 问题三：`reasoningLevel` 此前完全没有实现（SKILL.md 里标 ✗）。
+ * 档位集合**随模型变化**，所以校验只能发生在模型确认之后：越权档位与「集合读不到」
+ * 都必须在发送前报错；未指定档位时完全不碰界面（沿用当前值）。
+ */
+describe("ZCode 思考档位派发（issue #27）", () => {
+  it("指定 off 且当前为 on 时切换档位后再发送", async () => {
+    const project = await makeTmpRoot("zcode-thought-level-switch");
+    cleanup.push(project);
+    const fake = new ThoughtLevelZcode(project);
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), reasoningLevel: "off" },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.thoughtClicks).toEqual(["chat-thought-level-select-item-disabled"]);
+    expect(fake.thoughtCurrent).toBe("off");
+    expect(fake.sent).toBe(1);
+  });
+
+  it("档位已是目标值时不去点它（幂等）", async () => {
+    const project = await makeTmpRoot("zcode-thought-level-idempotent");
+    cleanup.push(project);
+    const fake = new ThoughtLevelZcode(project);
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), reasoningLevel: "on" },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.thoughtClicks).toEqual([]);
+    expect(fake.sent).toBe(1);
+  });
+
+  it("越权档位在发送前报错，且不发送任务", async () => {
+    const project = await makeTmpRoot("zcode-thought-level-unsupported");
+    cleanup.push(project);
+    const fake = new ThoughtLevelZcode(project);
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), reasoningLevel: "high" },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("reasoning_level_invalid");
+    expect(result.error).toMatch(/仅支持 Off\/On/);
+    expect(fake.thoughtClicks).toEqual([]);
+    expect(fake.sent).toBe(0);
+  });
+
+  it("界面读不到档位标签时 fail-closed，不按内置名单猜", async () => {
+    const project = await makeTmpRoot("zcode-thought-level-unknown");
+    cleanup.push(project);
+    const fake = new ThoughtLevelZcode(project);
+    fake.tierOptions = [];
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), reasoningLevel: "on" },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("reasoning_level_invalid");
+    expect(result.error).toMatch(/拒绝猜测档位/);
+    expect(fake.sent).toBe(0);
+  });
+
+  it("界面没有档位控件时明确报错，不去猜档位", async () => {
+    const project = await makeTmpRoot("zcode-thought-level-no-widget");
+    cleanup.push(project);
+    // 默认替身模拟「界面没有档位控件」的版本/模型。
+    const fake = new FakeZcode(project);
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), reasoningLevel: "on" },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("reasoning_level_unavailable");
+    expect(result.error).toMatch(/没有思考档位控件/);
+    expect(fake.sent).toBe(0);
+  });
+
+  it("未指定档位时不触碰档位界面", async () => {
+    const project = await makeTmpRoot("zcode-thought-level-untouched");
+    cleanup.push(project);
+    const fake = new ThoughtLevelZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.thoughtClicks).toEqual([]);
+    expect(fake.sent).toBe(1);
+  });
+});
+
+/**
+ * issue #27 问题三的菜单加固：radix 子菜单由 hover 维持，press 时子菜单可能已收回，
+ * 表现为「本轮候选为空」。一轮空列表不足以判定「模型不存在」——重开菜单再试一轮。
+ */
+describe("ZCode 模型菜单被吞后重开（issue #27）", () => {
+  it("两轮候选均为空时重开模型菜单再试一轮并成功派发", async () => {
+    const project = await makeTmpRoot("zcode-model-menu-swallowed");
+    cleanup.push(project);
+    const fake = new SwallowedModelMenuZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.modelMenuOpens).toBe(2);
+    expect(fake.model).toBe("deepseek-flash");
+    expect(fake.sent).toBe(1);
+  });
+
+  it("模型项在 provider 二级子菜单时用 hover 展开并选中（click 展开会失败）", async () => {
+    const project = await makeTmpRoot("zcode-model-submenu-hover");
+    cleanup.push(project);
+    const fake = new HoverProviderModelZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.providerHovered).toBe(true);
+    expect(fake.clickAttempts).toBe(0);
+    expect(fake.model).toBe("deepseek-flash");
+    expect(fake.sent).toBe(1);
   });
 });

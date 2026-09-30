@@ -114,7 +114,7 @@ describe("ZCode real CDP expressions against DOM", () => {
   it("shares trigger resolution with project menu clicks", async () => {
     const { client } = fixture(`${primary}${row}<button aria-label="添加项目">添加</button>
       <div role="menu"><button role="menuitemcheckbox">Demo</button></div>`);
-    expect(await client.clickProject(undefined, "D:/项目/Demo")).toBe(true);
+    expect(await client.clickProject(undefined, "D:/项目/Demo")).toMatchObject({ clicked: true });
   });
   it("uses an override before the primary and falls through an absent override", async () => {
     const { client } = fixture(
@@ -131,7 +131,10 @@ describe("ZCode real CDP expressions against DOM", () => {
     );
     expect(await client.workspaceBinding()).toMatchObject({ projectPath: "", ambiguous: true });
     expect(await client.click("projectTrigger")).toBe(false);
-    expect(await client.clickProject(undefined, "D:/项目/Demo")).toBe(false);
+    expect(await client.clickProject(undefined, "D:/项目/Demo")).toMatchObject({
+      clicked: false,
+      reason: "trigger-unavailable",
+    });
     expect(send).not.toHaveBeenCalled();
   });
   it.each(["选择项目", "Select project", "Choose project"])(
@@ -390,6 +393,275 @@ describe("ZCode 3.14.x 契约缺席（issue #24）", () => {
     );
     // 路径可得时必须仍以路径为准——这是老版本判等的兼容面。
     expect((await client.workspaceBinding()).projectPath).toBe("D:/项目/Demo");
+  });
+});
+
+/**
+ * issue #27：项目采集渠道分裂。
+ *
+ * 真机现场（ZCode 3.14.3）：`[data-testid^="workspace-item-"]` **并未从 DOM 消失**，
+ * 只是尺寸塌陷且被滚出视口。`projects()` 采集 `projectItem` 时不做任何可见性过滤 →
+ * 幽灵项入列使 `out.length > 0` → 唯一可信的菜单渠道（`projectMenuItem`）永不执行，
+ * 于是 `matchZcodeProject` 命中幽灵项、自动导入分支被跳过，任务卡死在 project_mismatch。
+ *
+ * 修复判据：不可见的幽灵项必须被剔除；两条渠道始终合并；同名的菜单项覆盖侧边栏项。
+ */
+describe("ZCode 项目采集渠道分裂（issue #27）", () => {
+  const v314Menu =
+    '<div role="menu">' +
+    '<div role="menuitemcheckbox" aria-checked="true" data-value="proj-demo">Demo</div>' +
+    '<div role="menuitemcheckbox" aria-checked="false">Other</div>' +
+    "</div>";
+
+  it("视口外的侧边栏幽灵项不得遮蔽展开菜单里的项目", async () => {
+    // data-top="1200" 让幽灵项落在视口之外（夹具 innerHeight=1000）：ZCODE_DOM.visible 判 false。
+    const { client } = fixture(
+      '<div data-testid="workspace-item-D:/项目/Demo" data-top="1200">Demo</div>' +
+        '<button data-testid="composer-workspace-trigger">Demo</button>' +
+        v314Menu,
+    );
+    expect(await client.projects()).toEqual([
+      { name: "Demo", id: "proj-demo", checked: true },
+      { name: "Other", checked: false },
+    ]);
+  });
+
+  it("菜单未展开时视口外的幽灵项不算可信项目（返回空而不是幽灵项）", async () => {
+    const { client } = fixture(
+      '<div data-testid="workspace-item-D:/项目/Demo" data-top="1200">Demo</div>' +
+        '<button data-testid="composer-workspace-trigger">Demo</button>',
+    );
+    expect(await client.projects()).toEqual([]);
+  });
+
+  it("同名时菜单项覆盖侧边栏项：绑定证据只认菜单的 aria-checked", async () => {
+    const { client } = fixture(
+      '<div data-testid="workspace-item-D:/项目/Demo">Demo</div>' +
+        '<button data-testid="composer-workspace-trigger">Demo</button>' +
+        '<div role="menu"><div role="menuitemcheckbox" aria-checked="true">Demo</div></div>',
+    );
+    const items = await client.projects();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ name: "Demo", checked: true });
+    // 侧边栏项从 testid 派生的路径不得残留——它不是菜单给出的绑定证据。
+    expect(items[0]!.path).toBeUndefined();
+  });
+
+  it("目标项只在视口外存在时 clickProject 报 not-visible 且不发鼠标事件", async () => {
+    const { client, send } = fixture(
+      '<button data-testid="composer-workspace-trigger">Demo</button>' +
+        '<div data-testid="workspace-item-D:/项目/Demo" data-top="1200">Demo</div>',
+    );
+    expect(await client.clickProject("workspace-item-D:/项目/Demo", "D:/项目/Demo")).toEqual({
+      clicked: false,
+      reason: "not-visible",
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("目标项目完全不在 DOM 里时 clickProject 报 not-found", async () => {
+    const { client, send } = fixture('<button data-testid="composer-workspace-trigger">Demo</button>');
+    expect(await client.clickProject("missing-id", "D:/项目/Absent")).toEqual({
+      clicked: false,
+      reason: "not-found",
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("3.11.x 可见侧边栏项在无菜单时仍被采集（兼容面不退化）", async () => {
+    const { client } = fixture('<div data-testid="workspace-item-D:/项目/Demo">Demo</div>');
+    expect(await client.projects()).toEqual([
+      { name: "Demo", path: "D:/项目/Demo", id: "workspace-item-D:/项目/Demo" },
+    ]);
+  });
+});
+
+/**
+ * issue #27 问题三：思考档位的真实契约来自真机实测（2026-09-30，ZCode 3.14.3-Windows）——
+ * 触发器 `chat-thought-level-select-trigger`（combobox）常驻，但选项
+ * `chat-thought-level-select-item-{disabled,enabled}` **只在菜单展开时挂载**。
+ * 因此读取必须按需展开一次、读完关闭；归一留给 TS 侧纯函数，DOM 层只采集原始事实。
+ */
+describe("ZCode 思考档位契约（issue #27）", () => {
+  const tierTrigger =
+    '<button data-testid="chat-thought-level-select-trigger" role="combobox">开启</button>';
+  const tierOptions =
+    '<div role="listbox">' +
+    '<div role="option" data-testid="chat-thought-level-select-item-disabled" aria-checked="false">关闭</div>' +
+    '<div role="option" data-testid="chat-thought-level-select-item-enabled" aria-checked="true">开启</div>' +
+    "</div>";
+
+  it("触发器未挂载时如实上报，不凭空造档位", async () => {
+    const { client, send } = fixture("<div>empty</div>");
+    expect(await client.thoughtLevelSnapshot()).toEqual({
+      triggerMounted: false,
+      opened: false,
+      triggerText: "",
+      options: [],
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("选项已挂载时直接采集 testid 后缀 / 文本 / 勾选态，不发鼠标事件", async () => {
+    const { client, send } = fixture(tierTrigger + tierOptions);
+    const snapshot = await client.thoughtLevelSnapshot();
+    expect(snapshot).toMatchObject({ triggerMounted: true, opened: false, triggerText: "开启" });
+    expect(snapshot.options).toEqual([
+      {
+        id: "chat-thought-level-select-item-disabled",
+        token: "disabled",
+        text: "关闭",
+        checked: false,
+      },
+      {
+        id: "chat-thought-level-select-item-enabled",
+        token: "enabled",
+        text: "开启",
+        checked: true,
+      },
+    ]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("选项只在菜单展开时挂载：按需点开读一次，读完立刻关闭", async () => {
+    const { client, send, document } = fixture(tierTrigger);
+    send.mockImplementation(async (_method: string, params?: { type?: string }) => {
+      if (params?.type === "mousePressed") {
+        document.body.insertAdjacentHTML("beforeend", tierOptions);
+        // 动态插入的节点不在夹具的初始 rect 注入范围内，需与既有元素同样处理。
+        for (const element of document.querySelectorAll('[role="option"]')) {
+          Object.assign(element, {
+            getBoundingClientRect: () => ({
+              x: 0,
+              y: 0,
+              left: 0,
+              top: 0,
+              width: 100,
+              height: 20,
+              right: 100,
+              bottom: 20,
+            }),
+            scrollIntoView: () => {},
+          });
+        }
+      }
+      return {};
+    });
+    const snapshot = await client.thoughtLevelSnapshot();
+    expect(snapshot.opened).toBe(true);
+    expect(snapshot.options.map((option) => option.token)).toEqual(["disabled", "enabled"]);
+    const escapes = send.mock.calls.filter((call) => {
+      const params = call[1] as { key?: string } | undefined;
+      return call[0] === "Input.dispatchKeyEvent" && params?.key === "Escape";
+    });
+    // 读完必须关闭：留一个展开的下拉会污染后续的模型/权限步骤。
+    expect(escapes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("点击档位选项按 testid 精确定位", async () => {
+    const { client, send } = fixture(tierTrigger + tierOptions);
+    expect(await client.clickThoughtLevelOption("chat-thought-level-select-item-disabled")).toBe(
+      true,
+    );
+    const presses = send.mock.calls.filter(
+      (call) => (call[1] as { type?: string } | undefined)?.type === "mousePressed",
+    );
+    expect(presses).toHaveLength(1);
+  });
+
+  it("目标档位选项不在 DOM 时不发鼠标事件", async () => {
+    const { client, send } = fixture(tierTrigger);
+    expect(await client.clickThoughtLevelOption("chat-thought-level-select-item-enabled")).toBe(
+      false,
+    );
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * issue #27 问题三的菜单点击加固：radix 子菜单由 hover 维持，press 时子菜单可能已收回。
+ * 命中判据必须落在「点击那一刻该点真的能命中原节点」上，否则坐标点击会打到别的元素，
+ * UI 状态毫无变化——那种失败会被误读成「模型不存在」。
+ */
+describe("ZCode 菜单项点击前的命中校验（issue #27）", () => {
+  it("scrollIntoView 之后目标不再可命中时不发鼠标事件", async () => {
+    const { client, send, document } = fixture(
+      '<button data-testid="chat-model-select-trigger"></button>' +
+        '<div role="menuitemradio" data-testid="chat-model-select-item-x" data-model="mdl">mdl</div>',
+    );
+    const target = document.querySelector('[data-model="mdl"]') as unknown as {
+      scrollIntoView: (options?: unknown) => void;
+    };
+    document.elementFromPoint = () => target as never;
+    // 子菜单在展开滚动之后立即收回：此后命中检查必须失败。
+    target.scrollIntoView = () => {
+      document.elementFromPoint = () => null;
+    };
+    const result = await client.clickExact("modelOption", "mdl");
+    expect(result.clicked).toBe(false);
+    expect(result.count).toBe(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * issue #27 问题三：「两级模型菜单点击不稳」的真机根因（3.14.3 实测）是
+ * ① provider 分组 testid 漂移成 `chat-model-select-group-registry-provider:`；
+ * ② 模型项在分组的**二级子菜单**里，只有 hover 分组才渲染——click 会选中分组本身或收起菜单。
+ */
+describe("ZCode 两级模型菜单（issue #27）", () => {
+  const providerGroup =
+    '<div role="menuitem" data-testid="chat-model-select-group-registry-provider:new-provider">step-plan</div>';
+
+  it("provider 分组漂移为 registry-provider 时仍能命中", async () => {
+    const { client, send, document } = fixture(providerGroup);
+    const group = document.querySelector('[data-testid^="chat-model-select-group-registry-provider"]');
+    document.elementFromPoint = () => group as never;
+    const result = await client.clickExact("providerOption", "step-plan", "hover");
+    expect(result.clicked).toBe(true);
+    expect(result.count).toBe(1);
+    // hover 模式只移动指针，不按键——按下会选中分组/收起菜单，子菜单永远等不到渲染。
+    const types = send.mock.calls.map((call) => (call[1] as { type?: string } | undefined)?.type);
+    expect(types).toEqual(["mouseMoved"]);
+  });
+
+  it("click 模式仍会按键（回归：默认行为不变）", async () => {
+    const { client, send, document } = fixture(providerGroup);
+    const group = document.querySelector('[data-testid^="chat-model-select-group-registry-provider"]');
+    document.elementFromPoint = () => group as never;
+    await client.clickExact("providerOption", "step-plan");
+    const types = send.mock.calls.map((call) => (call[1] as { type?: string } | undefined)?.type);
+    expect(types).toEqual(["mouseMoved", "mousePressed", "mouseReleased"]);
+  });
+});
+
+/**
+ * 权限菜单的真机契约（2026-09-30，ZCode 3.14.3-Windows）与 3.11.x 不同：
+ * 项 role 是 `menuitemradio`/`menuitemcheckbox`（**不是** `option`），且可见名写在项内的
+ * **直接文本节点**里，后面还跟一句说明（如「完全访问减少确认次数。」）。
+ * 两条都会让旧实现 0 命中，进而让整轮派发卡在 `permission_unknown`。
+ */
+describe("ZCode 权限菜单契约（真机 3.14.3）", () => {
+  const yolo =
+    '<div role="menuitemradio" aria-checked="false" data-testid="chat-mode-select-item-yolo">完全访问<span>减少确认次数。</span></div>';
+
+  it("role 不是 option 时仍能命中（fallback 去掉 role 限制）", async () => {
+    const { client, document } = fixture(yolo);
+    document.elementFromPoint = () =>
+      document.querySelector('[data-testid^="chat-mode-select-item-"]') as never;
+    const result = await client.clickExact("permissionOption", "完全访问");
+    expect(result.clicked).toBe(true);
+    expect(result.count).toBe(1);
+  });
+
+  it("可见名取自直接文本节点，不被后面的说明文本污染", async () => {
+    const { client, document } = fixture(yolo);
+    document.elementFromPoint = () =>
+      document.querySelector('[data-testid^="chat-mode-select-item-"]') as never;
+    // 若 label 退化成整段 textContent（「完全访问减少确认次数。」），这里就会匹配失败。
+    const result = await client.clickExact("permissionOption", "完全访问");
+    expect(result.clicked).toBe(true);
+    expect(result.available).toContain("完全访问");
   });
 });
 

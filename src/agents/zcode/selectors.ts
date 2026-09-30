@@ -29,6 +29,8 @@ export type ZcodeSelectorKey =
   | "permissionTrigger"
   | "permissionValue"
   | "permissionOption"
+  | "thoughtLevelTrigger"
+  | "thoughtLevelOption"
   | "workOutsideProject"
   | "loginPage";
 
@@ -154,11 +156,12 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
   providerOption: {
     primary: '[data-testid^="chat-model-select-group-provider:"]',
     fallbacks: [
+      '[data-testid^="chat-model-select-group-registry-provider:"]',
       '[data-testid^="chat-model-select-group-family:"]',
       '[role="option"][data-provider]',
     ],
     verifiedVersion: "3.11.x",
-    note: "3.11.2 分组前缀漂移为 family；家族标签可能不可点，仅作兜底展开",
+    note: "3.11.2 分组前缀漂移为 family；3.14.3 真机实测为 registry-provider（如 chat-model-select-group-registry-provider:new-provider）。模型项在分组的二级子菜单里，必须 hover 分组才渲染（click 会选中/收起）",
   },
   modelOption: {
     primary: '[data-testid^="chat-model-select-item-"][role="menuitemradio"]',
@@ -190,9 +193,26 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
   },
   permissionOption: {
     primary: '[data-testid^="chat-mode-select-item-"][role="option"]',
-    fallbacks: ['[role="option"][data-permission]'],
-    verifiedVersion: "3.11.x",
-    note: "权限候选",
+    fallbacks: [
+      // 3.14.3 真机实测：权限项 role 是 menuitemradio/menuitemcheckbox（不是 option），
+      // 加 role 限制会 0 命中；与 modelOption 一样保留无 role 的兜底候选。
+      '[data-testid^="chat-mode-select-item-"]',
+      '[role="option"][data-permission]',
+    ],
+    verifiedVersion: "3.14.3-Windows",
+    note: "权限候选。真机 testid 形如 chat-mode-select-item-{plan,build,edit,yolo}，可见名是项内的直接文本节点（如「完全访问」），其后还跟着一句说明文本",
+  },
+  thoughtLevelTrigger: {
+    primary: '[data-testid="chat-thought-level-select-trigger"]',
+    fallbacks: ['[role="combobox"][aria-label*="思考"]', '[role="combobox"][data-state]'],
+    verifiedVersion: "3.14.3-Windows",
+    note: "思考档位触发器（combobox）。真机实测（2026-09-30，模型 step-plan/step-5-preview）：存在且可见，文本为当前档位（如「开启」）；档位选项只在菜单展开后挂载",
+  },
+  thoughtLevelOption: {
+    primary: '[data-testid^="chat-thought-level-select-item-"]',
+    fallbacks: ['[role="option"][data-thought-level]'],
+    verifiedVersion: "3.14.3-Windows",
+    note: "思考档位选项。真机实测：testid 后缀为 enabled/disabled（开启/关闭），aria-checked 表示当前档位；档位集合随模型变化，因此集合的唯一判据是这里实际渲染出来的选项",
   },
   workOutsideProject: {
     primary: '[data-testid="composer-work-outside-project"]',

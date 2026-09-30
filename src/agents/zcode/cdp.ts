@@ -8,6 +8,7 @@ import type { ZcodePoll } from "./liveness.js";
 import { projectDisplayName, type ZcodeProjectItem } from "./project.js";
 import { normalizeZcodeModelSelection, type ZcodeModelSelectionRaw } from "./model.js";
 import {
+  ZCODE_DOM,
   projectTriggerDom,
   projectTriggerProbeExpression,
   projectMenuOpenExpression,
@@ -55,6 +56,40 @@ export interface ZcodeClickExactResult {
   count: number;
   available: string[];
   testids?: string[];
+}
+
+/**
+ * `clickProject` 的失败面：把「没找到」「找到了但目标不可见（3.14.x 幽灵项）」
+ * 「触发器本身不可用」区分开——上层据此决定是继续重试、重开菜单，还是回落导入路径。
+ */
+export type ZcodeProjectClickFailure = "trigger-unavailable" | "not-found" | "not-visible";
+
+export interface ZcodeProjectClickResult {
+  clicked: boolean;
+  reason: "clicked" | ZcodeProjectClickFailure;
+}
+
+/**
+ * 思考档位选项的原始事实。归一（token → 规范档位）刻意留在 TS 侧的纯函数里，
+ * DOM 表达式只负责如实采集，保证归一逻辑可被单测覆盖。
+ */
+export interface ZcodeThoughtLevelOption {
+  /** data-testid 原值 */
+  id: string;
+  /** testid 后缀（真机实测为 enabled / disabled） */
+  token: string;
+  /** 可见文本（如「开启」） */
+  text: string;
+  checked: boolean;
+}
+
+export interface ZcodeThoughtLevelSnapshot {
+  triggerMounted: boolean;
+  /** 是否为了读取选项而展开过菜单 */
+  opened: boolean;
+  /** 触发器文本（未展开菜单时，这是当前档位的唯一可读证据） */
+  triggerText: string;
+  options: ZcodeThoughtLevelOption[];
 }
 
 /** 项目触发器就绪状态：每个取值对应一种可区分的失败面，禁止统一降级为「超时」。 */
@@ -246,14 +281,25 @@ export class ZcodeCdpClient {
     return { clicked: true, count: 1 };
   }
 
-  async clickExact(key: ZcodeSelectorKey, value: string): Promise<ZcodeClickExactResult> {
+  /**
+   * 按可见文本精确定位候选项并作用。
+   *
+   * `mode="hover"` 只发 mouseMoved、不发按键：radix 的**二级子菜单**（如模型菜单的
+   * provider 分组）要 hover 才渲染子项，click 会选中分组本身或把菜单收起——
+   * 这是 issue #27「两级模型菜单点击不稳」的真机根因（3.14.3 实测）。
+   */
+  async clickExact(
+    key: ZcodeSelectorKey,
+    value: string,
+    mode: "click" | "hover" = "click",
+  ): Promise<ZcodeClickExactResult> {
     const found = await this.evaluate<{
       count: number;
       available: string[];
       testids?: string[];
       point?: { x: number; y: number };
     }>(
-      `(async function(){const norm=s=>(s||'').normalize('NFKC').trim().toLocaleLowerCase();const target=norm(${JSON.stringify(value)});const sels=${candidateExpr(key, this.selectors)};const visible=e=>{const r=e.getBoundingClientRect();if(!(r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth))return false;const x=Math.max(0,Math.min(innerWidth-1,r.left+r.width/2)),y=Math.max(0,Math.min(innerHeight-1,r.top+r.height/2)),hit=document.elementFromPoint(x,y);return !!hit&&(hit===e||e.contains(hit))};const items=()=>{const out=[];for(const s of sels)for(const e of document.querySelectorAll(s))if(visible(e)&&!out.includes(e))out.push(e);return out};const leafTexts=e=>[...e.querySelectorAll('*')].filter(n=>n.children.length===0).map(n=>(n.textContent||'').trim()).filter(Boolean);const label=e=>(e.getAttribute('data-value')||e.getAttribute('data-model')||e.getAttribute('data-provider')||leafTexts(e)[0]||e.textContent||'').trim();let nodes=items();let scroller=nodes[0];while(scroller&&scroller!==document.body&&scroller.scrollHeight<=scroller.clientHeight)scroller=scroller.parentElement;const start=scroller?.scrollTop||0;if(scroller)scroller.scrollTop=0;const seen=new Map(),seenTestids=new Map(),matches=new Map();for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,25));nodes=items();for(const e of nodes){const text=label(e);const testid=e.getAttribute('data-testid')||'';const id=e.getAttribute('data-id')||e.getAttribute('data-model-id')||e.getAttribute('data-value')||e.getAttribute('data-model')||e.getAttribute('data-provider')||testid||text;const key=norm(id)+'|'+norm(text);if(testid)seenTestids.set(key,testid);if(!text)continue;seen.set(key,text);if(norm(text)===target)matches.set(key,{top:scroller?.scrollTop||0,text})}if(!scroller||scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-1)break;const before=scroller.scrollTop;scroller.scrollTop=Math.min(scroller.scrollTop+Math.max(100,scroller.clientHeight*.8),scroller.scrollHeight);if(scroller.scrollTop===before)break}const result={available:[...seen.values()],testids:[...seenTestids.values()]};const matchesFound=[...matches.values()];if(matchesFound.length===1){if(scroller)scroller.scrollTop=matchesFound[0].top;await new Promise(r=>setTimeout(r,50));const exact=items().filter(e=>norm(label(e))===target);if(exact.length===1){exact[0].scrollIntoView({block:'center'});const r=exact[0].getBoundingClientRect();return {count:1,...result,point:{x:r.left+r.width/2,y:r.top+r.height/2}}}}if(scroller)scroller.scrollTop=start;return {count:matchesFound.length,...result}})()`,
+      `(async function(){const norm=s=>(s||'').normalize('NFKC').trim().toLocaleLowerCase();const target=norm(${JSON.stringify(value)});const sels=${candidateExpr(key, this.selectors)};const visible=e=>{const r=e.getBoundingClientRect();if(!(r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth))return false;const x=Math.max(0,Math.min(innerWidth-1,r.left+r.width/2)),y=Math.max(0,Math.min(innerHeight-1,r.top+r.height/2)),hit=document.elementFromPoint(x,y);return !!hit&&(hit===e||e.contains(hit))};const items=()=>{const out=[];for(const s of sels)for(const e of document.querySelectorAll(s))if(visible(e)&&!out.includes(e))out.push(e);return out};const leafTexts=e=>[...e.querySelectorAll('*')].filter(n=>n.children.length===0).map(n=>(n.textContent||'').trim()).filter(Boolean);const directText=e=>[...e.childNodes].filter(n=>n.nodeType===3).map(n=>(n.textContent||'').trim()).filter(Boolean).join(' ');const label=e=>(e.getAttribute('data-value')||e.getAttribute('data-model')||e.getAttribute('data-provider')||directText(e)||leafTexts(e)[0]||e.textContent||'').trim();let nodes=items();let scroller=nodes[0];while(scroller&&scroller!==document.body&&scroller.scrollHeight<=scroller.clientHeight)scroller=scroller.parentElement;const start=scroller?.scrollTop||0;if(scroller)scroller.scrollTop=0;const seen=new Map(),seenTestids=new Map(),matches=new Map();for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,25));nodes=items();for(const e of nodes){const text=label(e);const testid=e.getAttribute('data-testid')||'';const id=e.getAttribute('data-id')||e.getAttribute('data-model-id')||e.getAttribute('data-value')||e.getAttribute('data-model')||e.getAttribute('data-provider')||testid||text;const key=norm(id)+'|'+norm(text);if(testid)seenTestids.set(key,testid);if(!text)continue;seen.set(key,text);if(norm(text)===target)matches.set(key,{top:scroller?.scrollTop||0,text})}if(!scroller||scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-1)break;const before=scroller.scrollTop;scroller.scrollTop=Math.min(scroller.scrollTop+Math.max(100,scroller.clientHeight*.8),scroller.scrollHeight);if(scroller.scrollTop===before)break}const result={available:[...seen.values()],testids:[...seenTestids.values()]};const matchesFound=[...matches.values()];if(matchesFound.length===1){if(scroller)scroller.scrollTop=matchesFound[0].top;await new Promise(r=>setTimeout(r,50));const exact=items().filter(e=>norm(label(e))===target);if(exact.length===1){exact[0].scrollIntoView({block:'center'});const r=exact[0].getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;const hit=document.elementFromPoint(x,y);if(hit&&(hit===exact[0]||exact[0].contains(hit)))return {count:1,...result,point:{x,y}};return {count:1,...result}}}if(scroller)scroller.scrollTop=start;return {count:matchesFound.length,...result}})()`,
     );
     if (!found.point)
       return {
@@ -262,7 +308,13 @@ export class ZcodeCdpClient {
         available: found.available,
         testids: found.testids,
       };
-    await this.clickAt(found.point.x, found.point.y);
+    if (mode === "hover")
+      await this.send("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: found.point.x,
+        y: found.point.y,
+      });
+    else await this.clickAt(found.point.x, found.point.y);
     return {
       clicked: true,
       count: found.count,
@@ -276,47 +328,148 @@ export class ZcodeCdpClient {
     );
     return normalizeZcodeModelSelection(raw);
   }
+  /**
+   * 采集项目候选（issue #27 修复）。
+   *
+   * 两条渠道**始终合并**，不再用 `if(!out.length)` 短路——3.14.x 下必被视口外的侧边栏
+   * 幽灵项污染，那时短路恒为假，唯一可信的菜单渠道被整条掐掉。
+   * 侧边栏项（旧契约）必须先过 `ZCODE_DOM.visible`：3.14.x 的 `workspace-item-*`
+   * 并未从 DOM 消失，只是尺寸塌陷/被滚出视口，它们不是可信的项目证据。
+   * 同名时菜单项覆盖侧边栏项：只有菜单的 `aria-checked` 是 ZCode 自己渲染的绑定证据。
+   */
+  /**
+   * 思考档位的只读快照（issue #27 问题三）。
+   *
+   * 真机实测（2026-09-30，ZCode 3.14.3-Windows）：档位**选项只在菜单展开时挂载**，
+   * 因此没有挂载任何选项时按需点开一次、读完立刻关闭（不给后续步骤留副作用）。
+   * 只采集原始事实，档位归一与校验交给 model.ts 的纯函数。
+   */
+  async thoughtLevelSnapshot(): Promise<ZcodeThoughtLevelSnapshot> {
+    const triggerExpr = `(function(){${ZCODE_DOM}
+      const found=pick(${candidateExpr("thoughtLevelTrigger", this.selectors)});
+      return {mounted:found.count?1:0, text:(found.node?.textContent||'').replace(/\\s+/g,' ').trim()};
+    })()`;
+    const optionsExpr = `(function(){${ZCODE_DOM}
+      const out=[];
+      for(const s of ${candidateExpr("thoughtLevelOption", this.selectors)})for(const e of document.querySelectorAll(s)){
+        const r=e.getBoundingClientRect();
+        if(!(r.width&&r.height))continue;
+        const id=e.getAttribute('data-testid')||'';
+        out.push({id,
+          token:id.startsWith('chat-thought-level-select-item-')?id.slice('chat-thought-level-select-item-'.length):'',
+          text:(e.textContent||'').replace(/\\s+/g,' ').trim(),
+          checked:e.getAttribute('aria-checked')==='true'});
+      }
+      return out;
+    })()`;
+    const probe = await this.evaluate<{ mounted: number; text: string }>(triggerExpr);
+    if (!probe.mounted)
+      return { triggerMounted: false, opened: false, triggerText: probe.text, options: [] };
+    let options = await this.evaluate<ZcodeThoughtLevelOption[]>(optionsExpr);
+    let opened = false;
+    if (!options.length && (await this.click("thoughtLevelTrigger"))) {
+      await this.evaluate(`new Promise(r=>setTimeout(r,250))`);
+      options = await this.evaluate<ZcodeThoughtLevelOption[]>(optionsExpr);
+      opened = options.length > 0;
+      await this.dismissRadixSelect();
+    }
+    const after = await this.evaluate<{ mounted: number; text: string }>(triggerExpr);
+    return { triggerMounted: true, opened, triggerText: after.text, options };
+  }
+
+  /** 点击指定 testid 的档位选项（选项需已挂载）。 */
+  async clickThoughtLevelOption(id: string): Promise<boolean> {
+    const point = await this.evaluate<{ x: number; y: number } | null>(
+      `(function(){${ZCODE_DOM}
+        for(const s of ${candidateExpr("thoughtLevelOption", this.selectors)})for(const e of document.querySelectorAll(s)){
+          if((e.getAttribute('data-testid')||'')!==${JSON.stringify(id)})continue;
+          const r=e.getBoundingClientRect();
+          if(!(r.width&&r.height))continue;
+          e.scrollIntoView({block:'center'});
+          const b=e.getBoundingClientRect();
+          return {x:b.left+b.width/2,y:b.top+b.height/2};
+        }
+        return null;
+      })()`,
+    );
+    if (!point) return false;
+    await this.clickAt(point.x, point.y);
+    return true;
+  }
+
+  /**
+   * 关闭 radix select 的 listbox。`dismissMenus` 只认 `[role="menu"]`，
+   * 而档位下拉是 combobox + listbox，需要单独的 Escape。
+   */
+  private async dismissRadixSelect(): Promise<void> {
+    for (let i = 0; i < 2; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "Escape",
+        code: "Escape",
+        windowsVirtualKeyCode: 27,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await this.send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        key: "Escape",
+        code: "Escape",
+        windowsVirtualKeyCode: 27,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await this.evaluate(`new Promise(r=>setTimeout(r,120))`);
+    }
+  }
+
   async projects(): Promise<ZcodeProjectItem[]> {
     return this.evaluate(
-      `(function(){
-        const norm=s=>(s||'').normalize('NFKC').trim();
-        const out=[],seen=new Set();
-        const push=(name,path,id,checked)=>{
+      `(function(){${ZCODE_DOM}
+        const order=[];
+        const byName=new Map();
+        const put=(name,path,id,checked,channel)=>{
           const n=(name||'').trim();
           if(!n)return;
-          const key=norm(n).toLocaleLowerCase();
-          if(seen.has(key))return;
-          seen.add(key);
-          out.push({name:n,path:path||undefined,id:id||undefined,checked});
+          const key=norm(n);
+          const previous=byName.get(key);
+          // 菜单渠道优先：同名的侧边栏项被菜单项顶掉；同渠道之间保持先入先得。
+          if(previous&&previous.channel==='menu'&&channel!=='menu')return;
+          if(!previous)order.push(key);
+          byName.set(key,{item:{name:n,path:path||undefined,id:id||undefined,checked},channel});
         };
         for(const s of ${candidateExpr("projectItem", this.selectors)})for(const e of document.querySelectorAll(s)){
+          if(!visible(e))continue;
           const testid=e.getAttribute('data-testid')||'';
           const testPath=testid.startsWith('workspace-item-')?testid.slice('workspace-item-'.length):undefined;
           const name=(e.getAttribute('data-project-name')||e.querySelector('[class*=name]')?.textContent||e.textContent||'').trim();
           const p=e.getAttribute('data-project-path')||e.querySelector('[data-project-path]')?.getAttribute('data-project-path')||testPath||e.getAttribute('title')||undefined;
           const id=e.getAttribute('data-project-id')||e.getAttribute('data-id')||testid||undefined;
-          push(name,p,id,undefined);
+          put(name,p,id,undefined,'sidebar');
         }
         // issue #24：ZCode 3.14.x 已删除 workspace-item-*，项目列表只能从展开的下拉菜单采集。
-        // 仅在旧契约完全落空时启用，保证 3.11.x 的采集结果逐字不变。
-        if(!out.length)for(const s of ${candidateExpr("projectMenuItem", this.selectors)})for(const e of document.querySelectorAll(s)){
+        for(const s of ${candidateExpr("projectMenuItem", this.selectors)})for(const e of document.querySelectorAll(s)){
           const name=(e.getAttribute('aria-label')||e.textContent||'').trim();
           // 「不在项目中工作」是工作区切换项，不是项目——按本地化标签排除。
           if(/不在项目中|outside a project|work outside/i.test(name))continue;
-          push(name,undefined,e.getAttribute('data-value')||undefined,e.getAttribute('aria-checked')==='true');
+          put(name,undefined,e.getAttribute('data-value')||undefined,e.getAttribute('aria-checked')==='true','menu');
         }
-        return out
+        return order.map(key=>byName.get(key).item)
       })()`,
     );
   }
-  async clickProject(id: string | undefined, projectPath: string | undefined): Promise<boolean> {
+  async clickProject(
+    id: string | undefined,
+    projectPath: string | undefined,
+  ): Promise<ZcodeProjectClickResult> {
     const displayName = projectPath ? projectDisplayName(projectPath) : "";
-    const point = await this.evaluate<{ x: number; y: number } | null>(
-      `(async function(){${projectTriggerDom(this.selectors)}if(!trigger)return null;const targetName=norm(${JSON.stringify(displayName)});let containers=[];const controlledId=trigger?.getAttribute('aria-controls')||'';if(controlledId){const controlled=document.getElementById(controlledId);if(controlled&&visible(controlled))containers.push(controlled)}if(trigger){let parent=trigger.parentElement;while(parent&&!containers.length){if(parent.querySelector('[role="menuitemcheckbox"]'))containers.push(parent);parent=parent.parentElement}}if(!containers.length)containers=[...document.querySelectorAll('[role="menu"]')].filter(e=>visible(e)&&e.querySelector('[role="menuitemcheckbox"]'));const checkboxMatches=[];for(const container of containers)for(const e of container.querySelectorAll('[role="menuitemcheckbox"]'))if(visible(e)&&norm(e.getAttribute('aria-label')||e.getAttribute('data-value')||e.textContent||'')===targetName&&!checkboxMatches.includes(e))checkboxMatches.push(e);let selected=checkboxMatches.length===1?checkboxMatches[0]:null;if(!selected){const matches=[];for(const s of ${candidateExpr("projectItem", this.selectors)})for(const e of document.querySelectorAll(s)){const testid=e.getAttribute('data-testid')||'';const itemId=e.getAttribute('data-project-id')||e.getAttribute('data-id')||testid;const p=e.getAttribute('data-project-path')||e.querySelector('[data-project-path]')?.getAttribute('data-project-path')||(testid.startsWith('workspace-item-')?testid.slice('workspace-item-'.length):'')||e.getAttribute('title')||'';if(((${JSON.stringify(id ?? "")}&&itemId===${JSON.stringify(id ?? "")})||(${JSON.stringify(projectPath ?? "")}&&p===${JSON.stringify(projectPath ?? "")}))&&!matches.includes(e))matches.push(e)}if(matches.length===1)selected=matches[0]}if(!selected)return null;selected.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,50));const r=selected.getBoundingClientRect();return visible(selected)?{x:r.left+r.width/2,y:r.top+r.height/2}:null})()`,
+    const outcome = await this.evaluate<
+      { point: { x: number; y: number } } | { reason: ZcodeProjectClickFailure }
+    >(
+      `(async function(){${projectTriggerDom(this.selectors)}if(!trigger)return {reason:'trigger-unavailable'};const targetName=norm(${JSON.stringify(displayName)});let containers=[];const controlledId=trigger?.getAttribute('aria-controls')||'';if(controlledId){const controlled=document.getElementById(controlledId);if(controlled&&visible(controlled))containers.push(controlled)}if(trigger){let parent=trigger.parentElement;while(parent&&!containers.length){if(parent.querySelector('[role="menuitemcheckbox"]'))containers.push(parent);parent=parent.parentElement}}if(!containers.length)containers=[...document.querySelectorAll('[role="menu"]')].filter(e=>visible(e)&&e.querySelector('[role="menuitemcheckbox"]'));const checkboxMatches=[];for(const container of containers)for(const e of container.querySelectorAll('[role="menuitemcheckbox"]'))if(visible(e)&&norm(e.getAttribute('aria-label')||e.getAttribute('data-value')||e.textContent||'')===targetName&&!checkboxMatches.includes(e))checkboxMatches.push(e);let selected=checkboxMatches.length===1?checkboxMatches[0]:null;if(!selected){const matches=[];for(const s of ${candidateExpr("projectItem", this.selectors)})for(const e of document.querySelectorAll(s)){const testid=e.getAttribute('data-testid')||'';const itemId=e.getAttribute('data-project-id')||e.getAttribute('data-id')||testid;const p=e.getAttribute('data-project-path')||e.querySelector('[data-project-path]')?.getAttribute('data-project-path')||(testid.startsWith('workspace-item-')?testid.slice('workspace-item-'.length):'')||e.getAttribute('title')||'';if(((${JSON.stringify(id ?? "")}&&itemId===${JSON.stringify(id ?? "")})||(${JSON.stringify(projectPath ?? "")}&&p===${JSON.stringify(projectPath ?? "")}))&&!matches.includes(e))matches.push(e)}const shown=matches.filter(visible);if(matches.length&&!shown.length)return {reason:'not-visible'};if(shown.length===1)selected=shown[0]}if(!selected)return {reason:'not-found'};selected.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,50));const r=selected.getBoundingClientRect();return visible(selected)?{point:{x:r.left+r.width/2,y:r.top+r.height/2}}:{reason:'not-visible'}})()`,
     );
-    if (!point) return false;
-    await this.clickAt(point.x, point.y);
-    return true;
+    if (!("point" in outcome)) return { clicked: false, reason: outcome.reason };
+    await this.clickAt(outcome.point.x, outcome.point.y);
+    return { clicked: true, reason: "clicked" };
   }
   async boundProjectPath(): Promise<string> {
     return (await this.workspaceBinding()).projectPath;

@@ -64,7 +64,7 @@ import {
 import { readTextSafe, readJsonSafe } from "../util/fs.js";
 import { readLatestReportSummary } from "../loop/fix-loop.js";
 import { readDirSafe } from "../util/fs.js";
-import { parseZcodeModel } from "../agents/zcode/model.js";
+import { parseZcodeModel, describeZcodeLevelValueError } from "../agents/zcode/model.js";
 import { describeLevelValueError, parseKimicodeModel } from "../agents/kimicode/model.js";
 import { validateTaskReferences } from "../agents/zcode/references.js";
 
@@ -391,7 +391,11 @@ function runTaskHandler(
     if (finalAgentId === "zcode") {
       if (args.mode !== undefined) return errorResult("ZCode 不支持 mode 参数；请移除 mode 后重试");
       try {
-        parseZcodeModel(args.model);
+        // 参数级只做「格式 + 取值域」校验（issue #27 问题三）：档位集合随模型变化，
+        // 只能在运行期读界面实际渲染的选项，故「越权档位」的判定留给 run.ts。
+        const spec = parseZcodeModel(args.model, args.reasoningLevel);
+        const levelError = describeZcodeLevelValueError(spec);
+        if (levelError) throw new Error(levelError);
         validateTaskReferences(args.task, args.context, norm);
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
@@ -591,7 +595,9 @@ async function runTaskWithoutProject(
     );
   }
   try {
-    parseZcodeModel(args.model);
+    const spec = parseZcodeModel(args.model, args.reasoningLevel);
+    const levelError = describeZcodeLevelValueError(spec);
+    if (levelError) throw new Error(levelError);
     // 无项目模式不做项目引用解析：识别到本地引用就在发送前说明需要 projectPath。
     validateTaskReferences(args.task, args.context, undefined);
   } catch (e) {

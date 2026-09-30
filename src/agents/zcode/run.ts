@@ -10,12 +10,22 @@ import type {
 } from "../adapter.js";
 import { ZCODE_SETUP_DEFAULTS, type GuiProfile } from "../../config/schema.js";
 import { mkdirp } from "../../util/fs.js";
-import { parseZcodeModel, exactUiName, ZcodeModelReadbackError } from "./model.js";
+import {
+  parseZcodeModel,
+  exactUiName,
+  ZcodeModelReadbackError,
+  ZcodeReasoningLevelError,
+  assertZcodeLevelSupported,
+  describeZcodeLevelValueError,
+  thoughtLevelOfToken,
+  thoughtTierSetOf,
+} from "./model.js";
 import { validateTaskReferences } from "./references.js";
 import {
   boundProjectVerdict,
   matchZcodeProject,
   isUnboundTriggerText,
+  type ZcodeProjectItem,
 } from "./project.js";
 import { judgeZcodePoll, type ZcodePollState } from "./liveness.js";
 import {
@@ -195,11 +205,12 @@ async function clickExactWhenReady(
   key: "providerOption" | "modelOption" | "permissionOption" | "chooseFolder",
   value: string,
   deps: ZcodeRunDeps,
+  mode: "click" | "hover" = "click",
 ): ReturnType<ZcodeCdpClient["clickExact"]> {
   let last: ZcodeClickExactResult = { clicked: false, count: 0, available: [] };
   for (let i = 0; i < 15; i++) {
     // eslint-disable-next-line no-await-in-loop
-    last = await cdp.clickExact(key, value);
+    last = await cdp.clickExact(key, value, mode);
     if (last.clicked || last.count > 1) return last;
     // eslint-disable-next-line no-await-in-loop
     await deps.sleep(200);
@@ -248,6 +259,20 @@ function describeProjectTriggerFailure(outcome: ZcodeProjectMenuResult): string 
   }
 }
 
+/**
+ * 运行期 CDP 断连且重连无效（issue #27）：任务已经发出，因此不再判死，
+ * 而是由外层归位到可恢复出口（needs_user/setup_recovery），把现场与已确认的会话
+ * 一起交回用户处理。
+ */
+class ZcodeRuntimeDisconnect extends Error {
+  constructor(
+    message: string,
+    readonly session?: AgentRunResult["session"],
+  ) {
+    super(message);
+  }
+}
+
 export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> {
   const started = Date.now(),
     { ctx, resolved, opts, logFile } = args,
@@ -284,6 +309,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     },
   };
   let cdp: ZcodeCdpClient | undefined;
+  /** 运行期断连时组织诊断文案（进程侧 + 窗口侧）；在发送阶段的护栏里装配。 */
+  let runtimeDiagnosis: (() => Promise<string>) | undefined;
   const result = (extra: Partial<AgentRunResult>): AgentRunResult => ({
     ok: false,
     exitCode: null,
@@ -296,7 +323,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
   });
   try {
     await mkdirp(path.dirname(logFile));
-    const spec = parseZcodeModel(ctx.model);
+    const spec = parseZcodeModel(ctx.model, ctx.reasoningLevel);
     // 无项目模式（issue #12）：进入 ZCode 的 default 工作区，不解析项目引用、不绑定/导入项目。
     const defaultWorkspace = ctx.workspaceMode === "default";
     const refs = validateTaskReferences(
@@ -447,6 +474,103 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     let permission = ctx.resume?.permissionMode ?? gui.defaultPermissionMode ?? "完全访问";
     let answeredQuestion = false;
     /**
+     * 运行期 CDP 断连的恢复位（issue #27）：单次 evaluate 超时或端点抖动不等于 CDP 已死。
+     * 首次断连只**重连观察一次**（对齐 qoder/run.ts 与 codex/run.ts 的既有范式）——
+     * 重连只用于继续观察，绝不重发任务；重连失败或再次断连才归位到可恢复出口。
+     *
+     * 护栏从**发送阶段**就生效，而不只是主循环：issue 的物理现场正是「任务已经发出、
+     * agent 仍在写产物，MCP 却因一次 poll 失败把任务判死」。
+     */
+    let reconnected = false;
+    /** 已确认发出的会话身份：随断连一起交回，用户 continue_task 时能回到原会话观察。 */
+    const sessionEvidence = (): AgentRunResult["session"] => ({
+      id: session.id,
+      title: session.title,
+      boundProjectPath: ctx.projectPath,
+      provider: spec.provider,
+      model: spec.model,
+      permissionMode: permission,
+    });
+    const reconnectOnce = async (): Promise<boolean> => {
+      try {
+        logger.warn("[zcode] 运行期 CDP 连接中断；重连观察一次（不重发任务）");
+        cdp!.disconnect();
+        cdp = await connectStableZcode(
+          ready,
+          { ...gui, launchTimeoutMs: Math.min(gui.launchTimeoutMs, 20_000) },
+          deps,
+        );
+        return true;
+      } catch (error) {
+        logger.error(
+          `[zcode] 运行期 CDP 重连失败：${error instanceof Error ? error.message : String(error)}`,
+        );
+        return false;
+      }
+    };
+    const guardRuntimeCdp = async <T>(operation: () => Promise<T>): Promise<T> => {
+      try {
+        return await operation();
+      } catch (error) {
+        const isCdpLoss =
+          error instanceof CdpUnavailableError || error instanceof CdpDisconnectedError;
+        if (!isCdpLoss) throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        if (!reconnected) {
+          reconnected = true;
+          if (await reconnectOnce()) {
+            logger.info("[zcode] 运行期 CDP 已重连，继续观察原任务（不重发）");
+            try {
+              return await operation();
+            } catch (retryError) {
+              if (
+                !(retryError instanceof CdpUnavailableError) &&
+                !(retryError instanceof CdpDisconnectedError)
+              )
+                throw retryError;
+              throw new ZcodeRuntimeDisconnect(
+                `ZCode 调试连接在任务运行期重连后再次中断（${retryError instanceof Error ? retryError.message : String(retryError)}）`,
+                sessionEvidence(),
+              );
+            }
+          }
+        }
+        throw new ZcodeRuntimeDisconnect(
+          `ZCode 调试连接在任务运行期中断（${message}）`,
+          sessionEvidence(),
+        );
+      }
+    };
+    /** 进程侧事实：区分「ZCode 已退出」与「进程还在但端点无响应」——两者的自救动作不同。 */
+    const describeProcessState = async (): Promise<string> => {
+      if (!ready.pid) return "未能确认 ZCode 进程 id";
+      try {
+        const processes = await Promise.resolve(deps.listProcesses());
+        return processes.some((process) => process.pid === ready.pid)
+          ? `ZCode 进程仍在（pid=${ready.pid}）但调试端点无响应`
+          : `ZCode 进程已退出（pid=${ready.pid} 不在进程表中）——请重启 ZCode 客户端`;
+      } catch (error) {
+        return `ZCode 进程状态不可读：${error instanceof Error ? error.message : String(error)}`;
+      }
+    };
+    /**
+     * 窗口侧事实：issue 的物理现场是「agent 被判死后仍在写产物」，因此断连时必须回读
+     * 窗口内是否仍有运行信号，避免把「仍在跑」误读成「已停」。
+     */
+    const describeRuntimeWindow = async (): Promise<string> => {
+      try {
+        const snapshot = await cdp!.poll();
+        const running = snapshot.stopVisible || snapshot.loading || snapshot.activeTool;
+        return running
+          ? "窗口内仍有运行信号（stop/loading/tool-call 可见），任务可能仍在继续"
+          : "窗口内未见运行信号（任务可能已停止）";
+      } catch {
+        return "窗口状态不可读（调试端点无响应）";
+      }
+    };
+    runtimeDiagnosis = async () =>
+      `${await describeProcessState()}；${await describeRuntimeWindow()}`;
+    /**
      * 无项目模式的就绪判据：必须确认当前会话真的处于「未绑定项目的 default 工作区」。
      * 「不点击项目按钮」不足以证明——当前 UI 可能继承上一次绑定，所以要求触发器文本
      * 命中未绑定占位词、且没有回读到任何项目路径，且不处于歧义态。
@@ -554,22 +678,39 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     /**
      * 幂等确认绑定：每轮先读判定，已绑定即通过；未绑定则（必要时先展开菜单）点击目标项目再复检。
      * 不再接受外部传入的 item——那会把「菜单是否恰好还开着」变成隐式前提（issue #24 暴露的脆弱时序）。
+     *
+     * `unclickable`（issue #27）：所有点击尝试都**从未成功发出一次点击**（`clickProject` 每次
+     * 返回 `clicked:false`，例如目标项在 UI 上不可达）。继续点下去是徒劳——上层据此回落
+     * `selectZcodeFolder` 导入路径，而不是把任务判死在 project_mismatch。
      */
-    const ensureProjectBound = async (): Promise<{ bound: boolean; ambiguous: boolean }> => {
+    const ensureProjectBound = async (): Promise<{
+      bound: boolean;
+      ambiguous: boolean;
+      unclickable: boolean;
+    }> => {
+      let clickAttempts = 0;
+      let clickFailures = 0;
+      const attemptClick = async (item: ZcodeProjectItem): Promise<boolean> => {
+        clickAttempts += 1;
+        const click = await cdp!.clickProject(item.id, item.path ?? ctx.projectPath);
+        if (!click.clicked) {
+          clickFailures += 1;
+          logger.warn(
+            `[zcode] 项目项点击未生效：reason=${click.reason}；target=${item.name}；尝试=${clickAttempts}`,
+          );
+          return false;
+        }
+        return waitBound(cdp!, ctx.projectPath, deps);
+      };
       for (let round = 0; round <= gui.setupRecoveryMaxRetries; round++) {
         // eslint-disable-next-line no-await-in-loop
         const { verdict, match } = await readBoundVerdict();
-        if (verdict.bound) return { bound: true, ambiguous: false };
-        if (verdict.ambiguous) return { bound: false, ambiguous: true };
+        if (verdict.bound) return { bound: true, ambiguous: false, unclickable: false };
+        if (verdict.ambiguous) return { bound: false, ambiguous: true, unclickable: false };
         if (match.item) {
           // eslint-disable-next-line no-await-in-loop
-          const clicked = await cdp!.clickProject(
-            match.item.id,
-            match.item.path ?? ctx.projectPath,
-          );
-          // eslint-disable-next-line no-await-in-loop
-          if (clicked && (await waitBound(cdp!, ctx.projectPath, deps)))
-            return { bound: true, ambiguous: false };
+          if (await attemptClick(match.item))
+            return { bound: true, ambiguous: false, unclickable: false };
           continue;
         }
         // 目标不在当前列表（菜单多未展开）：显式展开菜单后再采集一次。
@@ -582,18 +723,17 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         await deps.sleep(300);
         // eslint-disable-next-line no-await-in-loop
         const expanded = matchZcodeProject(await cdp!.projects(), ctx.projectPath);
-        if (expanded.ambiguous) return { bound: false, ambiguous: true };
+        if (expanded.ambiguous) return { bound: false, ambiguous: true, unclickable: false };
         if (!expanded.item) continue;
         // eslint-disable-next-line no-await-in-loop
-        const clicked = await cdp!.clickProject(
-          expanded.item.id,
-          expanded.item.path ?? ctx.projectPath,
-        );
-        // eslint-disable-next-line no-await-in-loop
-        if (clicked && (await waitBound(cdp!, ctx.projectPath, deps)))
-          return { bound: true, ambiguous: false };
+        if (await attemptClick(expanded.item))
+          return { bound: true, ambiguous: false, unclickable: false };
       }
-      return { bound: false, ambiguous: false };
+      return {
+        bound: false,
+        ambiguous: false,
+        unclickable: clickAttempts > 0 && clickFailures === clickAttempts,
+      };
     };
     if (ctx.resume?.kind === "continue" && ctx.resume.sendMessage) {
       const pending = await cdp.poll();
@@ -714,26 +854,43 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           needsUserKind: "setup_recovery",
           pendingQuestion: "项目路径存在歧义，请在 ZCode 中确认目标项目后调用 continue_task。",
         });
+      let projectBound = false;
       if (matched.item) {
         const binding = await ensureProjectBound();
-        if (!binding.bound)
+        projectBound = binding.bound;
+        if (!projectBound && binding.ambiguous)
           return result({
             hardFailure: true,
-            error: binding.ambiguous
-              ? `项目绑定重试时目标项目无法唯一匹配：${ctx.projectPath}；${await describeBinding()}`
-              : `ZCode 项目绑定有限重试均未生效：${ctx.projectPath}；${await describeBinding()}`,
+            error: `项目绑定重试时目标项目无法唯一匹配：${ctx.projectPath}；${await describeBinding()}`,
             endReason: "project_mismatch",
             needsUserKind: "setup_recovery",
             pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",
           });
-      } else if (ctx.allowCreateProject === false) {
+        if (!projectBound && !binding.unclickable)
+          return result({
+            hardFailure: true,
+            error: `ZCode 项目绑定有限重试均未生效：${ctx.projectPath}；${await describeBinding()}`,
+            endReason: "project_mismatch",
+            needsUserKind: "setup_recovery",
+            pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",
+          });
+        // 目标项就在列表里、却一次点击都没真正落下去（issue #27 的幽灵项/不可达项）：
+        // 继续重试是徒劳，但也不该直接判死——交给下面的导入路径兜底；
+        // allowCreateProject=false 时仍在下一道闸门 fail-closed。
+        if (!projectBound)
+          logger.warn(
+            `[zcode] 目标项目在列表中但点击始终不生效，回落项目导入路径：${ctx.projectPath}`,
+          );
+      }
+      if (!projectBound && ctx.allowCreateProject === false) {
         // 明确禁止创建：在打开文件夹面板等任何导入副作用之前停止派发。
         return result({
           hardFailure: true,
           endReason: "project_not_registered",
           error: `目标目录未在 ZCode 项目列表中登记，且本次调用禁止自动创建项目（allowCreateProject=false）：${ctx.projectPath}。请在 ZCode 中手动添加该项目后重新提交，或省略 allowCreateProject 以允许自动导入。`,
         });
-      } else {
+      }
+      if (!projectBound) {
         budget.setStage("准备文件夹面板");
         let pids: number[] = [];
         let before: string[] | undefined;
@@ -933,9 +1090,24 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         let model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
         let provider: ZcodeClickExactResult = { clicked: false, count: 0, available: [] };
         if (!model.clicked) {
-          provider = await clickExactWhenReady(cdp, "providerOption", spec.provider, deps);
-          if (provider.clicked) await deps.sleep(250);
+          // issue #27：模型项在 provider 分组的二级子菜单里，**hover 分组**才会渲染子项；
+          // 用 click 会选中分组本身或收起菜单，这正是「两级模型菜单点击不稳」的根因。
+          provider = await clickExactWhenReady(cdp, "providerOption", spec.provider, deps, "hover");
+          if (provider.clicked) await deps.sleep(600);
           model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
+        }
+        /**
+         * issue #27 问题三：radix 子菜单由 hover 维持，press 时子菜单可能已收回——
+         * 表现为「本轮候选为空」，而不是「模型真的不存在」。此时把菜单重开一次再试一轮，
+         * 不要凭一轮空列表就把任务判死在 model_unavailable。
+         */
+        if (!model.clicked && !model.count && !provider.clicked) {
+          logger.warn("[zcode] 模型项两轮均未命中且候选为空（菜单可能已收起）；重开模型菜单后再试一轮");
+          await cdp.dismissMenus();
+          if (await cdp.click("modelTrigger")) {
+            await deps.sleep(250);
+            model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
+          }
         }
         if (!model.clicked)
           return result({
@@ -956,6 +1128,68 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           error: `模型切换回读不一致：display=${modelValue.display || "空"}，internal=${modelValue.internal || "空"}`,
           endReason: "model_mismatch",
         });
+      /**
+       * 思考档位（issue #27 问题三）：`reasoningLevel` 此前完全没有实现。
+       *
+       * 档位集合**随模型变化**（真机实测 3.14.3：当前模型只有 开启/关闭 二值），
+       * 所以必须在模型确认之后才读界面；未指定档位时完全不碰界面（沿用当前值）。
+       * 越权档位与「集合读不到」都在**发送前**报错，绝不静默沿用。
+       */
+      if (spec.unsupportedLevel !== undefined)
+        return result({
+          hardFailure: true,
+          error:
+            describeZcodeLevelValueError(spec) ??
+            `ZCode 的思考档位不支持「${spec.unsupportedLevel}」`,
+          endReason: "reasoning_level_invalid",
+        });
+      if (spec.level) {
+        budget.setStage("确认思考档位");
+        const snapshot = await cdp.thoughtLevelSnapshot();
+        // 控件本身不存在（该版本/该模型不提供档位选择）与「控件存在但读不到选项」是两种失败，
+        // 文案必须区分，否则用户会去翻一个根本不存在的菜单。
+        if (!snapshot.triggerMounted)
+          return result({
+            hardFailure: true,
+            endReason: "reasoning_level_unavailable",
+            error:
+              "ZCode 界面没有思考档位控件（该版本或该模型不提供档位选择）；请移除 reasoningLevel 后重试",
+          });
+        const tiers = thoughtTierSetOf(
+          snapshot.options.map((option) => option.token || option.text),
+        );
+        assertZcodeLevelSupported(spec, tiers);
+        const current = thoughtLevelOfToken(snapshot.triggerText);
+        if (current === spec.level) {
+          logger.info(`[zcode] 思考档位已是「${spec.level}」，无需切换`);
+        } else {
+          const target = snapshot.options.find(
+            (option) => thoughtLevelOfToken(option.token || option.text) === spec.level,
+          );
+          if (!target)
+            return result({
+              hardFailure: true,
+              endReason: "reasoning_level_unavailable",
+              error: `ZCode 思考档位「${spec.level}」在界面上没有对应选项（界面档位=${snapshot.options.map((option) => option.token || option.text).join("、") || "空"}）`,
+            });
+          if (!(await cdp.clickThoughtLevelOption(target.id)))
+            return result({
+              hardFailure: true,
+              endReason: "reasoning_level_unavailable",
+              error: `无法点击 ZCode 思考档位选项：${target.id}（当前显示=${snapshot.triggerText || "空"}）`,
+            });
+          await deps.sleep(250);
+          const applied = await cdp.thoughtLevelSnapshot();
+          const readback = thoughtLevelOfToken(applied.triggerText);
+          if (readback !== spec.level)
+            return result({
+              hardFailure: true,
+              endReason: "reasoning_level_mismatch",
+              error: `ZCode 思考档位回读不一致：期望「${spec.level}」，实际「${applied.triggerText || "空"}」`,
+            });
+          logger.info(`[zcode] 思考档位已切换为「${spec.level}」`);
+        }
+      }
       permission = gui.defaultPermissionMode ?? "完全访问";
       if (!exactUiName(await cdp.text("permissionValue"), permission)) {
         if (!(await cdp.click("permissionTrigger")))
@@ -1042,7 +1276,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           const [after, input, polled] = await Promise.all([
             cdp.conversationText(),
             cdp.inputText(),
-            cdp.poll(),
+            guardRuntimeCdp(() => cdp!.poll()),
           ]);
           seenMessage ||= after.includes(marker);
           seenStateChange ||= !input.includes(marker);
@@ -1099,7 +1333,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           error: "ZCode 任务总时限已到；已停止 MCP 等待并保留 ZCode 现场",
         });
       await deps.sleep(gui.pollIntervalMs);
-      const poll = await cdp.poll();
+      const poll = await guardRuntimeCdp(() => cdp!.poll());
       const verdict = judgeZcodePoll(poll, state, gui.stableRounds, gui.idleTimeoutMs);
       state = verdict.state;
       if (Date.now() - lastProgress >= gui.progressIntervalMs) {
@@ -1168,8 +1402,23 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       });
     if (e instanceof ZcodeBudgetError)
       return result({ hardFailure: true, endReason: "cdp_disconnected", error: msg });
+    if (e instanceof ZcodeReasoningLevelError)
+      return result({ hardFailure: true, error: msg, endReason: "reasoning_level_invalid" });
     if (e instanceof ZcodeModelReadbackError)
       return result({ hardFailure: true, error: msg, endReason: "model_mismatch" });
+    if (e instanceof ZcodeRuntimeDisconnect) {
+      const diagnosis = runtimeDiagnosis
+        ? await runtimeDiagnosis().catch(() => "窗口状态不可读")
+        : "无法读取 ZCode 窗口状态";
+      // 任务已经发出：不再判死，交回用户处理现场（进程/窗口两侧事实随附），绝不重发。
+      return result({
+        endReason: "needs_user",
+        needsUserKind: "setup_recovery",
+        pendingQuestion: `${msg}。${diagnosis}。请检查 ZCode 客户端后调用 continue_task 继续观察原任务（不会重发任务）。`,
+        session: e.session,
+        progressSummary: "ZCode 运行期 CDP 断连，已保留现场并等待处理",
+      });
+    }
     if (e instanceof CdpDisconnectedError || e instanceof CdpUnavailableError)
       return result({ hardFailure: true, error: msg, endReason: "cdp_disconnected" });
     return result({ hardFailure: true, error: msg, endReason: "internal" });
