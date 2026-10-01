@@ -263,6 +263,13 @@ npm install
 npm run dev          # Vite dev server (port 1420)
 ```
 
+> **If port 1420 is already in use**: a `predev` guard (`scripts/dev-port-guard.mjs`) runs before `dev` and
+> prints the current holder plus the command to free it (Windows `netstat -ano | findstr :1420` +
+> `taskkill /PID <PID> /T /F`; macOS/Linux `lsof -ti :1420 | xargs kill`) instead of throwing a bare
+> EADDRINUSE stack trace. The port is **pinned on purpose** — Tauri's `devUrl` is hard-wired to
+> `http://localhost:1420`, and silently switching ports would leave the shell unable to connect. For
+> frontend-only previews you can temporarily move it: `npm run dev -- --port 1421`.
+
 When not running inside the desktop shell, `src/api/` automatically switches to a **mock data backend** backed by
 `mcp-gui/fixtures/` (real, sanitized log samples), so filtering, search, report rendering, language and theme can
 all be exercised without the backend.

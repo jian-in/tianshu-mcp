@@ -225,6 +225,12 @@ npm install
 npm run dev          # Vite 开发服务器（端口 1420）
 ```
 
+> **端口 1420 被占用时**：`dev` 前会跑一次 `predev` 守卫（`scripts/dev-port-guard.mjs`），直接打印占用者
+> 与结束命令（Windows `netstat -ano | findstr :1420` + `taskkill /PID <PID> /T /F`；macOS/Linux
+> `lsof -ti :1420 | xargs kill`），而不是抛一段 EADDRINUSE 堆栈。端口是**故意固定**的——Tauri 的
+> `devUrl` 写死 `http://localhost:1420`，静默换端口会让宿主连不上；只跑前端预览时可临时换端口：
+> `npm run dev -- --port 1421`。
+
 不在桌面运行时时，`src/api/` 会自动切换到 **mock 数据出口**，数据来自 `mcp-gui/fixtures/`（真实日志样本，已脱敏），因此筛选、搜索、报告渲染、语言与主题等交互都能在没有后端的情况下完整验证。
 
 前端质量门禁：
