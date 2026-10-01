@@ -9,6 +9,8 @@ import type {
   ExportResult,
   ExportTaskZipRequest,
   InstallUpdateResult,
+  InsightsRequest,
+  InsightsResult,
   ListTasksRequest,
   LogChunk,
   Preferences,
@@ -34,6 +36,8 @@ export interface GuiApi {
   /** 原生保存路径选择（mock 下返回 null） */
   pickSavePath(defaultName: string): Promise<string | null>;
   listTasks(req: ListTasksRequest): Promise<TaskSummary[]>;
+  /** 洞察聚合（A1 效能 / A2 归因 / A3 趋势）：只读扫描，不写业务数据 */
+  getInsights(req: InsightsRequest): Promise<InsightsResult>;
   readEvents(req: ReadEventsRequest): Promise<ReadEventsResult>;
   readLog(req: ReadLogRequest): Promise<LogChunk>;
   readReport(req: ReadReportRequest): Promise<ReadReportResult>;

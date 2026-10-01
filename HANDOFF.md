@@ -20,6 +20,11 @@
 > - **文档**：新增 [等待原语](docs/wait-task.md) 双语；README / ARCHITECTURE / tianshu-integration / core-principles / SKILL / usage-examples 同步 11→13 与工具表。
 > - **发布链**：见下方「发布流程」——GitHub 主仓 + Gitee 镜像 Release、npm `tianshu-mcp@0.7.7`。
 >
+> **日志台 GUI（独立交付面，同会话并行交付）**：`mcp-gui` 推进到 **`0.1.1-beta.1`**（计划 `.trae/documents/mcp-gui-insights-0.1.1-plan.md` 的**批次一**）——
+> 侧栏新增「洞察」整页：**A1 效能看板**（按 Agent / 项目的任务数、成功率、平均轮次、一次通过率、平均验收耗时、报告缺失）+ **A2 失败归因**
+> （`errorType` / 失败检查项 / 阻塞问题 / 代码信号 四类 TOP）+ **A3 时间趋势**（按天 / 按周，任务量柱 + 成功率与返修率折线）；
+> 后端新增**只读**聚合命令 `get_insights`（`insights.rs` + `timestamps.rs`）。详见下方「独立交付面 · 日志台 GUI **「洞察」批次一**」。
+>
 > **历史快照（0.7.6）**
 > **交接快照：2026-09-30 · 已发布版本 `0.7.6`（tag `v0.7.6` + npm `tianshu-mcp@0.7.6`）。**
 > **本轮（0.7.5 → 0.7.6）交付**：修掉 **issue #27** 的三条 ZCode 缺陷 —— ① 项目采集渠道分裂导致的绑定死锁
@@ -158,6 +163,37 @@
   ② 改用 `IFileDialog` 的 COM 接口而非 Win32 消息；③ 在能稳定复现的机器上抓对话框的选中项控件。
 - **版本边界**：MCP 主包 `0.7.0 → 0.7.1`（`package.json` + `src/version.generated.ts` 同提交），**已打 tag `v0.7.1`、已发布 npm**；
   `mcp-gui` 独立版本线不受影响（**不迭代该版本**，符合 `AGENTS.md`）。
+
+---
+
+### 独立交付面 · 日志台 GUI **「洞察」批次一（效能看板 / 失败归因 / 时间趋势）**（`mcp-gui/`，`0.1.1-beta.1`）
+
+- **计划文档**：`.trae/documents/mcp-gui-insights-0.1.1-plan.md`（A1–A9 分三批落地，**本批 = A1 + A2 + A3 + 聚合取数通道**）。
+- **范围**：
+  - **新增**：`mcp-gui/src-tauri/src/insights.rs`（只读聚合，含 4 项 Rust 单测）、
+    `mcp-gui/src-tauri/src/timestamps.rs`（最小 UTC 解析 `parse_iso_ms`，含 5 项单测）、
+    `mcp-gui/src/core/insights.ts`（比率 / TopN / 趋势补齐 / 周历聚合 / mock 用的 TS 聚合镜像）、
+    `mcp-gui/src/components/InsightsPage.vue`、`mcp-gui/test/insights.test.ts`（22 项）、
+    `docs/release-gui-v0.1.1-beta.1.md` + `.en.md`；
+  - **修改**：`src-tauri/src/{models,lib}.rs`（`InsightsRequest` / `InsightsSummary` / `InsightsGroup` / `InsightsDay` /
+    `InsightsReason` / `InsightsResult` + 注册 `get_insights`）、`src/api/{types,gui-api,tauri,mock}.ts`、
+    `src/App.vue`（**三态 → 四态** + 侧栏「洞察」插在「任务列表」之后）、`src/components/AppIcon.vue`（`insights` 等新图标）、
+    `src/stores/app.ts`（`insights` 状态 + `loadInsights()`）、`src/i18n/{zh-CN,en-US}.ts`、`src/styles.css`（§21 洞察页样式）。
+- **口径（改这里之前先读，Rust 与 TS 必须同步）**：日期按 **UTC** 分桶（`createdAt` 前 10 字符）；**按周以周一为周始**（跨月 / 跨年归并）；
+  「一次通过」= `succeeded` 且 `roundsUsed <= 1`；返修率 = `roundsUsed > 1` 占比；**只统计每个任务的最新一轮报告**
+  （故「返修后才成功」的任务，其更早一轮的失败**不进归因**——有意为之）；平均验收耗时只算起止时间**都可解析**的轮次；
+  分母为 0 显示 `—`；**全程只读、不提供删除 / 清理**。
+- **职责边界（计划 D4）**：Rust 只做**扫描 + 解析 + 计数/求和**；比率 / TopN / 趋势补齐 / 周历聚合全在前端纯函数里（可单测）。
+- **验证**：
+  - 本机门禁：`typecheck` / `lint` 全绿；`vitest` **125 passed**（本批 +22）；`check:schema` 报「GUI 版本号一致（0.1.1-beta.1）」；
+  - `cargo fmt --check` 通过；**本机仍无法跑 `cargo clippy` / `cargo test`**（依赖构建脚本需要 MSVC 链接器，与计划事实 21 一致）
+    → **Rust 门禁交 `gui.yml`**（计划 D10）；
+  - 渲染实测（headless Edge + mock）：侧栏出现「洞察」，三分区可切换，A1 两张表有数据、A3 按天/按周切换与柱线均渲染，
+    归因分区在 fixtures 下为空态（**印证口径**：fixtures 里各任务最新一轮报告全绿，失败项在更早一轮）。
+- **版本边界**：GUI 独立线 `0.1.0 → 0.1.1-beta.1`（`package.json` / `package-lock.json` 两处 / `tauri.conf.json` / `Cargo.toml` 四处同步）；
+  **MCP 主包不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。
+- **后续批次**：`0.1.1-beta.2` = A4 多任务对比 + A7 结构化筛选增强 + A8a 命令面板；
+  `0.1.1-beta.3` = A5 基线漂移 + A6 状态跃迁甘特 + A9 磁盘占用 + A8b 深链（**唯一有架构风险项**，需 Tauri 插件 + 协议注册）。
 
 ---
 

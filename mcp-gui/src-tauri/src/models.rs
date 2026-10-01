@@ -374,6 +374,101 @@ pub struct AppVersionInfo {
     pub updater_configured: bool,
 }
 
+/* ---------------- 洞察聚合（A1 / A2 / A3，批次一） ---------------- */
+
+/// 洞察聚合的入参（只读；`data_home` 为前后端命令契约字段，与 `list_tasks` 同口径）
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
+    pub data_home: String,
+    /// 起始时间（ISO 串，按 `updatedAt` 比较；空 = 不限）
+    #[serde(default)]
+    pub from: Option<String>,
+    /// 结束时间（ISO 串，按 `updatedAt` 比较；空 = 不限）
+    #[serde(default)]
+    pub to: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub project_path: Option<String>,
+}
+
+/// 一次聚合的计数与求和（**比率一律交前端**，见计划 D4）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsSummary {
+    pub total: i64,
+    pub succeeded: i64,
+    pub failed: i64,
+    pub active: i64,
+    pub needs_attention: i64,
+    pub cancelled: i64,
+    /// 未归入上述任何一类的状态（`needs_user` / `interrupted` / 未知值）
+    pub other: i64,
+    /// `roundsUsed` 求和
+    pub rounds_sum: i64,
+    /// 「一次通过」任务数：**`succeeded` 且 `roundsUsed <= 1`**（成功且仅用 1 轮）
+    pub one_pass_count: i64,
+    /// 找到并解析成功最新一轮报告的任务数
+    pub reports_present: i64,
+    /// 没有可用报告（无轮次 / 文件缺失 / 解析失败）的任务数
+    pub reports_missing: i64,
+    /// 验收耗时求和（ms；仅统计 `startedAt`/`finishedAt` 均可解析的报告）
+    pub verify_ms_sum: i64,
+    /// 参与耗时求和的报告数（分母）
+    pub verify_ms_count: i64,
+}
+
+/// 按维度分组的聚合（`agents` / `projects` 共用）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsGroup {
+    pub key: String,
+    pub summary: InsightsSummary,
+}
+
+/// 按天分桶（日期取 `createdAt` 前 10 字符，即 **UTC 日期**，见计划 D5）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsDay {
+    pub date: String,
+    pub total: i64,
+    pub succeeded: i64,
+    pub failed: i64,
+    pub active: i64,
+    /// `roundsUsed > 1` 的任务数（返修率的分子）
+    pub reworked: i64,
+}
+
+/// 归因条目。`kind` 取值严格为 A2 原文四类：
+/// `"errorType"` / `"failedCheck"` / `"blockingIssue"` / `"signal"`（**不含 warning**）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsReason {
+    pub kind: String,
+    pub key: String,
+    pub count: i64,
+}
+
+/// 洞察聚合出参
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsResult {
+    pub summary: InsightsSummary,
+    pub agents: Vec<InsightsGroup>,
+    pub projects: Vec<InsightsGroup>,
+    pub days: Vec<InsightsDay>,
+    pub reasons: Vec<InsightsReason>,
+    /// 访问过的任务目录数（`tsk_*` / `vfy_*`，**筛选前**——供界面如实展示数据规模）
+    pub scanned_tasks: i64,
+    /// 尝试读取的 `report-*.json` 文件数
+    pub scanned_reports: i64,
+    /// 解析失败的 `report-*.json` 数
+    pub bad_reports: i64,
+}
+
 /// 双源更新端点（与 README / docs 中登记的一致）
 pub const UPDATE_ENDPOINT_GITHUB: &str =
     "https://raw.githubusercontent.com/lanlan0811/tianshu-mcp/master/update/gui/latest.json";

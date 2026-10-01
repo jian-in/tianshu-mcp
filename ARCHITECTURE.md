@@ -996,6 +996,10 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 | 打包 | 根 `package.json` 的 `files` 是白名单，本就不含 `mcp-gui`；`.gitignore` 隔离 `node_modules` / `dist` / `target` / `icons` / `Cargo.lock` |
 | 发版 | GUI 独立版本号（`0.1.0-beta.N`）与独立 tag（`gui-v*`），**不随 MCP 主包发布**（`release.yml` 只认 `v*`） |
 
+只读契约在 0.1.1 起新增的**洞察聚合命令** `get_insights` 上同样成立：它只扫描 `tasks/tsk_*` 与 `tasks/vfy_*`
+下的 `task.json` 与每个任务**最新一轮** `report-*.json`，且只做**计数与求和**（比率 / TopN / 趋势补齐 / 周历聚合
+在前端 `mcp-gui/src/core/insights.ts` 的纯函数里完成）——**不写任何业务数据、不提供删除 / 清理入口**。
+
 ### 16.2 双份 schema 的防漂移机制（本交付面最重要的约束）
 
 Rust 侧需要重写一份「状态枚举 / 事件词表」用于事件分类，前端镜像也需要一份用于展示与 mock。

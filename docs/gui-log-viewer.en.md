@@ -70,7 +70,7 @@ The added directories are persisted in the **system application config directory
 
 ---
 
-## 3. The four log types and the MCP capabilities view
+## 3. The four log types and the full-page views (insights / MCP capabilities)
 
 | Source | Path (relative to data home) | Where in the UI |
 |---|---|---|
@@ -81,7 +81,7 @@ The added directories are persisted in the **system application config directory
 
 ### 3.1 Task overview
 
-- **The UI is a permanent left sidebar plus three full pages**: a **task overview page**, an **MCP capabilities page** and a **full-page workspace**. The sidebar runs brand → global search → main nav (Tasks / Server log / **MCP capabilities** / **Settings**) → **data home (with refresh / add / remove on the same row)** → task section nav, while the overview runs a five-cell metrics strip (total / active / finished / succeeded / failed) → status chip row → task card grid; the **settings entry and the data home both sit in the main nav area** (the data home directly below "Settings", separated by a grouping rule), the **data-home row carries three icon buttons — refresh / add directory / remove**, **nothing permanent sits at the bottom of the sidebar**, and the brand row shows just the app name with no decorative colour square;
+- **The UI is a permanent left sidebar plus four full pages**: a **task overview page**, an **insights page**, an **MCP capabilities page** and a **full-page workspace**. The sidebar runs brand → global search → main nav (Tasks / **Insights** / Server log / **MCP capabilities** / **Settings**) → **data home (with refresh / add / remove on the same row)** → task section nav, while the overview runs a five-cell metrics strip (total / active / finished / succeeded / failed) → status chip row → task card grid; the **settings entry and the data home both sit in the main nav area** (the data home directly below "Settings", separated by a grouping rule), the **data-home row carries three icon buttons — refresh / add directory / remove**, **nothing permanent sits at the bottom of the sidebar**, and the brand row shows just the app name with no decorative colour square;
 - Tasks are shown as **cards**: the left rail carries the status color (semantic tone via `statusTone`), the title has a `›` prefix, and each card shows the status label, `agent · taskId`, `updated · rounds [· report round]` and a dry-run tag;
 - The **status chips** (all / running / succeeded / failed / needs attention / needs human) are **page-level grouping** and do not rewrite the filter conditions;
 - The `[Filter]` popover carries the full set: keyword, agent, status, project, time range, active-only, plus sorting (updated / created / task ID, ascending or descending) and "Reset filters";
@@ -129,6 +129,35 @@ The source is an **embedded mirror list** inside the GUI (`mcp-gui/src/core/capa
 files and connects to no MCP server** — the page has content immediately and is independent of the active data
 home. The mirror is compared item by item (name + capability + requireApproval) against the truth source
 `TOOL_DEFS` in `src/mcp/tools.ts` by `mcp-gui/scripts/check-schema-parity.mjs` in CI; any drift fails the build.
+
+### 3.6 Insights page (scoreboard / attribution / trend)
+
+The sidebar "**Insights**" entry opens a full page (from 0.1.1) that reports read-only statistics over the tasks
+under `tasks/` and each task's **latest** acceptance report:
+
+| Section | Contents |
+|---|---|
+| Scoreboard | Two tables — by agent and by project: tasks / success rate / avg rounds / one-pass rate / avg verify time / missing reports |
+| Attribution | Top lists for four kinds (`errorType` / `failedCheck` / `blockingIssue` / `signal`) with share bars |
+| Trend | By day / by week toggle; task-count bars plus success-rate and rework-rate lines (plain inline SVG, no chart library) |
+
+**Conventions (read before interpreting the numbers)**:
+
+- Dates are bucketed by **UTC** (the first 10 characters of `createdAt`); **weeks start on Monday** (ISO-8601),
+  and the same week spanning a month / year boundary is merged;
+- **"One pass" = succeeded in exactly 1 round**; **rework rate = tasks with `roundsUsed > 1` / all tasks in the bucket**;
+- **Only each task's latest report round is counted** (the snapshot's `reportRound`, else the highest
+  `report-<round>.json`) — so for a task that failed and later succeeded, the earlier failure **does not** enter attribution;
+- **Average verify time** counts only rounds whose start / end times both parse (unparsable reports stay out of the
+  denominator — no invented times);
+- **A zero denominator shows `—`**, never 0%;
+- **Read-only**: no business data is written and there is **no delete / cleanup** entry; unparsable reports are shown
+  honestly as "N unparsable".
+
+Data access: the Tauri command `get_insights` (`mcp-gui/src-tauri/src/insights.rs` + `timestamps.rs`) scans once and
+only does **counting and summing**; rates / TopN / trend gap-filling / week bucketing live in the frontend pure
+functions in `mcp-gui/src/core/insights.ts` (unit-tested). The page loads once when opened, has a Refresh button and
+reloads when the data home changes — **no live watching**.
 
 ---
 

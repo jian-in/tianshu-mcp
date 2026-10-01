@@ -1945,3 +1945,244 @@ input[type="checkbox"] {
   padding: var(--sp-4) var(--sp-5);
   border-top: 1px solid var(--line-hair);
 }
+
+/* ============================================================
+ * 21. 洞察页（批次一：A1 效能看板 / A2 失败归因 / A3 时间趋势）
+ *
+ * 全部沿用既有设计令牌；图表为**纯内联 SVG**（不引图表库、不外链、不引字体）。
+ * ============================================================ */
+
+.ins {
+  overflow: auto;
+  padding: var(--sp-6) var(--sp-6) var(--sp-8);
+  gap: var(--sp-5);
+}
+
+.ins-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ins-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-family: var(--font-display);
+  font-size: var(--fs-18);
+  color: var(--fg);
+}
+
+.ins-title-text {
+  font-weight: 600;
+}
+
+.ins-sub {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--fg-dim);
+  line-height: var(--lh-body);
+}
+
+.ins-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.ins-scale {
+  font-family: var(--font-mono);
+}
+
+.ins-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.ins-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.ins-block-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.ins-block-hint {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--fg-faint);
+  line-height: var(--lh-body);
+}
+
+/* 表格：名称列宽一些，其余等宽；窄屏横向滚动而不是压扁 */
+.ins-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-hair);
+  border-radius: var(--r-1);
+  overflow-x: auto;
+}
+
+.ins-tr {
+  display: grid;
+  grid-template-columns: minmax(140px, 2fr) repeat(6, minmax(72px, 1fr));
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--line-hair);
+  font-size: var(--fs-12);
+  color: var(--fg-dim);
+}
+
+.ins-tr:last-child {
+  border-bottom: none;
+}
+
+.ins-th {
+  background: var(--bg-inset);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.ins-key {
+  font-family: var(--font-mono);
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ins-trend-table .ins-tr {
+  grid-template-columns: minmax(110px, 1.4fr) repeat(3, minmax(72px, 1fr));
+}
+
+/* 归因：key + 占比条 + 计数 */
+.ins-reasons {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ins-reason {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 2fr 64px;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-12);
+}
+
+.ins-reason-key {
+  font-family: var(--font-mono);
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ins-reason-bar {
+  display: block;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.ins-reason-fill {
+  display: block;
+  height: 100%;
+  background: var(--tone-warn);
+}
+
+.ins-reason-count {
+  font-family: var(--font-mono);
+  text-align: right;
+  color: var(--fg-dim);
+}
+
+/* 趋势：任务量柱 + 成功率 / 返修率折线 */
+.ins-chart {
+  width: 100%;
+  height: 180px;
+  border: 1px solid var(--line-hair);
+  border-radius: var(--r-1);
+  background: var(--bg-inset);
+}
+
+.ins-bar-rect {
+  fill: var(--accent-quiet);
+  stroke: var(--accent-line);
+  stroke-width: 0.15;
+}
+
+.ins-line {
+  fill: none;
+  stroke-width: 0.5;
+  /* viewBox 被非等比拉伸，描边必须保持像素宽度，否则横向失真 */
+  vector-effect: non-scaling-stroke;
+}
+
+.ins-line-success {
+  stroke: var(--tone-ok);
+}
+
+.ins-line-rework {
+  stroke: var(--tone-warn);
+}
+
+.ins-xaxis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--fg-faint);
+}
+
+.ins-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  font-size: var(--fs-12);
+  color: var(--fg-dim);
+}
+
+.ins-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.ins-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-tag);
+}
+
+.ins-dot-total {
+  background: var(--accent-quiet);
+  border: 1px solid var(--accent-line);
+}
+
+.ins-dot-success {
+  background: var(--tone-ok);
+}
+
+.ins-dot-rework {
+  background: var(--tone-warn);
+}

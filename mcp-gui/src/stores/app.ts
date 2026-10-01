@@ -8,6 +8,7 @@ import { api, isMockRuntime } from "@/api";
 import type {
   CheckUpdateResult,
   DataHomeState,
+  InsightsResult,
   LogChunk,
   ProbeSourceResult,
   SearchRequest,
@@ -45,6 +46,15 @@ export interface UpdateState {
   result: CheckUpdateResult | null;
   /** 更新日志面板是否打开（手动检查一律打开；启动静默检查仅在「未被忽略」时打开） */
   dialogOpen: boolean;
+}
+
+/** 洞察页状态（**不实时监听**，见计划 D12：进页加载 + 手动刷新 + 切目录重载） */
+export interface InsightsState {
+  data: InsightsResult | null;
+  loading: boolean;
+  /** 时间范围（按 `updatedAt`，ISO 串；null = 不限） */
+  from: string | null;
+  to: string | null;
 }
 
 const EMPTY_HOME: DataHomeState = { detected: "", active: "", entries: [] };
@@ -114,6 +124,13 @@ export const app = reactive({
     result: null,
     dialogOpen: false,
   } as UpdateState,
+
+  insights: {
+    data: null,
+    loading: false,
+    from: null,
+    to: null,
+  } as InsightsState,
 });
 
 export const visibleTasks = computed(() =>
@@ -150,6 +167,8 @@ export async function setActiveDataHome(path: string): Promise<void> {
     app.dataHome = await api.setActiveDataHome(path);
     app.selectedTaskId = null;
     await refreshTasks();
+    // 已加载过洞察时切目录要重载（D12：不做实时监听，但切目录必须跟着变）
+    if (app.insights.data) await loadInsights();
   } catch (err) {
     setError(err);
   }
@@ -381,6 +400,30 @@ export async function openReport(round: number, kind: ReportKind): Promise<void>
     setError(err);
   } finally {
     app.reportLoading = false;
+  }
+}
+
+/* ---------------- 洞察聚合（A1 / A2 / A3） ---------------- */
+
+/**
+ * 加载洞察聚合。调用时机：进入洞察页 / 页内「刷新」/ 切换数据目录（计划 D12）。
+ * **不**在 `bootstrap()` 里调用——避免为没打开洞察页的用户付一次全量扫描。
+ */
+export async function loadInsights(): Promise<void> {
+  app.insights.loading = true;
+  try {
+    app.insights.data = await api.getInsights({
+      dataHome: app.dataHome.active,
+      from: app.insights.from,
+      to: app.insights.to,
+      agentId: null,
+      projectPath: null,
+    });
+    app.error = null;
+  } catch (err) {
+    setError(err);
+  } finally {
+    app.insights.loading = false;
   }
 }
 

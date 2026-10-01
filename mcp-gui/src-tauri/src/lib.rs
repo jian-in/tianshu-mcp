@@ -6,12 +6,14 @@
 mod data_home;
 mod event_stream;
 mod export;
+mod insights;
 mod models;
 mod preferences;
 mod scanner;
 mod schema;
 mod search;
 mod tail;
+mod timestamps;
 mod tray;
 mod updater;
 mod watcher;
@@ -25,9 +27,10 @@ use tauri_plugin_dialog::DialogExt;
 
 use models::{
     AppVersionInfo, CheckUpdateResult, DataHomeEntry, DataHomeState, ExportFileRequest,
-    ExportResult, ExportTaskZipRequest, InstallUpdateResult, ListTasksRequest, LogChunk,
-    Preferences, ProbeSourceResult, ReadEventsRequest, ReadEventsResult, ReadLogRequest,
-    ReadReportRequest, ReadReportResult, SearchRequest, SearchResult, TaskSummary,
+    ExportResult, ExportTaskZipRequest, InsightsRequest, InsightsResult, InstallUpdateResult,
+    ListTasksRequest, LogChunk, Preferences, ProbeSourceResult, ReadEventsRequest,
+    ReadEventsResult, ReadLogRequest, ReadReportRequest, ReadReportResult, SearchRequest,
+    SearchResult, TaskSummary,
 };
 
 /// 应用全局状态（全部为内存态；业务数据永不写入）
@@ -239,6 +242,20 @@ async fn read_events(
 ) -> Result<ReadEventsResult, String> {
     let home = home_of(&state);
     Ok(event_stream::read_events(&home, &req))
+}
+
+/// 洞察聚合（A1 效能 / A2 归因 / A3 趋势）：只读扫描 `tasks/`，不写任何业务数据。
+#[tauri::command]
+async fn get_insights(
+    state: State<'_, AppState>,
+    req: InsightsRequest,
+) -> Result<InsightsResult, String> {
+    let home = if req.data_home.trim().is_empty() {
+        home_of(&state)
+    } else {
+        PathBuf::from(req.data_home.trim())
+    };
+    Ok(insights::collect(&home, &req))
 }
 
 #[tauri::command]
@@ -486,6 +503,7 @@ pub fn run() {
             read_events,
             read_log,
             read_report,
+            get_insights,
             export_file,
             export_task_zip,
             search_all,

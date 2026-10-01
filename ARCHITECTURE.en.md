@@ -1048,6 +1048,11 @@ Its only relationship with the server is: **they share the same on-disk facts, a
 | Packaging | The root `package.json` `files` allowlist never includes `mcp-gui`; `.gitignore` isolates `node_modules` / `dist` / `target` / `icons` / `Cargo.lock` |
 | Releases | The GUI has its own version (`0.1.0-beta.N`) and tag (`gui-v*`) and is **never released with the MCP package** (`release.yml` only matches `v*`) |
 
+The same read-only contract holds for the **insights aggregation command** `get_insights` added in 0.1.1: it scans
+only `tasks/tsk_*` and `tasks/vfy_*`, reading each task's `task.json` and its **latest** `report-*.json`, and does
+**counting and summing only** (rates / TopN / trend gap-filling / week bucketing happen in the frontend pure
+functions in `mcp-gui/src/core/insights.ts`) — it **writes no business data and offers no delete / cleanup entry**.
+
 ### 16.2 Anti-drift mechanism for the duplicated schema (the most important rule here)
 
 The Rust side needs its own copy of the state/event vocabulary for classification, and the frontend mirror needs one

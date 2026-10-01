@@ -9,6 +9,12 @@
 import pkg from "../../package.json";
 import { byteLength, sliceRangeByBytes, sliceTailByBytes } from "@/core/bytes";
 import { classifyEvent, parseEventStream } from "@/core/events";
+import {
+  aggregateInsights,
+  extractReportFields,
+  type InsightRecord,
+  type ReportInsightFields,
+} from "@/core/insights";
 import { DEFAULT_WINDOW_BYTES, planInitialWindow } from "@/core/tailwindow";
 import { parseVersion } from "@/core/version";
 import type { GuiApi } from "./gui-api";
@@ -18,6 +24,7 @@ import type {
   CheckUpdateResult,
   DataHomeState,
   ExportResult,
+  InsightsResult,
   InstallUpdateResult,
   LogChunk,
   Preferences,
@@ -325,6 +332,62 @@ export const mockApi: GuiApi = {
       if (summary) out.push(summary);
     }
     return out;
+  },
+
+  /**
+   * 预览下的洞察聚合：**口径镜像 Rust `insights.rs`**（只认 tsk_/vfy_ 前缀、最新一轮报告、
+   * 四类归因、UTC 日期桶），实现在 `@/core/insights` 的 `aggregateInsights`。
+   * 真源是 Rust 侧——两者必须同步，改一处要改两处。
+   */
+  getInsights: async (req): Promise<InsightsResult> => {
+    const records: InsightRecord[] = [];
+    let scannedTasks = 0;
+    let scannedReports = 0;
+    let badReports = 0;
+
+    for (const rel of MOCK_FILES.keys()) {
+      const m = /^tasks\/((?:tsk_|vfy_)[^/]*)\/task\.json$/.exec(rel);
+      if (!m) continue;
+      scannedTasks += 1;
+      const taskId = m[1] ?? "";
+      const summary = toSummary(taskId, MOCK_FILES.get(rel) ?? "");
+      if (!summary) continue;
+
+      // 与 Rust 同口径：优先快照的 reportRound，否则取产物里最大的 report-<r>.json
+      const round =
+        summary.reportRound !== null && summary.reportRound >= 0
+          ? summary.reportRound
+          : summary.artifacts.reportJson.length > 0
+            ? Math.max(...summary.artifacts.reportJson)
+            : null;
+
+      let report: ReportInsightFields | null = null;
+      if (round !== null) {
+        const raw = MOCK_FILES.get(`tasks/${taskId}/report-${round}.json`);
+        if (raw !== undefined) {
+          scannedReports += 1;
+          try {
+            report = extractReportFields(JSON.parse(raw) as unknown);
+          } catch {
+            // 坏报告只计数（与 Rust 一致），不让它毁掉整页
+            badReports += 1;
+          }
+        }
+      }
+
+      records.push({
+        status: summary.status,
+        roundsUsed: summary.roundsUsed,
+        agentId: summary.agentId,
+        projectPath: summary.projectPath,
+        createdAt: summary.createdAt,
+        updatedAt: summary.updatedAt,
+        errorType: summary.errorType,
+        report,
+      });
+    }
+
+    return aggregateInsights(records, req, { scannedTasks, scannedReports, badReports });
   },
 
   readEvents: async (req): Promise<ReadEventsResult> => {

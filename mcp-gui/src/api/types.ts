@@ -265,3 +265,73 @@ export interface AppVersionInfo {
   /** 内置公钥是否已配置（占位符未替换时为 false） */
   updaterConfigured: boolean;
 }
+
+/* ---------------- 洞察聚合（A1 效能 / A2 归因 / A3 趋势） ---------------- */
+
+/** 洞察入参（只读；时间范围按 `updatedAt` 比较，口径同 `list_tasks`） */
+export interface InsightsRequest {
+  dataHome: string;
+  from: string | null;
+  to: string | null;
+  agentId: string | null;
+  projectPath: string | null;
+}
+
+/** 一次聚合的计数与求和——**比率一律由前端算**（`core/insights.ts`），后端不产生百分比 */
+export interface InsightsSummary {
+  total: number;
+  succeeded: number;
+  failed: number;
+  active: number;
+  needsAttention: number;
+  cancelled: number;
+  /** 未归入上述任何一类的状态（needs_user / interrupted / 未知值） */
+  other: number;
+  roundsSum: number;
+  /** 「一次通过」任务数：**succeeded 且 roundsUsed <= 1** */
+  onePassCount: number;
+  reportsPresent: number;
+  reportsMissing: number;
+  verifyMsSum: number;
+  verifyMsCount: number;
+}
+
+/** 按维度分组的聚合（agents / projects 共用） */
+export interface InsightsGroup {
+  key: string;
+  summary: InsightsSummary;
+}
+
+/** 按天分桶（日期为 `createdAt` 前 10 字符，即 **UTC 日期**） */
+export interface InsightsDay {
+  date: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  active: number;
+  /** roundsUsed > 1 的任务数（返修率的分子） */
+  reworked: number;
+}
+
+/** 归因类别（严格四类，不含 warning） */
+export type InsightsReasonKind = "errorType" | "failedCheck" | "blockingIssue" | "signal";
+
+export interface InsightsReason {
+  kind: InsightsReasonKind;
+  key: string;
+  count: number;
+}
+
+export interface InsightsResult {
+  summary: InsightsSummary;
+  agents: InsightsGroup[];
+  projects: InsightsGroup[];
+  days: InsightsDay[];
+  reasons: InsightsReason[];
+  /** 访问过的任务目录数（筛选前，供界面如实展示数据规模） */
+  scannedTasks: number;
+  /** 尝试读取的 report-*.json 数 */
+  scannedReports: number;
+  /** 解析失败的 report-*.json 数 */
+  badReports: number;
+}

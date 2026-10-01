@@ -44,6 +44,11 @@ const ICON_PATHS: Record<string, string> = {
   listTree: "M4 6h4M4 12h4M4 18h4M11 6h9M11 12h9M11 18h9",
   minimize: "M5 12h14",
   power: "M12 4v7M7.8 6.9a7 7 0 1 0 8.4 0",
+  /* 洞察页（批次一）与后续两批所需的新图标（批次二/三落地时直接复用同一条目） */
+  insights: "M4 19h16M4 19V5M8 19v-5M12 19V9M16 19v-7",
+  command: "M9 6a2 2 0 1 1-2 2h10a2 2 0 1 1-2-2M15 18a2 2 0 1 1 2-2H7a2 2 0 1 1 2 2",
+  disk: "M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3ZM4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
+  gantt: "M4 6h9M4 12h13M4 18h6M16 6h4M19 12h1",
 };
 
 const props = withDefaults(
