@@ -184,8 +184,14 @@ The rounds and verify-time rows mark the **best value across tasks**.
 Typing performs **subsequence fuzzy matching** (skipping characters is fine, but order must match); `↑` `↓` move and
 `Enter` runs. While the palette is open **no other global hotkey fires**, and combinations with `Alt` / `Shift` are never
 intercepted. Every command reuses existing data and actions: Tasks / Insights / Server log / MCP capabilities,
-cross-task global search, open Settings, switch data home (the active one is labelled), open a task directly (at most 50
-entries). **The palette adds no write operations.**
+cross-task global search, open Settings, switch data home (the active one is labelled), open a task directly.
+**The palette adds no write operations.**
+
+**Task commands are searched live as you type, with no cap** (`buildTaskCommands` walks every task on each keystroke; a
+blank query lists only navigation and data homes instead of flooding the list with tasks). The result list's
+`PALETTE_RESULT_LIMIT = 20` **limits only how many rows are shown, never the search scope** — type a little more to
+converge on the target task.
+> Version note: the released `0.1.1-beta.2` still pre-generated the first 50 tasks; live search ships in the next preview.
 
 ---
 

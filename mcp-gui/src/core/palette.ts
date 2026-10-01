@@ -1,8 +1,13 @@
 /**
  * 命令面板的**命令目录与模糊匹配**（纯函数，可单测）。
  *
- * 目录由 `buildCommands` 从既有数据（任务列表 / 数据目录）装配，文案经传入的 `t` 解析，
- * 因此本模块不依赖 Vue、不依赖 i18n 单例，测试里给个假 `t` 即可。
+ * 分三层，便于「任务随输入实时检索」而**不预先生成整份任务命令**：
+ * - `buildStaticCommands`：导航 + 数据目录（与输入无关，只建一次）
+ * - `buildTaskCommands`：**按当前输入实时**从任务集合里检索，**无条数上限**；空输入返回空数组
+ *   （不给「一打开就铺满几百个任务」的列表）
+ * - `rankCommands`：算分排序（分数降序 → 分组 → 原序）并截断**展示条数**（只限制显示，不限制检索范围）
+ *
+ * 文案经传入的 `t` 解析，因此本模块不依赖 Vue、不依赖 i18n 单例，测试里给个假 `t` 即可。
  * 面板组件只负责渲染与派发 `id`——**动作实现仍在 `App.vue`**（面板不知道视图状态）。
  */
 import type { TaskSummary } from "@/api/types";
@@ -23,20 +28,16 @@ export interface PaletteCommand {
   keywords: string[];
 }
 
-/** 任务命令的条数上限：任务可能上千，面板不做虚拟滚动，超出部分**如实提示**而不是静默丢弃 */
-export const PALETTE_TASK_LIMIT = 50;
-
-/** 结果列表的展示上限 */
+/** 结果列表的**展示**上限（检索范围不受此限制：任务命令按输入实时产生，不截断） */
 export const PALETTE_RESULT_LIMIT = 20;
 
-export function buildCommands(
+/** 提示文案的最大长度（超出截断加省略号，避免撑破列表行） */
+const HINT_MAX = 60;
+
+/** 导航与数据目录：与输入无关，由外壳建一次 */
+export function buildStaticCommands(
   t: Translate,
-  input: {
-    tasks: TaskSummary[];
-    dataHomes: string[];
-    /** 当前数据目录（命中项加「当前」标注） */
-    activeHome: string;
-  },
+  input: { dataHomes: string[]; activeHome: string },
 ): PaletteCommand[] {
   const nav: PaletteCommand[] = [
     navItem("nav:overview", t("palette.cmdOverview")),
@@ -46,7 +47,6 @@ export function buildCommands(
     navItem("nav:search", t("palette.cmdSearch")),
     navItem("nav:settings", t("palette.cmdSettings")),
   ];
-
   const homes: PaletteCommand[] = input.dataHomes.map((path) => ({
     id: `home:${path}`,
     group: "homes" as const,
@@ -54,17 +54,36 @@ export function buildCommands(
     hint: path === input.activeHome ? t("palette.homeActive") : null,
     keywords: [path.toLowerCase()],
   }));
+  return [...nav, ...homes];
+}
 
-  const shown = input.tasks.slice(0, PALETTE_TASK_LIMIT);
-  const tasks: PaletteCommand[] = shown.map((task) => ({
+/**
+ * 按当前输入**实时**生成任务命令：遍历全部任务，只保留匹配者，**不做条数截断**。
+ * 空输入返回空数组——打开面板时只列导航与数据目录，任务靠输入命中。
+ */
+export function buildTaskCommands(
+  t: Translate,
+  tasks: TaskSummary[],
+  query: string,
+): PaletteCommand[] {
+  if (query.trim() === "") return [];
+  const out: PaletteCommand[] = [];
+  for (const task of tasks) {
+    const command = taskCommand(t, task);
+    if (scoreCommand(command, query) === null) continue;
+    out.push(command);
+  }
+  return out;
+}
+
+function taskCommand(t: Translate, task: TaskSummary): PaletteCommand {
+  return {
     id: `task:${task.taskId}`,
-    group: "tasks" as const,
+    group: "tasks",
     label: t("palette.cmdOpenTask", { id: task.taskId }),
-    hint: task.task ? truncate(task.task, 60) : null,
+    hint: task.task ? truncate(task.task, HINT_MAX) : null,
     keywords: [task.taskId.toLowerCase(), task.task.toLowerCase(), task.agentId.toLowerCase()],
-  }));
-
-  return [...nav, ...homes, ...tasks];
+  };
 }
 
 function navItem(id: string, label: string): PaletteCommand {
@@ -115,10 +134,10 @@ export function scoreCommand(command: PaletteCommand, query: string): number | n
 }
 
 /**
- * 过滤 + 排序：分数降序，同分按分组（导航 → 目录 → 任务）与标签稳定排序，最后截断到 `limit`。
- * 空查询时保持目录原顺序（导航优先），便于「打开即见」。
+ * 排序 + 截断：分数降序，同分按分组（导航 → 目录 → 任务）与原序稳定排序，最后截断到 `limit`。
+ * 空查询时保持传入顺序（外壳只给了导航与目录），便于「打开即见」。
  */
-export function filterCommands(
+export function rankCommands(
   commands: PaletteCommand[],
   query: string,
   limit = PALETTE_RESULT_LIMIT,
@@ -132,9 +151,7 @@ export function filterCommands(
     .filter((row): row is { command: PaletteCommand; index: number; score: number } => row.score !== null)
     .sort(
       (a, b) =>
-        b.score - a.score ||
-        order[a.command.group] - order[b.command.group] ||
-        a.index - b.index,
+        b.score - a.score || order[a.command.group] - order[b.command.group] || a.index - b.index,
     )
     .slice(0, max)
     .map((row) => row.command);

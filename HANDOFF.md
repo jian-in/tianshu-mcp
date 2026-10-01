@@ -220,15 +220,16 @@
   勾选上限 4（满额时**明确提示、不顶替**）；报告**按需**读最新一轮 `report-<轮次>.json` 并按 `taskId` 缓存；
   切换数据目录清空勾选与缓存；缺失值一律 `—`（**不编造时长与结论**）。
 - **A8a 命令面板与快捷键**：新增 `src/core/hotkeys.ts`（`matchHotkey`，面板打开时只认关闭键）+ `src/core/palette.ts`
-  （`buildCommands` / `filterCommands` / `fuzzyScore` / `stepIndex`，任务命令上限 50）+ `src/components/CommandPalette.vue`；
+  （`buildStaticCommands` / `buildTaskCommands` / `rankCommands` / `fuzzyScore` / `stepIndex`）+ `src/components/CommandPalette.vue`；
   `App.vue` 挂载面板并在 window 上统一监听分发（`Ctrl/Cmd + K` 开关、`Ctrl/Cmd + R` 刷新并 `preventDefault`、
-  `Esc` 关闭），侧栏新增常驻入口。**动作实现只在 `App.vue`**（面板只派发命令 `id`）。
+  `Esc` 关闭），侧栏新增常驻入口。**动作实现只在 `App.vue`**（面板只派发命令 `id`）；任务命令**按输入实时检索**（见下条「发布后修复」）。
 - **验证（本机）**：`check:schema`（版本一致 `0.1.1-beta.2` + 三方词表无漂移）/ `typecheck` / `lint` /
-  `vitest`（**147 passed**，13 文件，较批次一 +21）/ `vite build` 全绿；`cargo fmt --all --check` 通过
+  `vitest`（**152 passed**，13 文件，较批次一 +26）/ `vite build` 全绿；`cargo fmt --all --check` 通过
   （**本机仍不跑 `cargo clippy` / `cargo test`**，Rust 门禁交 `gui.yml`，与 issue #25 决策 D2 一致）。
 - **模拟真机**：`puppeteer-core` + 本机无头 Edge 打开 mock 预览（`vite preview`），DOM 断言 **13/13 通过**
   （新筛选控件齐全、返修=是 实际生效 4→1、`Ctrl+K` 开面板并模糊命中后跳转到洞察页、对比矩阵列头与 11 行指标齐全、
-  选满 4 个不越界、无 `pageerror`）；探针脚本为临时文件，未入库。
+  选满 4 个不越界、无 `pageerror`）；命令面板改实时检索后另补 **6/6**（空输入只列导航 / 目录、按 ID 片段与任务书关键字
+  实时命中、回车直接打开该任务、无匹配给空态、无 `pageerror`）。探针脚本均为临时文件，未入库。
 - **版本边界**：`mcp-gui` 四处版本同步 `0.1.1-beta.1 → 0.1.1-beta.2`（`package.json` / `package-lock.json` 两处 /
   `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`），随本版发布 tag `gui-v0.1.1-beta.2`；
   `update/gui/latest*.json` 由发布 job 自动生成并提交（`[skip ci]`）。**MCP 主包不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。
@@ -239,6 +240,11 @@
   GitHub 侧 pre-release 已创建（**8 个产物**、正文 7544 字符 = 完整双语说明）；Gitee 侧 pre-release 亦已创建
   （两端各 3 个更新载体下载地址实测 **HTTP 200**，共 6 个）；`gui-v*` **未触发** `release.yml`（该 tag 下只有 GUI 一个 workflow 运行）。
   发布后两仓各多一个机器人提交（GitHub `b9eb516` / Gitee `7eecc83`），已合并为 `e468c31` 并回推两端收敛。
+- **⚠️ 发布后修复（未发布，将随下一个预发布版交付）**：命令面板的任务命令原为**预生成前 50 条**，任务数超过 50 时
+  **排在后面的任务搜不到**且只提示「没有匹配的命令」（不报错、不提示截断，比没有该功能更误导）。现已去掉上限，
+  改为 `buildTaskCommands` **按输入实时检索全部任务**（空输入不列任务），`rankCommands` 的
+  `PALETTE_RESULT_LIMIT = 20` **只截展示条数、不限制检索范围**；`buildCommands` 拆为 `buildStaticCommands` +
+  `buildTaskCommands`（面板接收二者并按输入合成）。`0.1.1-beta.2` 已发布产物仍是旧行为（版本号未动，**不重打该 tag**）。
 - **后续**：批次三（`0.1.1-beta.3`）= A5 基线漂移 + A6 状态跃迁甘特 + A9 磁盘占用 + A8b 深链（**唯一有架构风险项**，需 Tauri 插件 + 协议注册）；
   真机验收（Windows 10 安装 Release 安装包，逐项核对 A4/A7/A8a）待维护者执行。
 

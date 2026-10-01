@@ -1214,6 +1214,12 @@ nothing about view state and merely dispatches a command `id`). While the palett
 recognises the close keys, so no global action fires behind it; `Ctrl/Cmd + R` is `preventDefault`ed (otherwise the
 webview would reload), and combinations with `Alt` / `Shift` are never intercepted.
 
+**Task commands are searched live on every keystroke — nothing is pre-generated and there is no cap**:
+`buildStaticCommands` (navigation + data homes, input-independent) is separate from `buildTaskCommands` (walks every
+task per keystroke; a blank query returns nothing), and `rankCommands`'s `PALETTE_RESULT_LIMIT = 20` **limits only how
+many rows are shown, never the search scope**. Any "pre-generate N rows" design silently makes the N+1-th task
+unfindable while only saying "no matching commands" — more misleading than not offering the feature at all.
+
 **Data boundaries of multi-task compare (A4)**: the selection limit is `COMPARE_MAX = 4` and the decision lives in the
 pure function `nextCompareSelection` (returning `null` means "not applied this time" — it **never replaces** an existing
 pick); reports are read **on demand** (the latest `report-<round>.json`) and cached per `taskId`, and switching the data

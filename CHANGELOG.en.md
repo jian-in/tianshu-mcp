@@ -8,6 +8,14 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [Unreleased] — mcp-gui independent line
+
+### Fixed
+
+- **The command palette no longer caps task commands at 50 (fixed after `0.1.1-beta.2` shipped; not part of that release — it ships in the next preview)**: the old implementation **pre-generated** task commands as `slice(0, 50)`, so with more than 50 tasks the later ones were **unfindable** and the only feedback was "no matching commands" — no error, no truncation notice, **more misleading than not offering the feature**. Task commands are now produced by `buildTaskCommands`, which searches **every task live on each keystroke** (no cap; a blank query lists no tasks, so opening the palette never floods the list), and `rankCommands`'s `PALETTE_RESULT_LIMIT = 20` **limits only how many rows are shown, never the search scope**. The former `buildCommands` was split into `buildStaticCommands` (navigation + data homes, input-independent) and `buildTaskCommands`, and the component now combines the two per query. Regression cover: `test/palette.test.ts` asserts with 300 tasks that "the 300th is findable", "a blank query lists no tasks" and "the display limit only truncates the view".
+
+---
+
 ## [0.1.1-beta.2] — 2026-10-02 — mcp-gui independent line
 
 > This section records the two pre-release batches of the GUI's independent `0.1.1` line. **The MCP package is

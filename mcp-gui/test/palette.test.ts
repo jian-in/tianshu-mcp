@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  PALETTE_TASK_LIMIT,
-  buildCommands,
-  filterCommands,
+  PALETTE_RESULT_LIMIT,
+  buildStaticCommands,
+  buildTaskCommands,
   fuzzyScore,
+  rankCommands,
   stepIndex,
   type PaletteCommand,
   type Translate,
@@ -60,30 +61,49 @@ const cmd = (id: string, label: string, keywords: string[] = []): PaletteCommand
   keywords,
 });
 
-describe("命令目录装配", () => {
-  it("导航 + 数据目录 + 任务，且当前目录带「当前」标注", () => {
-    const commands = buildCommands(t, {
-      tasks: [task("tsk_1")],
-      dataHomes: ["/home", "/other"],
-      activeHome: "/home",
-    });
+describe("静态命令（导航 + 数据目录）", () => {
+  it("含导航项，且当前数据目录带「当前」标注", () => {
+    const commands = buildStaticCommands(t, { dataHomes: ["/home", "/other"], activeHome: "/home" });
     const ids = commands.map((c) => c.id);
+    expect(ids).toContain("nav:overview");
     expect(ids).toContain("nav:insights");
     expect(ids).toContain("home:/home");
     expect(ids).toContain("home:/other");
-    expect(ids).toContain("task:tsk_1");
-
-    const active = commands.find((c) => c.id === "home:/home");
-    expect(active?.hint).toBe("palette.homeActive");
+    expect(commands.find((c) => c.id === "home:/home")?.hint).toBe("palette.homeActive");
     expect(commands.find((c) => c.id === "home:/other")?.hint).toBeNull();
   });
 
-  it("任务命令有条数上限（超出如实截断，不静默丢弃到无限长列表）", () => {
-    const many = Array.from({ length: PALETTE_TASK_LIMIT + 5 }, (_, i) =>
-      task(`tsk_${String(i).padStart(3, "0")}`),
-    );
-    const commands = buildCommands(t, { tasks: many, dataHomes: [], activeHome: "" });
-    expect(commands.filter((c) => c.group === "tasks")).toHaveLength(PALETTE_TASK_LIMIT);
+  it("不产生任务命令（任务命令一律实时检索）", () => {
+    const commands = buildStaticCommands(t, { dataHomes: [], activeHome: "" });
+    expect(commands.some((c) => c.group === "tasks")).toBe(false);
+  });
+});
+
+describe("任务命令：按输入实时检索（无条数上限）", () => {
+  const many = Array.from({ length: 300 }, (_, i) =>
+    task(`tsk_${String(i).padStart(3, "0")}`, { task: `第 ${i} 个任务`, agentId: i % 2 ? "zcode" : "codex" }),
+  );
+
+  it("空输入不返回任何任务命令（一打开不铺任务列表）", () => {
+    expect(buildTaskCommands(t, many, "")).toEqual([]);
+    expect(buildTaskCommands(t, many, "   ")).toEqual([]);
+  });
+
+  it("第 300 个任务（远超旧上限 50）也能被搜到", () => {
+    const out = buildTaskCommands(t, many, "tsk_299");
+    expect(out.map((c) => c.id)).toEqual(["task:tsk_299"]);
+  });
+
+  it("按任务书与 Agent 关键字也能命中（多命中时保持任务集合顺序）", () => {
+    const byBrief = buildTaskCommands(t, many, "第 137 个");
+    expect(byBrief.map((c) => c.id)).toEqual(["task:tsk_137"]);
+    const byAgent = buildTaskCommands(t, many, "zcode");
+    expect(byAgent.length).toBe(150);
+    expect(byAgent[0]?.id).toBe("task:tsk_001");
+  });
+
+  it("无匹配返回空数组（不猜）", () => {
+    expect(buildTaskCommands(t, many, "zzzzz-not-exist")).toEqual([]);
   });
 });
 
@@ -100,11 +120,14 @@ describe("模糊匹配", () => {
     const middle = fuzzyScore("go ins", "ins") ?? 0;
     expect(prefix).toBeGreaterThan(middle);
   });
+});
 
-  it("空查询保持原顺序并截断到上限", () => {
+describe("排序与截断", () => {
+  it("空查询保持传入顺序并截断到展示上限", () => {
     const commands = [cmd("a", "A"), cmd("b", "B"), cmd("c", "C")];
-    expect(filterCommands(commands, "").map((c) => c.id)).toEqual(["a", "b", "c"]);
-    expect(filterCommands(commands, "", 2).map((c) => c.id)).toEqual(["a", "b"]);
+    expect(rankCommands(commands, "").map((c) => c.id)).toEqual(["a", "b", "c"]);
+    expect(rankCommands(commands, "", 2).map((c) => c.id)).toEqual(["a", "b"]);
+    expect(rankCommands(commands, "").length).toBeLessThanOrEqual(PALETTE_RESULT_LIMIT);
   });
 
   it("查询命中 label 或 keywords；不匹配的项被剔除", () => {
@@ -112,9 +135,17 @@ describe("模糊匹配", () => {
       cmd("task:tsk_1", "打开任务：tsk_1", ["tsk_1"]),
       cmd("nav:settings", "设置"),
     ];
-    expect(filterCommands(commands, "tsk").map((c) => c.id)).toEqual(["task:tsk_1"]);
-    expect(filterCommands(commands, "设置").map((c) => c.id)).toEqual(["nav:settings"]);
-    expect(filterCommands(commands, "zzz")).toEqual([]);
+    expect(rankCommands(commands, "tsk").map((c) => c.id)).toEqual(["task:tsk_1"]);
+    expect(rankCommands(commands, "设置").map((c) => c.id)).toEqual(["nav:settings"]);
+    expect(rankCommands(commands, "zzz")).toEqual([]);
+  });
+
+  it("展示上限只截显示条数，不影响检索范围（命中全在候选里）", () => {
+    const commands = Array.from({ length: 60 }, (_, i) => cmd(`task:t${i}`, `打开任务：t${i}`, [`t${i}`]));
+    const ranked = rankCommands(commands, "t", 5);
+    expect(ranked).toHaveLength(5);
+    // 未截断的直接调用能看到全部 60 条，说明「截断发生在最后一步」
+    expect(rankCommands(commands, "t", 100)).toHaveLength(60);
   });
 });
 

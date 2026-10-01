@@ -30,7 +30,7 @@ import UpdateDialog from "./components/UpdateDialog.vue";
 import { useI18n } from "@/i18n";
 import { isMockRuntime } from "@/api";
 import { matchHotkey } from "@/core/hotkeys";
-import { buildCommands, type PaletteCommand } from "@/core/palette";
+import { buildStaticCommands, type PaletteCommand } from "@/core/palette";
 import {
   app,
   clearError,
@@ -106,10 +106,9 @@ function onNavigated(): void {
 
 /* ---------------- 命令面板与全局快捷键 ---------------- */
 
-/** 命令目录：来自既有任务列表与数据目录（`@/core/palette` 只装配、不执行） */
+/** 命令目录（导航 + 数据目录）：与输入无关，只随任务无关的数据变化重建；任务命令由面板按输入实时检索 */
 const paletteCommands = computed<PaletteCommand[]>(() =>
-  buildCommands(t, {
-    tasks: app.tasks,
+  buildStaticCommands(t, {
     dataHomes: app.dataHome.entries.map((entry) => entry.path),
     activeHome: app.dataHome.active,
   }),
@@ -255,10 +254,11 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
     <SettingsDrawer v-if="settingsOpen" @close="settingsOpen = false" />
 
-    <!-- 命令面板：目录来自外壳，面板只派发 id（`@/core/palette`） -->
+    <!-- 命令面板：静态命令来自外壳，任务命令由面板按输入实时检索（`@/core/palette`） -->
     <CommandPalette
       v-if="paletteOpen"
-      :commands="paletteCommands"
+      :static-commands="paletteCommands"
+      :tasks="app.tasks"
       @select="onPaletteSelect"
       @close="paletteOpen = false"
     />

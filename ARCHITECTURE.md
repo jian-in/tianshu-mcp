@@ -1143,6 +1143,11 @@ Rust 侧字段一律 `#[serde(default)]`，旧调用方不传不报错。
 面板打开时 `matchHotkey` 只认关闭键——避免在面板背后触发刷新等全局动作；
 `Ctrl/Cmd + R` 已 `preventDefault`（否则会触发 webview 重载）；带 `Alt` / `Shift` 的组合一律不拦截。
 
+**任务命令按输入实时检索，不预生成也不设条数上限**：`buildStaticCommands`（导航 + 数据目录，与输入无关）与
+`buildTaskCommands`（每次输入遍历全部任务，空输入返回空）分开；`rankCommands` 的 `PALETTE_RESULT_LIMIT = 20`
+**只截展示条数，不限制检索范围**。任何「预生成 N 条」的写法都会让第 N+1 个任务静默搜不到，
+且只给出「没有匹配的命令」——比不提供该功能更误导。
+
 **多任务对比（A4）的取数边界**：勾选上限 `COMPARE_MAX = 4`，判定由纯函数 `nextCompareSelection` 承担
 （满额返回 `null` = 这次不生效，**绝不顶替**已有勾选）；报告**按需**读最新一轮 `report-<轮次>.json` 并按 `taskId`
 缓存，切换数据目录即清空勾选与缓存；缺失值一律 `null` → 界面显示 `—`，**不编造时长与结论**。
