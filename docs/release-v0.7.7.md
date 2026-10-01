@@ -66,6 +66,10 @@ isWaitSettled(status) = isTerminal(status) || status === "needs_user"
 | 协议工具面 | `npx vitest run test/protocol/protocol.test.ts` | **11 passed**（13 工具真值表 / 注解） |
 | 类型与风格 | `npm run typecheck && npm run lint` | exit 0 |
 | 全量回归 | `npm test` | **1447 passed / 12 skipped**（1459 项，122 文件） |
+| 真机模拟（构建产物 stdio server） | 以 `dist/index.js` 起真实 server + stub `sleep` 长任务 | **5/5 通过**：① `wait_task` 等到停点（墙钟 6106ms / status=succeeded / waitedMs=6101）；② 短超时 `waitSettled=false`（523ms）后再次 wait 续等至停点（4391ms）；③ `wait_any` 返回数组顺序首个已停；④ 等待中 `cancel_task` **57ms** 即时生效（未被阻塞）；⑤ 不存在任务报错 |
+| `check:stdio` | `npm run check:stdio` | **8/8 场景通过**，工具数 **13** |
+
+> **验证边界（如实披露）**：本机**未在 Tianshu 桌面端**校准单次 `tools/call` 的超时上限（属第三方客户端行为，无法本地复现）——上表「真机模拟」走的是构建产物 stdio server + 官方 SDK client。若你的客户端单次工具超时短于 50s，按下方「升级建议」调小 `timeoutMs`；被截断也无害（等待无损、再次调用即续等）。
 
 ## 用法
 

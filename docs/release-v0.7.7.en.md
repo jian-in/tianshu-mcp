@@ -53,6 +53,10 @@ Returns the **first task in `taskIds` array order** that has reached a stop poin
 | Protocol tool surface | `npx vitest run test/protocol/protocol.test.ts` | **11 passed** (13-tool truth table / annotations) |
 | Types and lint | `npm run typecheck && npm run lint` | exit 0 |
 | Full regression | `npm test` | **1447 passed / 12 skipped** (1459 tests, 122 files) |
+| Real-machine simulation (built-artifact stdio server) | Start a real server from `dist/index.js` + a stub `sleep` long task | **5/5 passed**: ① `wait_task` reached a stop point (wall clock 6106 ms / status=succeeded / waitedMs=6101); ② a short timeout returned `waitSettled=false` (523 ms) and calling again continued to a stop point (4391 ms); ③ `wait_any` returned the first settled in array order; ④ `cancel_task` during a wait took effect in **57 ms** (not blocked); ⑤ a non-existent task errored |
+| `check:stdio` | `npm run check:stdio` | **8/8 scenarios passed**, tool count **13** |
+
+> **Verification boundary (disclosed honestly)**: the single `tools/call` timeout was **not** calibrated here on the Tianshu desktop (it is third-party client behaviour and cannot be reproduced locally) — the "real-machine simulation" row above ran the built-artifact stdio server with the official SDK client. If your client's single-tool timeout is shorter than 50 s, lower `timeoutMs` per "Upgrade notes" below; a truncation is harmless (the wait is lossless, and calling again continues).
 
 ## Usage
 
