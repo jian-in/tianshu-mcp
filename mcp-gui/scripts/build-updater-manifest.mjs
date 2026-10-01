@@ -14,7 +14,7 @@
  *   node build-updater-manifest.mjs fragment --platform windows-x86_64 --bundle-dir <dir> \
  *        --base-url <release-assets-url> --out <fragment.json>
  *   node build-updater-manifest.mjs merge --fragments <dir> --version <v> [--notes <text>] \
- *        [--rewrite-url <mapping.json>] --out <latest.json>
+ *        [--notes-file <path>] [--rewrite-url <mapping.json>] --out <latest.json>
  */
 import { readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -134,6 +134,35 @@ function buildFragment(args) {
   }
 }
 
+/**
+ * 解析更新清单的 `notes`（**GUI 更新窗口正文的唯一来源**）。
+ *
+ * `--notes-file` 优先：发布链传的是已合成好的双语发行说明（与 GitHub / Gitee 发行版正文同源）。
+ * 读取失败**直接报错**（fail-closed）——静默退化成标题或空正文会让更新窗口只剩一行标题，
+ * 且不会有任何报错（这正是 0.1.1-beta.1 发布时踩到的形态：清单 notes 只有 28 字符的标题）。
+ * 文件存在但内容为空时回退 `--notes` 并打 warning——不是故障，但必须说出来。
+ */
+function resolveNotes(args) {
+  const fallback = typeof args.notes === "string" ? args.notes : "";
+  const file = args["notes-file"];
+  if (!file) return fallback;
+
+  const resolved = path.resolve(file);
+  let text;
+  try {
+    text = readFileSync(resolved, "utf8");
+  } catch (err) {
+    throw new Error(
+      `--notes-file 读取失败（${resolved}）：${err.message}；` +
+        "更新清单的 notes 是 GUI 更新窗口的正文来源，缺正文时拒绝生成清单。",
+    );
+  }
+  const trimmed = text.trim();
+  if (trimmed) return trimmed;
+  console.warn(`[manifest] --notes-file 内容为空（${resolved}），回退 --notes`);
+  return fallback;
+}
+
 function buildMerged(args) {
   const fragmentsDir = path.resolve(args.fragments ?? ".");
   const version = args.version;
@@ -168,7 +197,7 @@ function buildMerged(args) {
 
   const manifest = {
     version,
-    notes: args.notes ?? "",
+    notes: resolveNotes(args),
     pub_date: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
     platforms,
   };

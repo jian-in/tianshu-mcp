@@ -24,6 +24,8 @@
 > 侧栏新增「洞察」整页：**A1 效能看板**（按 Agent / 项目的任务数、成功率、平均轮次、一次通过率、平均验收耗时、报告缺失）+ **A2 失败归因**
 > （`errorType` / 失败检查项 / 阻塞问题 / 代码信号 四类 TOP）+ **A3 时间趋势**（按天 / 按周，任务量柱 + 成功率与返修率折线）；
 > 后端新增**只读**聚合命令 `get_insights`（`insights.rs` + `timestamps.rs`）。详见下方「独立交付面 · 日志台 GUI **「洞察」批次一**」。
+> 另修掉真机缺陷**「更新窗口正文只剩一行标题」**——更新清单 `notes` 改取与发行页**同源**的正文（取数 fail-closed），
+> 并回填 `update/gui/latest.json` / `latest-gitee.json`；**版本号不升**，详见下方「更新窗口正文（更新清单 `notes`）修复」。
 >
 > **历史快照（0.7.6）**
 > **交接快照：2026-09-30 · 已发布版本 `0.7.6`（tag `v0.7.6` + npm `tianshu-mcp@0.7.6`）。**
@@ -194,6 +196,31 @@
   **MCP 主包不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。
 - **后续批次**：`0.1.1-beta.2` = A4 多任务对比 + A7 结构化筛选增强 + A8a 命令面板；
   `0.1.1-beta.3` = A5 基线漂移 + A6 状态跃迁甘特 + A9 磁盘占用 + A8b 深链（**唯一有架构风险项**，需 Tauri 插件 + 协议注册）。
+
+---
+
+### 独立交付面 · 日志台 GUI **更新窗口正文（更新清单 `notes`）修复**（`mcp-gui/`，随 `0.1.1-beta.1` 回填，**不升版本**）
+
+- **真机现象**：`0.1.1-beta.1` 的「更新日志」窗口正文只有一行 `Tianshu-mcp 日志台 0.1.1-beta.1`（28 字符），
+  已合成的完整双语发行说明没有出现（更新源 GitHub）。
+- **根因**：更新窗口正文的唯一来源是**更新清单的 `notes`**（`updater.rs` 的 `update.body`），而发布链合成清单时
+  **只传了兜底标题** `--notes "Tianshu-mcp 日志台 $VER"`；`scripts/gui-release-body.mjs` 合成的完整正文虽已用于
+  发行页（GitHub `--notes-file` / Gitee `--body-file`），却**没有传给清单生成脚本**。Gitee 清单复用同一份
+  `latest.json`（`gitee-gui-release.mjs --github-manifest`），故**两个源同时退化成单行标题**。
+- **修法**：
+  - `.github/workflows/gui.yml` 的「Compose updater manifest (GitHub)」新增
+    `--notes-file "${{ steps.meta.outputs.body }}"`——清单 `notes` 与发行页正文**同源同一份**，
+    并打印取数路径与字节数便于排障；
+  - `mcp-gui/scripts/build-updater-manifest.mjs` 新增 `resolveNotes()`：`--notes-file` **优先**；
+    **读取失败直接非 0 退出**（fail-closed，杜绝静默退化成一行标题）；文件存在但内容为空时回退 `--notes` 并打 warning。
+- **回归测试**：新增 `test/unit/gui-updater-manifest.test.ts`（5 例：正文优先 / 无 `--notes-file` 回退标题 /
+  两者皆无为空串 / 缺文件 fail-closed / 空文件回退并告警），本机 **5 passed**。
+- **已发布版本回填**：`update/gui/latest.json` 与 `latest-gitee.json` 的 `notes` 补为完整双语说明
+  —— 已发布 tag 的 workflow 无法重跑改写清单，只能回填已落库的清单；`version` / `pub_date` / `platforms` **均未改动**。
+- **版本边界**：**不升版本、不重打 `gui-v0.1.1-beta.1`**（`package.json` / `package-lock.json` 两处 /
+  `tauri.conf.json` / `Cargo.toml` 四处仍为 `0.1.1-beta.1`）；MCP 主包**零改动**。
+- **待验证（需维护者的动作）**：下次 GUI 发版时确认清单 `notes` 为完整正文（窗口正文不再是单行标题）；
+  本机仍不执行任何 Rust 构建 / 检查（issue #25 约束），Rust 侧门禁交 `GUI` workflow。
 
 ---
 

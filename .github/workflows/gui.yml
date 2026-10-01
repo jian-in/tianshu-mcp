@@ -279,11 +279,16 @@ jobs:
           TAG="${{ github.ref_name }}"
           VER="${TAG#gui-v}"
           if ls fragments/*.json >/dev/null 2>&1; then
+            # `--notes` 只是兜底标题；正文必须走 `--notes-file` 传「与发行版同源的已合成双语说明」。
+            # 更新清单的 `notes` 就是 GUI 更新窗口里显示的正文（`updater.rs` 的 `update.body`），
+            # 只传标题会让窗口只剩一行字——0.1.1-beta.1 发布时即为此形态。
             node mcp-gui/scripts/build-updater-manifest.mjs merge \
               --fragments fragments \
               --version "$VER" \
               --notes "Tianshu-mcp 日志台 $VER" \
+              --notes-file "${{ steps.meta.outputs.body }}" \
               --out latest.json
+            echo "更新清单 notes 取自：${{ steps.meta.outputs.body }}（$(wc -c < "${{ steps.meta.outputs.body }}") 字节）"
             echo "built=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::没有可用的签名片段，跳过更新清单生成（自动更新暂不可用）"

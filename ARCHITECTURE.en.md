@@ -1133,6 +1133,15 @@ doc exits non-zero** — so a release page can never end up as a bare Full Chang
 `--notes-file` and Gitee via `--body-file`, so both sides carry the **same body, word for word**; that body is also
 the updater manifest's `notes`, which is why the desktop update window shows exactly this release note.
 
+**That path into the manifest is fail-closed**: `build-updater-manifest.mjs merge` must receive the body via
+`--notes-file`, and a **read failure exits non-zero** (only "file exists but is empty" falls back to the `--notes`
+placeholder title, with a warning). Rationale: the update window's body comes solely from the manifest's `notes`
+(`update.body` in `updater.rs`), so silently degrading to a title leaves the window with a single line and the
+release chain **reports no error at all** — which is exactly what happened when `0.1.1-beta.1` shipped (its
+manifest `notes` was a 28-character title). Both manifests for that version were backfilled under this rule
+(version and `platforms` untouched). **Read `test/unit/gui-updater-manifest.test.ts` before changing this
+resolution logic** (5 cases: body wins / fallback / empty string / missing file fail-closed / empty file fallback).
+
 ### 16.6 Frontend design system and theme contract
 
 The GUI frontend's **presentation layer has its own design system** (**Obsidian Terminal**), decoupled from the MCP package and from the
