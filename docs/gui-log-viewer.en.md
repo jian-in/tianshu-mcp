@@ -140,6 +140,19 @@ under `tasks/` and each task's **latest** acceptance report:
 | Scoreboard | Two tables — by agent and by project: tasks / success rate / avg rounds / one-pass rate / avg verify time / missing reports |
 | Attribution | Top lists for four kinds (`errorType` / `failedCheck` / `blockingIssue` / `signal`) with share bars |
 | Trend | By day / by week toggle; task-count bars plus success-rate and rework-rate lines (plain inline SVG, no chart library) |
+| Compare | Pick 2–4 tasks to compare side by side (from 0.1.1-beta.2, see §3.7) |
+| Disk usage | Total artifact footprint / `logs/` share / top-20 task sizes / "cleanup" hints (from 0.1.1-beta.3, see below) |
+
+**Conventions for disk usage (from 0.1.1-beta.3)**:
+
+- It measures the **actual size** of `logs/` and **every** subdirectory of `tasks/`, with **no `tsk_` / `vfy_` prefix
+  filter** — disk usage must reflect real consumption, and filtering by prefix would under-report it. This is
+  **deliberately different** from the task-list scan and the UI says so;
+- **It only `stat`s files — contents are never read and nothing is ever deleted**; `top_tasks` holds the 20 largest task
+  directories and `logs/` is reported separately;
+- **Every "cleanup" rule is relative** (named constants at the top of `mcp-gui/src/core/insights.ts`): one file taking
+  **> 50%** of its task, or a task at least **2x the median task size** (the median considers tasks only, never `logs/`);
+- **Hints only — there is no delete entry**: neither the page nor the backend command offers any cleanup capability.
 
 **Conventions (read before interpreting the numbers)**:
 
@@ -191,7 +204,50 @@ cross-task global search, open Settings, switch data home (the active one is lab
 blank query lists only navigation and data homes instead of flooding the list with tasks). The result list's
 `PALETTE_RESULT_LIMIT = 20` **limits only how many rows are shown, never the search scope** — type a little more to
 converge on the target task.
-> Version note: the released `0.1.1-beta.2` still pre-generated the first 50 tasks; live search ships in the next preview.
+> Version note: `0.1.1-beta.2` still pre-generated the first 50 tasks; **live search takes effect from `0.1.1-beta.3`**.
+
+### 3.9 Baseline section (from 0.1.1-beta.3)
+
+The fifth workspace section, "**Baseline**", shows the `baseline.json` captured when the task was dispatched (read-only):
+
+- repository or not / HEAD (short hash) / whether the tree was already dirty / pre-existing change and untracked counts /
+  capture time / the baseline message;
+- **compared against the latest report**: the report's actual changes (file count, `+N / -M`) sit next to the baseline's
+  pre-existing changes so out-of-scope edits are easy to spot;
+- the report is **read on demand** (the snapshot's `reportRound`, else the highest `report-<r>.json`) and cached per task;
+- **no baseline means saying so**: a missing or broken file always renders "this task has no saved pre-work baseline" —
+  **no zero values are invented**.
+
+### 3.10 Event-stream stages view (from 0.1.1-beta.3)
+
+The event-stream toolbar gains a **List / Stages** segmented control:
+
+| View | Data source | Notes |
+|---|---|---|
+| List | **Tail window** (64 KiB by default, load earlier blocks) | behaves exactly as before (friendly to huge files) |
+| Stages | **Full** `task.jsonl` (`full = true`, read once on demand) | state-transition gantt, bar widths proportional to each stage's share (plain divs) |
+
+- A stage spans **two adjacent state transitions** (`created → started → verify_start → fix_start → … → succeeded/failed`);
+- The last stage has no end time and is marked **"running" with a hatched bar** — **no invented durations**;
+- If even the full read does not start at `created` (truncated file), the UI **says so** instead of showing an
+  incomplete timeline silently;
+- Bad lines are counted separately per view and reported at the top (List and Stages never mix counts).
+
+### 3.11 Deep link `tianshu://task/<taskId>` (from 0.1.1-beta.3)
+
+- **Both cold and hot start work**: the URL is queued on the Rust side, which emits a `gui://deeplink` signal; the
+  frontend **drains the queue** and routes it (on cold start the event fires before the frontend listener exists, so
+  **the queue is the source of truth** and no link is lost);
+- **Single instance**: a second launch does not open a second window — it **reveals the existing window** and hands the
+  URL to the first instance;
+- **Protocol registration** happens at startup and **a failed registration never blocks startup** (macOS returns
+  `UnsupportedPlatform`, which is expected);
+- Only `tianshu://task/<id>` is accepted, and the id must match `[A-Za-z0-9_-]` (a deep link is external input and the id
+  ends up in a file path); anything containing `..` / `%2e` is **rejected outright** (URL normalisation erases `..`, so
+  after normalisation there is no way to tell what the original was); unrecognised links produce an **honest UI notice**;
+- **Platform differences**: Windows / Linux register a system protocol handler (cold start works); on macOS the plugin
+  reports system-level registration as unsupported, so **the hot path is authoritative** — the difference is documented
+  rather than glossed over.
 
 ---
 
@@ -384,10 +440,10 @@ Only push and PR go through change filtering (build happens when `mcp-gui/**`, e
 mcp-gui/
 ├── src/                  Vue 3 frontend (views / components / stores / i18n / theme)
 │   ├── api/              the single data exit (Tauri invoke wrapper + swappable mock)
-│   └── core/             pure logic (log parsing / event parsing / byte window / filtering / reports / sandbox)
+│   └── core/             pure logic (log parsing / event parsing / byte window / filtering / reports / sandbox / insights / stage splitting / deep-link parsing)
 ├── fixtures/             real, sanitized log samples for mock and unit tests
 ├── scripts/              parity check, pubkey injection, updater manifest generation
-└── src-tauri/            Rust backend (data_home / scanner / event_stream / tail / watcher / search / export / updater)
+└── src-tauri/            Rust backend (data_home / scanner / event_stream / tail / baseline / diskscan / watcher / search / export / updater)
 ```
 
 ---
@@ -398,6 +454,11 @@ mcp-gui/
   directory) and user-chosen export/update files;
 - Every "relative to data home" path is guarded against escapes (absolute paths and `..` are rejected);
 - Visual acceptance HTML is rendered in a sandbox iframe with an injected CSP and stripped `<script>` tags;
+- **Deep links are external input**: only `tianshu://task/<id>` is accepted, and the id must pass an `[A-Za-z0-9_-]`
+  whitelist before it is put into a path; anything containing `..` / `%2e` is rejected outright;
+- **No extra permissions**: deep links are handled entirely in Rust and the frontend never calls the
+  `@tauri-apps/plugin-deep-link` JS API, so `capabilities/default.json` **does not gain `deep-link:default`** (the
+  webview receives no additional plugin capability);
 - No business secrets are read or stored; log content is never sent anywhere.
 
 ---
@@ -407,10 +468,14 @@ mcp-gui/
 - **No Apple code signing / notarization** (macOS needs a manual first-launch approval);
 - **No MSI**: Windows ships NSIS only (a hard requirement of auto-update);
 - **No Linux build**;
-- **No task write operations** (cancel / rework / continue stay in the MCP tools);
+- **No task write operations** (cancel / rework / continue stay in the MCP tools); **disk usage is statistics only**
+  (there is no cleanup entry of any kind);
 - **No local full-text index**: search scans on demand and may be slow on very large log directories
   (it is cancellable);
 - **The browser mock preview has no native runtime**, so the tray icon, tray menu, and close-to-tray
   behaviour **can only be verified in the desktop app** (the preview mode can still verify the setting
-  itself and its persistence);
+  itself and its persistence); likewise **deep links and single-instance behaviour are desktop-only** (the preview
+  honestly returns an empty queue);
+- **System-level deep-link registration on macOS** is reported as unsupported by the plugin, so the cold-start path is
+  validated on Windows / Linux;
 - macOS is only guaranteed to build in CI; no real-machine functional acceptance was performed there.

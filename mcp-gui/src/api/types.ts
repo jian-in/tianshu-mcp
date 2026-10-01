@@ -143,6 +143,8 @@ export interface ReadEventsRequest {
   limit?: number;
   /** 尾部窗口字节数（不传用后端默认） */
   windowBytes?: number;
+  /** `true` = 读**全量**事件流（阶段甘特专用）；缺省 `false` 仍读尾部窗口，行为不变 */
+  full?: boolean;
 }
 
 export interface ReadEventsResult {
@@ -342,4 +344,55 @@ export interface InsightsResult {
   scannedReports: number;
   /** 解析失败的 report-*.json 数 */
   badReports: number;
+}
+
+/* ---------------- A5 基线漂移（只读） ---------------- */
+
+export interface BaselineRequest {
+  dataHome: string;
+  taskId: string;
+}
+
+/** `tasks/<任务>/baseline.json` 的容错摘要；**文件缺失不是错误**（`present = false`） */
+export interface BaselineInfo {
+  present: boolean;
+  isRepo: boolean;
+  head: string | null;
+  dirty: boolean;
+  dirtyFilesCount: number;
+  preExistingChangedCount: number;
+  preExistingUntrackedCount: number;
+  capturedAt: string | null;
+  message: string | null;
+}
+
+/* ---------------- A9 磁盘占用（只读统计，不删除任何文件） ---------------- */
+
+export interface DiskUsageRequest {
+  dataHome: string;
+}
+
+export interface DiskUsageFile {
+  name: string;
+  bytes: number;
+}
+
+export interface DiskUsageItem {
+  /** 任务目录名；`logs/` 这类非任务条目为 `null` */
+  taskId: string | null;
+  relPath: string;
+  bytes: number;
+  files: number;
+  heaviest: DiskUsageFile | null;
+  /** `heaviest.bytes / bytes`（目录为空时为 0） */
+  heaviestRatio: number;
+}
+
+export interface DiskUsage {
+  totalBytes: number;
+  logsBytes: number;
+  tasksBytes: number;
+  /** **任务目录**体积前 20（`logs/` 单列在 `logsBytes`） */
+  topTasks: DiskUsageItem[];
+  scannedDirs: number;
 }

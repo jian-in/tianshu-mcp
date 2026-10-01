@@ -3,7 +3,9 @@
 //! **只读契约**：全部取数命令只读业务数据；唯一的写入是应用自身偏好
 //! （系统应用配置目录）与用户显式选择的导出/更新临时文件。
 
+mod baseline;
 mod data_home;
+mod diskscan;
 mod event_stream;
 mod export;
 mod insights;
@@ -22,16 +24,21 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::DialogExt;
 
 use models::{
-    AppVersionInfo, CheckUpdateResult, DataHomeEntry, DataHomeState, ExportFileRequest,
-    ExportResult, ExportTaskZipRequest, InsightsRequest, InsightsResult, InstallUpdateResult,
-    ListTasksRequest, LogChunk, Preferences, ProbeSourceResult, ReadEventsRequest,
-    ReadEventsResult, ReadLogRequest, ReadReportRequest, ReadReportResult, SearchRequest,
-    SearchResult, TaskSummary,
+    AppVersionInfo, BaselineInfo, BaselineRequest, CheckUpdateResult, DataHomeEntry, DataHomeState,
+    DiskUsage, DiskUsageRequest, ExportFileRequest, ExportResult, ExportTaskZipRequest,
+    InsightsRequest, InsightsResult, InstallUpdateResult, ListTasksRequest, LogChunk, Preferences,
+    ProbeSourceResult, ReadEventsRequest, ReadEventsResult, ReadLogRequest, ReadReportRequest,
+    ReadReportResult, SearchRequest, SearchResult, TaskSummary,
 };
+
+/// 深链事件名（Rust → 前端）。前端收到后**从 `take_pending_deeplinks` 取走队列**再解析路由，
+/// 因此冷启动（事件早于前端监听）与热启动（已有窗口）走同一条取数路径，不会丢链接。
+pub const DEEPLINK_EVENT: &str = "gui://deeplink";
 
 /// 应用全局状态（全部为内存态；业务数据永不写入）
 pub struct AppState {
@@ -45,6 +52,8 @@ pub struct AppState {
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
     /// 更新源探测结果缓存（TTL 内复用）
     pub probe_cache: Mutex<Option<(std::time::Instant, ProbeSourceResult)>>,
+    /// 待处理深链 URL 队列（冷启动先入队，前端挂载后取走）
+    pub pending_deeplinks: Mutex<Vec<String>>,
 }
 
 impl AppState {
@@ -55,6 +64,7 @@ impl AppState {
             search_cancel: Arc::new(AtomicBool::new(false)),
             watcher: Mutex::new(None),
             probe_cache: Mutex::new(None),
+            pending_deeplinks: Mutex::new(Vec::new()),
         }
     }
 }
@@ -258,6 +268,43 @@ async fn get_insights(
     Ok(insights::collect(&home, &req))
 }
 
+/// A5 基线漂移：只读 `tasks/<任务>/baseline.json`（缺失 / 损坏一律 `present = false`，不编造）。
+#[tauri::command]
+async fn read_baseline(
+    state: State<'_, AppState>,
+    req: BaselineRequest,
+) -> Result<BaselineInfo, String> {
+    if req.task_id.trim().is_empty() {
+        // 任务 ID 缺失是调用方错误：明确报错，而不是回一份「没有基线」的默认值
+        return Err("任务 ID 不能为空".to_string());
+    }
+    Ok(baseline::read_baseline(&home_of(&state), &req))
+}
+
+/// A9 磁盘占用：只读 `stat` 统计体积，**不删任何文件**。
+#[tauri::command]
+async fn scan_disk_usage(
+    state: State<'_, AppState>,
+    req: DiskUsageRequest,
+) -> Result<DiskUsage, String> {
+    let home = if req.data_home.trim().is_empty() {
+        home_of(&state)
+    } else {
+        PathBuf::from(req.data_home.trim())
+    };
+    Ok(diskscan::scan_disk_usage(&home))
+}
+
+/// 取走待处理深链队列（前端挂载后调用；热启动由 `gui://deeplink` 事件触发同一次取数）。
+#[tauri::command]
+async fn take_pending_deeplinks(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let mut guard = state
+        .pending_deeplinks
+        .lock()
+        .map_err(|_| "深链队列不可用".to_string())?;
+    Ok(std::mem::take(&mut *guard))
+}
+
 #[tauri::command]
 async fn read_log(state: State<'_, AppState>, req: ReadLogRequest) -> Result<LogChunk, String> {
     let home = home_of(&state);
@@ -457,11 +504,34 @@ async fn install_update(app: AppHandle, source: String) -> InstallUpdateResult {
     updater::install_update(app, source).await
 }
 
-/// 应用入口（由 `main.rs` 调用）
+/// 把深链 URL 记入待处理队列并通知前端。
+///
+/// **队列是唯一事实来源**：冷启动时事件早于前端监听器注册，只发事件会丢链接；
+/// 热启动（已有窗口）则靠事件驱动前端立刻取走队列。前端两条路径都调 `take_pending_deeplinks`。
+fn queue_deeplinks(app: &AppHandle, urls: Vec<String>) {
+    if urls.is_empty() {
+        return;
+    }
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut pending) = state.pending_deeplinks.lock() {
+            pending.extend(urls.iter().cloned());
+        }
+    }
+    // 事件只作「去取队列」的信号；载荷同时带上 URL 便于开发期排查
+    let _ = app.emit(DEEPLINK_EVENT, urls);
+}
+
 pub fn run() {
     let detected = data_home::resolve_data_home().to_string_lossy().to_string();
 
     let app = tauri::Builder::default()
+        // `single-instance` **必须最先注册**（插件顺序是硬性要求）：第二个实例只做「转发 argv 后退出」。
+        // 已启用其 `deep-link` feature，因此 URL 参数会先转给 deep-link 插件（触发首实例的 `on_open_url`）。
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // 第二实例被拒后把已有窗口唤到前台；深链路由由 `on_open_url` 走同一条队列
+            tray::show_main_window(app);
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -471,6 +541,20 @@ pub fn run() {
             app.manage(AppState::new(detected.clone(), prefs));
             // 托盘创建失败不阻塞启动：日志查看主流程优先。
             let _ = tray::init(app.handle(), &language);
+
+            // A8b 深链：热启动（on_open_url）与冷启动（get_current）都只入队 + 发信号，解析与路由交前端。
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                let urls: Vec<String> = event.urls().into_iter().map(|u| u.to_string()).collect();
+                queue_deeplinks(&handle, urls);
+            });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                let urls: Vec<String> = urls.into_iter().map(|u| u.to_string()).collect();
+                queue_deeplinks(app.handle(), urls);
+            }
+            // Windows/Linux 注册协议处理器；macOS 返回 UnsupportedPlatform 属**预期**，
+            // 因此这里忽略结果——注册失败不阻塞启动（与「托盘创建失败不阻塞」同口径）。
+            let _ = app.deep_link().register("tianshu");
             Ok(())
         })
         // 关闭窗口不等于退出应用：默认「缩小到托盘」，仅在偏好选择「关闭应用」时真正退出
@@ -504,6 +588,9 @@ pub fn run() {
             read_log,
             read_report,
             get_insights,
+            read_baseline,
+            scan_disk_usage,
+            take_pending_deeplinks,
             export_file,
             export_task_zip,
             search_all,

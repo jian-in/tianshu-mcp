@@ -49,6 +49,8 @@ const ICON_PATHS: Record<string, string> = {
   command: "M9 6a2 2 0 1 1-2 2h10a2 2 0 1 1-2-2M15 18a2 2 0 1 1 2-2H7a2 2 0 1 1 2 2",
   disk: "M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3ZM4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
   gantt: "M4 6h9M4 12h13M4 18h6M16 6h4M19 12h1",
+  /* 批次三：基线（git 提交点）*/
+  baseline: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 12h6M15 12h6",
 };
 
 const props = withDefaults(

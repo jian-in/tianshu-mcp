@@ -2389,3 +2389,140 @@ input[type="checkbox"] {
   padding: var(--sp-2) var(--sp-4);
   border-top: 1px solid var(--line-hair);
 }
+
+/* ============================================================
+ * 23. 基线（A5）与阶段甘特（A6）与磁盘占用（A9）
+ * 复用既有设计令牌；甘特条为纯 div，不引图表库。
+ */
+
+/* 基线：与最新报告的对照列表（纯文本行，不用表格撑版式） */
+.baseline-diff {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--fg-dim);
+}
+
+.baseline-diff li::before {
+  content: "› ";
+  color: var(--accent);
+}
+
+/* 阶段甘特：名称 / 条 / 时长 / 起始时间 四列 */
+.gantt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.gantt-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.gantt-track {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.gantt-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 148px) 1fr minmax(72px, 96px) minmax(132px, 168px);
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-12);
+}
+
+.gantt-name {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-bar-wrap {
+  display: block;
+  height: 12px;
+  border-radius: var(--r-tag);
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.gantt-bar {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-tag);
+  background: var(--tone-muted);
+}
+
+/* 阶段色沿用语义色；「进行中」段用斜纹提示尚未结束（不是时长） */
+.gantt-bar.tone-active {
+  background: var(--tone-active);
+}
+
+.gantt-bar.tone-ok {
+  background: var(--tone-ok);
+}
+
+.gantt-bar.tone-fail {
+  background: var(--tone-fail);
+}
+
+.gantt-bar.tone-warn {
+  background: var(--tone-warn);
+}
+
+.gantt-bar.tone-info {
+  background: var(--tone-info);
+}
+
+.gantt-bar.is-open {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--accent-quiet) 0 4px,
+    transparent 4px 8px
+  );
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.gantt-ms,
+.gantt-ts {
+  font-family: var(--font-mono);
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.gantt-ts {
+  color: var(--fg-faint);
+}
+
+/* 磁盘占用：表格列宽与提示行（无删除入口，仅提示） */
+.ins-disk-table .ins-tr {
+  grid-template-columns: minmax(150px, 1.6fr) repeat(2, minmax(72px, 0.7fr)) minmax(150px, 1.6fr) minmax(72px, 0.7fr);
+}
+
+.ins-disk-hints {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ins-disk-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-12);
+}

@@ -3,8 +3,12 @@
  */
 import type {
   AppVersionInfo,
+  BaselineInfo,
+  BaselineRequest,
   CheckUpdateResult,
   DataHomeState,
+  DiskUsage,
+  DiskUsageRequest,
   ExportFileRequest,
   ExportResult,
   ExportTaskZipRequest,
@@ -38,6 +42,14 @@ export interface GuiApi {
   listTasks(req: ListTasksRequest): Promise<TaskSummary[]>;
   /** 洞察聚合（A1 效能 / A2 归因 / A3 趋势）：只读扫描，不写业务数据 */
   getInsights(req: InsightsRequest): Promise<InsightsResult>;
+  /** A5 基线漂移：只读某个任务的 `baseline.json`（缺失即 `present = false`） */
+  readBaseline(req: BaselineRequest): Promise<BaselineInfo>;
+  /** A9 磁盘占用统计：只读 `stat`，**不删除任何文件** */
+  scanDiskUsage(req: DiskUsageRequest): Promise<DiskUsage>;
+  /** A8b 取走 Rust 侧待处理深链队列（冷启动与热启动共用一条路径） */
+  takePendingDeepLinks(): Promise<string[]>;
+  /** A8b 订阅深链信号；返回取消订阅函数（mock 下为空实现） */
+  onDeepLink(handler: () => void): Promise<() => void>;
   readEvents(req: ReadEventsRequest): Promise<ReadEventsResult>;
   readLog(req: ReadLogRequest): Promise<LogChunk>;
   readReport(req: ReadReportRequest): Promise<ReadReportResult>;

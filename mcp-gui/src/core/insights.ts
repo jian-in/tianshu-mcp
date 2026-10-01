@@ -14,6 +14,8 @@
 import { ACTIVE_STATUSES } from "@/core/events";
 import type { ReportSummary } from "@/core/report";
 import type {
+  DiskUsageFile,
+  DiskUsageItem,
   InsightsDay,
   InsightsGroup,
   InsightsReason,
@@ -491,4 +493,74 @@ export function nextCompareSelection(
   if (ids.includes(taskId)) return ids.filter((id) => id !== taskId);
   if (ids.length >= max) return null;
   return [...ids, taskId];
+}
+
+/* ---------------- A9 磁盘占用（判据全部为**相对口径**） ---------------- */
+
+/**
+ * 「体积大户」判据：某任务内**单个文件**占该任务总体积**严格大于**该比例。
+ * 具名常量集中在此（**不散落在组件里**），改判据只需改这里。
+ */
+export const CLEANUP_HEAVIEST_RATIO = 0.5;
+
+/** 「明显偏离中位水平」判据：任务体积 **≥ 全部任务体积中位数的该倍数**（含等于） */
+export const CLEANUP_MEDIAN_MULTIPLE = 2;
+
+export type CleanupReason = "heaviestFile" | "aboveMedian";
+
+export interface CleanupHint {
+  taskId: string;
+  relPath: string;
+  bytes: number;
+  heaviest: DiskUsageFile | null;
+  /** 该任务内最大文件的占比（`heaviest.bytes / bytes`；目录为空时为 0） */
+  heaviestRatio: number;
+  /** 命中的判据（至少一条），文案由界面按 `insights.cleanup.*` 取 */
+  reasons: CleanupReason[];
+}
+
+/**
+ * 中位数（偶数个取中间两者均值）；空数组返回 `null`——**不编造基准**。
+ * 不修改入参（内部先复制再排序）。
+ */
+export function medianOf(values: number[]): number | null {
+  const nums = values.filter((v) => Number.isFinite(v));
+  if (nums.length === 0) return null;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid] as number;
+  return ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
+}
+
+/**
+ * 「可清理」提示：**只提示、不删除**（本应用没有删除入口）。
+ * 两条判据都是**相对**的（见 {@link CLEANUP_HEAVIEST_RATIO} / {@link CLEANUP_MEDIAN_MULTIPLE}），
+ * 因此不依赖任何绝对字节阈值；中位数不可得（无任务）时只保留「体积大户」一条判据。
+ * 输出按体积降序，同体积按路径升序（顺序稳定）。
+ */
+export function cleanupHints(items: DiskUsageItem[]): CleanupHint[] {
+  const tasks = items.filter((item) => item.taskId !== null && item.bytes > 0);
+  const median = medianOf(tasks.map((item) => item.bytes));
+
+  const out: CleanupHint[] = [];
+  for (const item of tasks) {
+    const reasons: CleanupReason[] = [];
+    if (item.heaviest !== null && item.heaviestRatio > CLEANUP_HEAVIEST_RATIO) {
+      reasons.push("heaviestFile");
+    }
+    if (median !== null && median > 0 && item.bytes >= median * CLEANUP_MEDIAN_MULTIPLE) {
+      reasons.push("aboveMedian");
+    }
+    if (reasons.length === 0) continue;
+    out.push({
+      taskId: item.taskId ?? "",
+      relPath: item.relPath,
+      bytes: item.bytes,
+      heaviest: item.heaviest,
+      heaviestRatio: item.heaviestRatio,
+      reasons,
+    });
+  }
+
+  return out.sort((a, b) => b.bytes - a.bytes || a.relPath.localeCompare(b.relPath));
 }

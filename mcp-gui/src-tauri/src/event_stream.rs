@@ -22,23 +22,52 @@ fn as_optional_string(v: &Value, key: &str) -> Option<String> {
     v.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
-/// 读取事件流尾部窗口并解析为事件数组
+/// 读取事件流并解析为事件数组。
+///
+/// - `req.full == false`（默认）：只读**尾部窗口**，行为与既有完全一致；
+/// - `req.full == true`：读**全量**（阶段甘特需要从头看到尾），解析逻辑**与窗口模式共用同一段代码**，
+///   只有「取文本的方式」不同；全量读取失败时退回尾部窗口，不把整页打空。
 pub fn read_events(home: &Path, req: &ReadEventsRequest) -> ReadEventsResult {
     let path = home.join("tasks").join(&req.task_id).join("task.jsonl");
     let window_bytes = req.window_bytes.unwrap_or_else(tail::default_window);
 
-    let window = match tail::read_tail(&path, window_bytes) {
-        Ok(w) => w,
-        Err(_) => {
-            // 文件缺失不是错误：如实返回空窗口，由界面显示「没有事件记录」
-            return ReadEventsResult {
-                events: Vec::new(),
-                total_bytes: 0,
-                loaded_from: 0,
-                loaded_to: 0,
-                bad_lines: 0,
-                loaded_count: 0,
-            };
+    let window = if req.full {
+        match tail::read_whole(&path) {
+            Ok(text) => tail::ByteWindow {
+                total: text.len() as u64,
+                from: 0,
+                to: text.len() as u64,
+                text,
+            },
+            // 全量读取失败（含非 UTF-8）时退回尾部窗口，不静默给空内容
+            Err(_) => match tail::read_tail(&path, window_bytes) {
+                Ok(w) => w,
+                Err(_) => {
+                    return ReadEventsResult {
+                        events: Vec::new(),
+                        total_bytes: 0,
+                        loaded_from: 0,
+                        loaded_to: 0,
+                        bad_lines: 0,
+                        loaded_count: 0,
+                    }
+                }
+            },
+        }
+    } else {
+        match tail::read_tail(&path, window_bytes) {
+            Ok(w) => w,
+            Err(_) => {
+                // 文件缺失不是错误：如实返回空窗口，由界面显示「没有事件记录」
+                return ReadEventsResult {
+                    events: Vec::new(),
+                    total_bytes: 0,
+                    loaded_from: 0,
+                    loaded_to: 0,
+                    bad_lines: 0,
+                    loaded_count: 0,
+                };
+            }
         }
     };
 
@@ -120,6 +149,7 @@ mod tests {
             task_id: "tsk_1".to_string(),
             limit: None,
             window_bytes: None,
+            full: false,
         };
         let res = read_events(&home, &req);
         assert_eq!(res.events.len(), 3);
@@ -146,6 +176,7 @@ mod tests {
             task_id: "tsk_2".to_string(),
             limit: None,
             window_bytes: None,
+            full: false,
         };
         let res = read_events(&home, &req);
         assert_eq!(res.events.len(), 1);
@@ -167,6 +198,7 @@ mod tests {
             task_id: "tsk_3".to_string(),
             limit: Some(2),
             window_bytes: None,
+            full: false,
         };
         let res = read_events(&home, &req);
         assert_eq!(res.events.len(), 2);
@@ -184,10 +216,54 @@ mod tests {
             task_id: "tsk_none".to_string(),
             limit: None,
             window_bytes: None,
+            full: false,
         };
         let res = read_events(&home, &req);
         assert_eq!(res.events.len(), 0);
         assert_eq!(res.total_bytes, 0);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn full_reads_from_the_beginning_and_reports_total_bytes() {
+        let home = std::env::temp_dir().join("tianshu-gui-events-full-test");
+        let _ = std::fs::remove_dir_all(&home);
+        // 造出远超默认窗口的内容：前面塞注释行（非 JSON 会记坏行，故用合法事件行填充）
+        let mut body = String::from("{\"ts\":\"t0\",\"event\":\"created\",\"state\":\"queued\"}\n");
+        for i in 0..2000 {
+            body.push_str(&format!(
+                "{{\"ts\":\"t{i}\",\"event\":\"note\",\"state\":\"running\"}}\n"
+            ));
+        }
+        body.push_str("{\"ts\":\"tlast\",\"event\":\"succeeded\",\"state\":\"succeeded\"}\n");
+        write_jsonl(&home, "tsk_full", &body);
+
+        let tail_req = ReadEventsRequest {
+            data_home: home.to_string_lossy().to_string(),
+            task_id: "tsk_full".to_string(),
+            limit: None,
+            window_bytes: None,
+            full: false,
+        };
+        let tail = read_events(&home, &tail_req);
+        // 尾部窗口读不全：第一条事件不是 created
+        assert!(tail.loaded_from > 0);
+        assert_ne!(tail.events[0].event, "created");
+
+        let full_req = ReadEventsRequest {
+            full: true,
+            ..tail_req
+        };
+        let full = read_events(&home, &full_req);
+        assert_eq!(full.loaded_from, 0);
+        assert_eq!(full.events[0].event, "created");
+        assert_eq!(full.events.len(), 2002);
+        assert_eq!(
+            full.events.last().map(|e| e.event.as_str()),
+            Some("succeeded")
+        );
+        assert_eq!(full.bad_lines, 0);
+        assert_eq!(full.total_bytes, body.len() as u64);
         let _ = std::fs::remove_dir_all(&home);
     }
 }

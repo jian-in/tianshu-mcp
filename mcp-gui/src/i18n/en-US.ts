@@ -197,6 +197,30 @@ export const enUS: Messages = {
     cmpFailedChecks: "Failed checks",
     cmpErrorType: "Error type",
     cmpMessage: "Message",
+    sectionDisk: "Disk usage",
+    diskHint:
+      "Read-only artifact footprint (measured sizes of logs/ and every directory under tasks/, with no tsk_/vfy_ prefix filter; stat only — contents are never read and nothing is ever deleted).",
+    diskDirs: "{n} task dir(s)",
+    diskEmpty: "No artifacts to measure",
+    diskTotal: "Current data home total",
+    diskTasks: "Task artifacts",
+    diskLogs: "Server logs logs/",
+    diskMedian: "Median task size",
+    colTask: "Task",
+    colSize: "Size",
+    colFiles: "Files",
+    diskHeaviest: "Heaviest file",
+    diskHeaviestShare: "Share of task",
+    diskCleanup: "Cleanup hints",
+    diskCleanupHint:
+      "Hints only — there is no delete entry: every rule is relative (one file taking > 50% of its task, or a task at least 2x the median task size).",
+    diskCleanupNone: "No standout tasks for now",
+    cleanup: {
+      reason: {
+        heaviestFile: "single file > half",
+        aboveMedian: "size far above median",
+      },
+    },
   },
   palette: {
     title: "Command palette",
@@ -219,6 +243,7 @@ export const enUS: Messages = {
     agentLogs: "Agent logs",
     verifyLogs: "Verify logs",
     reports: "Reports",
+    baseline: "Baseline",
     serverLog: "Server log",
     search: "Global search",
   },
@@ -235,6 +260,39 @@ export const enUS: Messages = {
     empty: "This task has no event records",
     loadMore: "Load earlier",
     loadedOf: "Loaded {loaded} / {total}",
+    viewList: "List",
+    viewStages: "Stages",
+    stageTotal: "Stages total {total}",
+    stageHint:
+      "A stage spans two adjacent state transitions; the last one has no end time and is marked \u201crunning\u201d rather than inventing a duration.",
+    stageRunning: "running",
+    stageTruncated:
+      "The start of the event stream is not in this file (or the file is truncated), so the stage view may be incomplete.",
+    noStages: "No state-transition events, so no stages can be built",
+  },
+  baseline: {
+    title: "Baseline",
+    readonlyHint: "Read-only pre-work baseline",
+    summary: "Pre-work baseline",
+    dirty: "dirty at start",
+    clean: "clean at start",
+    isRepo: "Repository",
+    notRepo: "Not a repository (no Git baseline captured)",
+    head: "HEAD",
+    capturedAt: "Captured",
+    dirtyFiles: "Files already changed",
+    preExistingChanged: "Pre-existing changes",
+    preExistingUntracked: "Pre-existing untracked files",
+    missing: "This task has no saved pre-work baseline",
+    missingHint:
+      "Only tasks whose baseline was captured at dispatch time have a baseline.json; no zero values are invented here.",
+    reportCompare: "Against the latest report",
+    reportMissing: "This task has no readable latest report",
+    preExistingLine: "{n} change(s) already existed at baseline (not part of this task)",
+    currentChanges: "Latest report: {files} file(s) changed (+{add} / -{del})",
+    untrackedLine: "Latest report: {n} additional untracked file(s)",
+    compareHint:
+      "Comparing the two shows whether this task's changes went beyond the pre-existing state; the report is read on demand and left blank when missing.",
   },
   eventKind: {
     status: "State transition",
@@ -438,5 +496,8 @@ export const enUS: Messages = {
     exportFailed: "Export failed: {msg}",
     updateFailed: "Update check failed: {msg}",
     refreshFailed: "Refresh failed: {msg}",
+  },
+  deeplink: {
+    invalid: "Unrecognised deep link: {url} (only tianshu://task/<taskId> is supported)",
   },
 };

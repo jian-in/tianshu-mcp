@@ -8,11 +8,31 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## [Unreleased] — mcp-gui independent line
+## [0.1.1-beta.3] — 2026-10-02 — mcp-gui independent line
+
+> This section records the **third and final pre-release batch** of the GUI's independent `0.1.1` line; **the MCP package
+> is untouched**. It delivers A5 baseline drift / A6 stage gantt / A9 disk usage / A8b deep links — the first three are
+> read-only enhancements, while A8b is the only item adding Tauri plugins and protocol registration (with a fallback).
+
+### Added
+
+- **A5 a new "Baseline" section in the workspace**: it shows `baseline.json` read-only (repository or not / HEAD / whether the tree was already dirty / pre-existing change and untracked counts / capture time / message) alongside the **latest report's** change stats (report read on demand, cached per task). A missing or broken file always renders "no saved pre-work baseline" — **no zero values are invented**. New read-only Rust command `read_baseline` (`baseline.rs`, 4 unit tests).
+- **A6 a new "Stages" view for the event stream (state-transition gantt)**: `ReadEventsRequest` gains `full` (defaults to `false`, **existing behaviour unchanged**); with `full = true`, `event_stream.rs` reads everything via `tail::read_whole` while **sharing the very same parsing code** as the windowed mode, falling back to the tail window if the full read fails. A stage spans two adjacent state transitions, bars are plain divs, and the last stage is marked "running" — **no invented durations**; if the file does not start at `created` the UI says so. New pure functions in `core/timeline.ts` (`buildStages` / `totalMs` / `stageShare`).
+- **A9 a new "Disk usage" section on the Insights page**: new read-only command `scan_disk_usage` (`diskscan.rs`, 4 unit tests) measures the **actual size** of `logs/` and every directory under `tasks/` (**no `tsk_`/`vfy_` prefix filter**, `stat` only, contents never read) and reports totals / `logs/` share / top-20 task sizes / the median. Every cleanup rule is **relative** (`CLEANUP_HEAVIEST_RATIO = 0.5`, `CLEANUP_MEDIAN_MULTIPLE = 2`, named constants in `core/insights.ts`) with new pure functions `medianOf` / `cleanupHints`; **hints only — there is no delete entry of any kind**.
+- **A8b deep link `tianshu://task/<taskId>`**: adds `tauri-plugin-single-instance` (with its `deep-link` feature; it **must be registered first**) and `tauri-plugin-deep-link`, and declares the `tianshu` scheme in `tauri.conf.json`. Cold start (`get_current`) and hot start (`on_open_url`) both **only enqueue and emit `gui://deeplink`**, and the frontend drains the queue before routing it (**the queue is the source of truth**, so cold-start links are never lost). Parsing lives in the pure `core/deeplink.ts` (id whitelist `[A-Za-z0-9_-]`; anything with `..`/`%2e` is rejected outright). **Deep links are handled entirely in Rust, so `capabilities/default.json` does not gain `deep-link:default`.**
 
 ### Fixed
 
-- **The command palette no longer caps task commands at 50 (fixed after `0.1.1-beta.2` shipped; not part of that release — it ships in the next preview)**: the old implementation **pre-generated** task commands as `slice(0, 50)`, so with more than 50 tasks the later ones were **unfindable** and the only feedback was "no matching commands" — no error, no truncation notice, **more misleading than not offering the feature**. Task commands are now produced by `buildTaskCommands`, which searches **every task live on each keystroke** (no cap; a blank query lists no tasks, so opening the palette never floods the list), and `rankCommands`'s `PALETTE_RESULT_LIMIT = 20` **limits only how many rows are shown, never the search scope**. The former `buildCommands` was split into `buildStaticCommands` (navigation + data homes, input-independent) and `buildTaskCommands`, and the component now combines the two per query. Regression cover: `test/palette.test.ts` asserts with 300 tasks that "the 300th is findable", "a blank query lists no tasks" and "the display limit only truncates the view".
+- **The command palette no longer caps task commands at 50 (fixed after `0.1.1-beta.2` shipped; delivered here)**: the old implementation **pre-generated** task commands as `slice(0, 50)`, so with more than 50 tasks the later ones were **unfindable** and the only feedback was "no matching commands" — no error, no truncation notice, **more misleading than not offering the feature**. Task commands are now produced by `buildTaskCommands`, which searches **every task live on each keystroke** (no cap; a blank query lists no tasks), and `rankCommands`'s `PALETTE_RESULT_LIMIT = 20` **limits only how many rows are shown, never the search scope**; the former `buildCommands` was split into `buildStaticCommands` (navigation + data homes) and `buildTaskCommands`. Regression cover: `test/palette.test.ts` asserts with 300 tasks that "the 300th is findable", "a blank query lists no tasks" and "the display limit only truncates the view".
+
+### Tests
+
+- Frontend **169 passed** (15 files; new `test/timeline.test.ts` / `test/deeplink.test.ts`, plus `medianOf` / `cleanupHints` cases in `test/insights.test.ts`), with `check:schema` / `typecheck` / `lint` / `build` all green. Rust gains unit tests in `baseline.rs` (4) / `diskscan.rs` (4) / `event_stream.rs` (one full-read case); local `cargo fmt --all --check` passes (`clippy` / `cargo test` run in `gui.yml`).
+- **Simulated real-machine run (headless Edge + mock preview) passed 14/14**: an empty deep-link queue raises no error, the baseline section shows the summary and the report comparison, a task without a baseline says so honestly, the stages view renders 12 stages (the last marked "running") plus the stage total, switching back to List still lists events, the disk section shows its four readings plus the top table and cleanup hints with **no delete or cleanup button anywhere on the page**, and there is no `pageerror`.
+
+### Docs
+
+- Added `docs/release-gui-v0.1.1-beta.3.md` + `.en.md`; `docs/gui-log-viewer` gained §3.9 Baseline, §3.10 stages view and §3.11 deep links in both languages, §3.6 documents the disk-usage conventions, §8 the deep-link security boundary and the minimal-permission stance, and §9 the platform difference and "statistics only, never delete"; README documents this batch; ARCHITECTURE gained §16.10 "Deep link and single-instance contract" in both languages; HANDOFF's top snapshot and handoff section were updated.
 
 ---
 

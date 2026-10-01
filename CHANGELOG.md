@@ -7,11 +7,31 @@
 
 ---
 
-## [未发布] — mcp-gui 独立版本线
+## [0.1.1-beta.3] — 2026-10-02 — mcp-gui 独立版本线
+
+> 本段记录 GUI 独立版本线 `0.1.1` 的**第三个（最后一个）预发布批次**；**MCP 主包零改动**。
+> 本批交付 A5 基线漂移 / A6 状态跃迁甘特 / A9 磁盘占用 / A8b 深链——前三项为只读增强，
+> A8b 是本轮唯一新增 Tauri 插件与协议注册的系统集成项（含降级预案）。
+
+### 新增
+
+- **A5 工作区新增「基线」分区**：只读展示 `baseline.json`（是否版本库 / HEAD / 动工前是否已脏 / 已有改动与未跟踪数 / 采集时间 / 说明），并与**最新报告**的改动统计对照（报告按需读取、按任务缓存）；缺失或损坏一律提示「没有保存的动工前基线」，**不编造零值**。Rust 侧新增只读命令 `read_baseline`（`baseline.rs`，含 4 项单测）。
+- **A6 事件流新增「阶段」视图（状态跃迁甘特）**：`ReadEventsRequest` 新增 `full`（缺省 `false`，**不改既有行为**）；`event_stream.rs` 的 `full = true` 用 `tail::read_whole` 读全量，**解析逻辑与窗口模式共用同一段代码**，读取失败退回尾部窗口；阶段 = 相邻两次状态跃迁之间，纯 div 横向条，最后一段标「进行中」**不编造时长**；开头不在文件内时如实提示。新增纯函数 `core/timeline.ts`（`buildStages` / `totalMs` / `stageShare`）。
+- **A9 洞察页新增「磁盘占用」分区**：新增只读命令 `scan_disk_usage`（`diskscan.rs`，含 4 项单测）统计 `logs/` 与 `tasks/` 各目录**实测体积**（**不按 `tsk_`/`vfy_` 前缀过滤**、只 `stat`、不读内容），给出总量 / `logs/` 占比 / 任务体积 TOP 20 / 中位数；「可清理」提示的判据全部为**相对口径**（`CLEANUP_HEAVIEST_RATIO = 0.5`、`CLEANUP_MEDIAN_MULTIPLE = 2`，具名常量集中在 `core/insights.ts`），新增 `medianOf` / `cleanupHints` 纯函数；**只有提示、没有任何删除入口**。
+- **A8b 深链 `tianshu://task/<任务ID>`**：新增 `tauri-plugin-single-instance`（启用 `deep-link` feature，**必须最先注册**）与 `tauri-plugin-deep-link`，`tauri.conf.json` 声明 `tianshu` 协议；冷启动（`get_current`）与热启动（`on_open_url`）都**只入队并发 `gui://deeplink` 信号**，前端取走队列后解析路由（**队列是唯一事实来源**，避免冷启动丢链接）；解析在纯函数 `core/deeplink.ts`（ID 白名单 `[A-Za-z0-9_-]`，含 `..`/`%2e` 直接拒绝）；**深链全在 Rust 侧处理，`capabilities/default.json` 不新增 `deep-link:default`**。
 
 ### 修复
 
-- **命令面板的任务命令不再有 50 条上限（`0.1.1-beta.2` 发布后修复；未随该版本发布，将随下一个预发布版交付）**：原实现把任务命令**预生成**为 `slice(0, 50)`，任务数超过 50 时排在后面的任务**搜不到**，且只给出「没有匹配的命令」——既不报错也不提示被截断，**比不提供该功能更误导**。现改为 `buildTaskCommands` **按输入实时检索全部任务**（无条数上限；空输入不列任务，避免一打开就铺满几百个任务），`rankCommands` 的 `PALETTE_RESULT_LIMIT = 20` **只限制展示条数、不限制检索范围**；原 `buildCommands` 相应拆为 `buildStaticCommands`（导航 + 数据目录，与输入无关）与 `buildTaskCommands`，面板组件改为接收二者并按输入合成结果。回归：`test/palette.test.ts` 用 300 个任务断言「第 300 个也能搜到」「空输入不铺任务」「展示上限只截显示、不影响检索范围」。
+- **命令面板的任务命令不再有 50 条上限（`0.1.1-beta.2` 发布后修复，本版交付）**：原实现把任务命令**预生成**为 `slice(0, 50)`，任务数超过 50 时排在后面的任务**搜不到**，且只给出「没有匹配的命令」——既不报错也不提示被截断，**比不提供该功能更误导**。现改为 `buildTaskCommands` **按输入实时检索全部任务**（无条数上限；空输入不列任务），`rankCommands` 的 `PALETTE_RESULT_LIMIT = 20` **只限制展示条数、不限制检索范围**；原 `buildCommands` 相应拆为 `buildStaticCommands`（导航 + 数据目录）与 `buildTaskCommands`。回归：`test/palette.test.ts` 用 300 个任务断言「第 300 个也能搜到」「空输入不铺任务」「展示上限只截显示」。
+
+### 测试
+
+- 前端 **169 passed**（15 文件；新增 `test/timeline.test.ts` / `test/deeplink.test.ts`，`test/insights.test.ts` 补 `medianOf` / `cleanupHints` 用例），`check:schema` / `typecheck` / `lint` / `build` 全绿；Rust 新增 `baseline.rs`（4）/ `diskscan.rs`（4）/ `event_stream.rs`（全量读取 1）单测，本机 `cargo fmt --all --check` 通过（`clippy` / `cargo test` 交 `gui.yml`）。
+- **模拟真机（无头 Edge + mock 预览）14/14 通过**：深链空队列不报错、基线分区显示摘要并与报告对照、无基线任务如实提示、阶段视图渲染 12 段（末段「进行中」）与阶段合计、切回列表仍有事件行、磁盘分区四项读数 + TOP 表 + 「可清理提示」且**页面上没有任何删除 / 清理按钮**、无 `pageerror`。
+
+### 文档
+
+- 新增 `docs/release-gui-v0.1.1-beta.3.md` + `.en.md`；`docs/gui-log-viewer` 双语新增 §3.9 基线 / §3.10 阶段视图 / §3.11 深链，§3.6 补磁盘占用口径，§8 补深链安全边界与最小权限口径，§9 补平台差异与「磁盘只统计不删除」；README 双语补本批能力；ARCHITECTURE 双语新增 §16.10「深链与单实例契约」；HANDOFF 顶部快照与交接段同步。
 
 ---
 

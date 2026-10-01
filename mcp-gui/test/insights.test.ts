@@ -3,10 +3,12 @@ import {
   aggregateInsights,
   avg,
   bestOf,
+  cleanupHints,
   compareTasks,
   dayOf,
   extractReportFields,
   fillTrend,
+  medianOf,
   mondayOf,
   nextCompareSelection,
   parseUtcMillis,
@@ -18,7 +20,13 @@ import {
   type InsightRecord,
 } from "@/core/insights";
 import type { CheckSummary, ReportSummary } from "@/core/report";
-import type { InsightsDay, InsightsGroup, InsightsReason, TaskSummary } from "@/api/types";
+import type {
+  DiskUsageItem,
+  InsightsDay,
+  InsightsGroup,
+  InsightsReason,
+  TaskSummary,
+} from "@/api/types";
 
 const day = (
   date: string,
@@ -546,5 +554,83 @@ describe("insights · A4 多任务对比", () => {
     // 满额但目标是「已选中项」→ 仍可取消（否则会卡死在上限）
     expect(nextCompareSelection(["a", "b", "c", "d"], "b")).toEqual(["a", "c", "d"]);
     expect(nextCompareSelection(["a", "b"], "c", 3)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("insights · A9 磁盘占用（相对口径的「可清理」提示）", () => {
+  const item = (
+    taskId: string,
+    bytes: number,
+    heaviestBytes: number,
+    files = 2,
+  ): DiskUsageItem => ({
+    taskId,
+    relPath: `tasks/${taskId}`,
+    bytes,
+    files,
+    heaviest: heaviestBytes > 0 ? { name: "agent-0.log", bytes: heaviestBytes } : null,
+    heaviestRatio: bytes > 0 ? heaviestBytes / bytes : 0,
+  });
+
+  it("medianOf：奇数取中位、偶数取中间均值、空集为 null（不编造基准）", () => {
+    expect(medianOf([3, 1, 2])).toBe(2);
+    expect(medianOf([4, 1, 3, 2])).toBe(2.5);
+    expect(medianOf([])).toBeNull();
+    expect(medianOf([Number.NaN, Number.POSITIVE_INFINITY])).toBeNull();
+    // 不改入参
+    const values = [3, 1, 2];
+    medianOf(values);
+    expect(values).toEqual([3, 1, 2]);
+  });
+
+  it("空集 / 零体积目录：不产出任何提示", () => {
+    expect(cleanupHints([])).toEqual([]);
+    expect(cleanupHints([item("tsk_a", 0, 0, 0)])).toEqual([]);
+  });
+
+  it("单元素：只有「体积大户」判据可能命中（中位数 = 它自己，2 倍判据不成立）", () => {
+    // 单文件占比 60% > 50% → 命中 heaviestFile；体积 == 中位数，不命中 aboveMedian
+    const hits = cleanupHints([item("tsk_a", 100, 60)]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.reasons).toEqual(["heaviestFile"]);
+
+    // 单文件占比恰好 50%：**严格大于** 才命中 → 不提示
+    expect(cleanupHints([item("tsk_a", 100, 50)])).toEqual([]);
+  });
+
+  it("aboveMedian：恰好等于中位数 2 倍即命中（含等于）；各占一半的文件不触发占比判据", () => {
+    const hits = cleanupHints([item("tsk_a", 100, 40), item("tsk_b", 200, 80)]);
+    // 中位数 = 150；tsk_b 体积 200 < 300 不命中；两者占比均 40% → 无提示
+    expect(hits).toEqual([]);
+
+    const bigger = cleanupHints([item("tsk_a", 100, 40), item("tsk_b", 300, 120)]);
+    // 中位数 = 200；tsk_b 300 >= 400 不成立 → 仍无提示
+    expect(bigger).toEqual([]);
+
+    const exact = cleanupHints([item("tsk_a", 100, 40), item("tsk_b", 400, 160)]);
+    // 中位数 = 250；400 >= 500 不成立
+    expect(exact).toEqual([]);
+
+    // 让中位数为 100：tsk_a 100 与 tsk_b 100 → 中位数 100；再放一个 200 的任务
+    const twoTimes = cleanupHints([
+      item("tsk_a", 100, 40),
+      item("tsk_b", 100, 40),
+      item("tsk_c", 200, 80),
+    ]);
+    // 中位数 = 100；tsk_c 200 >= 200 → 命中 aboveMedian（占比 40% 不触发另一条）
+    expect(twoTimes.map((h) => [h.taskId, h.reasons])).toEqual([["tsk_c", ["aboveMedian"]]]);
+  });
+
+  it("两条判据可同时命中，输出按体积降序；`taskId` 为空的条目（如 logs）被排除且不参与中位数", () => {
+    const hits = cleanupHints([
+      item("tsk_a", 10, 3),
+      item("tsk_b", 10, 3),
+      item("tsk_big", 100, 70),
+      { ...item("logs-placeholder", 9999, 5000), taskId: null, relPath: "logs" },
+    ]);
+    // 中位数只按任务算（[10, 10, 100] → 10），logs 那条不进分母
+    expect(hits.map((h) => h.taskId)).toEqual(["tsk_big"]);
+    expect(hits[0]!.reasons).toEqual(["heaviestFile", "aboveMedian"]);
+    expect(hits[0]!.heaviestRatio).toBeCloseTo(0.7, 6);
   });
 });

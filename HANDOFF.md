@@ -20,15 +20,16 @@
 > - **文档**：新增 [等待原语](docs/wait-task.md) 双语；README / ARCHITECTURE / tianshu-integration / core-principles / SKILL / usage-examples 同步 11→13 与工具表。
 > - **发布链**：见下方「发布流程」——GitHub 主仓 + Gitee 镜像 Release、npm `tianshu-mcp@0.7.7`。
 >
-> **日志台 GUI（独立交付面，同会话并行交付）**：`mcp-gui` 推进到 **`0.1.1-beta.2`**（计划 `.trae/documents/mcp-gui-insights-0.1.1-plan.md` 的**批次二**）——
-> **A7 结构化筛选增强**（概览页筛选新增错误类型 / 干跑 / 返修 / 视觉验收四项，前后端同口径）、**A4 多任务对比**
-> （洞察页新增「任务对比」子分区，勾选 2–4 个任务并排看指标，报告按需读取并缓存）、**A8a 命令面板与快捷键**
-> （`Ctrl/Cmd + K` 开面板、`Ctrl/Cmd + R` 刷新）。三项全部为**只读**增强，不新增 Tauri 插件。
-> 详见下方「独立交付面 · 日志台 GUI **「洞察」批次二**」。
-> **历史快照（批次一）**：`mcp-gui` 推进到 **`0.1.1-beta.1`**（计划**批次一**）——
+> **日志台 GUI（独立交付面，同会话并行交付）**：`mcp-gui` 推进到 **`0.1.1-beta.3`**（计划 `.trae/documents/mcp-gui-insights-0.1.1-plan.md` 的**批次三，也是最后一批**）——
+> **A5 工作区新增「基线」分区**（动工前 `baseline.json` 摘要 + 与最新报告改动对照）、**A6 事件流新增「阶段」视图**（状态跃迁甘特，
+> 按需读一次全量，末段标「进行中」不编造时长）、**A9 洞察页新增「磁盘占用」**（总量 / logs 占比 / TOP 20 / **只提示不删除**的相对判据）、
+> **A8b 深链 `tianshu://task/<id>`**（单实例 + 协议注册 + 冷/热启动；Rust 侧处理，不给 webview 多余权限）。
+> A1–A9 至此**全部交付**。详见下方「独立交付面 · 日志台 GUI **「洞察」批次三**」。
+> **历史快照（批次二）**：`mcp-gui` 推进到 **`0.1.1-beta.2`**（A7 结构化筛选 / A4 多任务对比 / A8a 命令面板）。
+> **历史快照（批次一）**：`mcp-gui` 推进到 **`0.1.1-beta.1`**——
 > 侧栏新增「洞察」整页：**A1 效能看板**（按 Agent / 项目的任务数、成功率、平均轮次、一次通过率、平均验收耗时、报告缺失）+ **A2 失败归因**
 > （`errorType` / 失败检查项 / 阻塞问题 / 代码信号 四类 TOP）+ **A3 时间趋势**（按天 / 按周，任务量柱 + 成功率与返修率折线）；
-> 后端新增**只读**聚合命令 `get_insights`（`insights.rs` + `timestamps.rs`）。详见下方「独立交付面 · 日志台 GUI **「洞察」批次一**」。
+> 后端新增**只读**聚合命令 `get_insights`（`insights.rs` + `timestamps.rs`）。
 > 另修掉真机缺陷**「更新窗口正文只剩一行标题」**——更新清单 `notes` 改取与发行页**同源**的正文（取数 fail-closed），
 > 并回填 `update/gui/latest.json` / `latest-gitee.json`；**版本号不升**，详见下方「更新窗口正文（更新清单 `notes`）修复」。
 >
@@ -201,6 +202,53 @@
   **MCP 主包不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。
 - **后续批次**：`0.1.1-beta.2` = A4 多任务对比 + A7 结构化筛选增强 + A8a 命令面板；
   `0.1.1-beta.3` = A5 基线漂移 + A6 状态跃迁甘特 + A9 磁盘占用 + A8b 深链（**唯一有架构风险项**，需 Tauri 插件 + 协议注册）。
+
+---
+
+### 独立交付面 · 日志台 GUI **「洞察」批次三（基线 / 阶段甘特 / 磁盘占用 / 深链）**（`mcp-gui/`，`0.1.1-beta.3`）
+
+- **计划文档**：`.trae/documents/mcp-gui-insights-0.1.1-plan.md` §6（A5 + A6 + A9 + A8b）。**A1–A9 九项至此全部交付**。
+- **A5 基线漂移**：
+  - 新增 `src-tauri/src/baseline.rs`（`read_baseline`，容错解析 `tasks/<任务>/baseline.json`，含 4 项单测）+ `models.rs` 的
+    `BaselineRequest` / `BaselineInfo` + `lib.rs` 注册（任务 ID 为空直接报错，不静默给空基线）；
+  - 新增 `src/components/BaselinePanel.vue`（工作区第 5 个分区）+ `stores/app.ts` 的 `TabKey += "baseline"` / `loadBaseline()`；
+    **与最新报告对照**（报告按需读取、按任务缓存）；缺失 / 损坏一律提示「没有保存的动工前基线」；
+  - fixtures 新增 `tasks/tsk_20260926114012_a1b2c3/baseline.json`（结构对齐 `src/verify/git-baseline.ts`），供预览与探针取证。
+- **A6 状态跃迁甘特**：
+  - `models.rs` 的 `ReadEventsRequest` 新增 `full`（`#[serde(default)]`）；`event_stream.rs` 在 `full = true` 时用
+    `tail::read_whole` 读全量、**解析逻辑与窗口模式共用同一段代码**，失败退回尾部窗口；**`full = false` 行为逐字节不变**；
+  - 新增纯函数 `src/core/timeline.ts`（`buildStages` / `totalMs` / `stageShare`）+ `src/components/TimelineGantt.vue`；
+    `EventTimeline.vue` 新增 **列表 / 阶段** 分段切换（首次切到阶段才读全量，同一任务只读一次；刷新会丢弃缓存重读）；
+  - `stores/app.ts` 新增 `eventsFull` / `eventsFullTaskId` / `loadEventsFull()` / `invalidateEventsFull()`。
+- **A9 磁盘占用**：
+  - 新增 `src-tauri/src/diskscan.rs`（`scan_disk_usage`，只 `stat`、只统计 `logs/` 与 `tasks/` 下所有子目录、TOP 20，含 4 项单测）；
+  - `core/insights.ts` 新增 `medianOf` / `cleanupHints` 与两个**具名相对阈值常量**（`CLEANUP_HEAVIEST_RATIO = 0.5` /
+    `CLEANUP_MEDIAN_MULTIPLE = 2`）；新增 `src/components/InsightDisk.vue`（洞察页第 5 个子分区）；
+  - **只提示不删除**：页面与命令都没有清理 / 删除入口（探针专门断言「页面上没有任何删除 / 清理按钮」）。
+- **A8b 深链**：
+  - `Cargo.toml` 新增 `tauri-plugin-single-instance`（features = ["deep-link"]，**必须最先注册**）与 `tauri-plugin-deep-link`；
+    `tauri.conf.json` 声明 `plugins.deep-link.desktop.schemes = ["tianshu"]`；
+  - `lib.rs`：`queue_deeplinks()`（冷启动 `get_current` + 热启动 `on_open_url` **都只入队并发 `gui://deeplink` 信号**，
+    **队列是唯一事实来源**，避免冷启动丢链接）+ `take_pending_deeplinks` 命令 + `AppState.pending_deeplinks`；
+  - 新增 `src/core/deeplink.ts`（`parseDeepLink` / `firstDeepLinkTarget`，ID 白名单 `[A-Za-z0-9_-]`，含 `..`/`%2e` 直接拒绝）；
+    `App.vue` 挂载时与收到信号时走同一次「取队列 → 解析 → 路由」，无法识别的链接**如实提示**；
+  - **权限口径（有意偏离计划的一处，已记录）**：计划 §6.4 提到给 `capabilities/default.json` 加 `"deep-link:default"`，
+    但深链**全部在 Rust 侧处理**、前端不调用该插件的 JS API，因此**不加**这项能力——少给 webview 一个插件能力，
+    与 §16.8 的最小权限口径一致（见 `ARCHITECTURE` §16.10）。
+- **验证（本机）**：`check:schema`（版本一致 `0.1.1-beta.3` + 三方词表无漂移）/ `typecheck` / `lint` /
+  `vitest`（**169 passed**，15 文件，较批次二 +17）/ `vite build` 全绿；`cargo fmt --all --check` 通过
+  （**本机仍不跑 `cargo clippy` / `cargo test`**，Rust 门禁交 `gui.yml`，与 issue #25 决策 D2 一致）。
+- **模拟真机**：`puppeteer-core` + 本机无头 Edge 打开 mock 预览，DOM 断言 **14/14 通过**（深链空队列不报错；基线分区
+  显示摘要并与报告对照、无基线任务如实提示；阶段视图 12 段含末段「进行中」与阶段合计、切回列表仍有事件行；
+  磁盘分区四项读数 + TOP 表 + 提示且**无任何删除按钮**；无 `pageerror`）。探针为临时文件，未入库。
+- **版本边界**：`mcp-gui` 四处版本同步 `0.1.1-beta.2 → 0.1.1-beta.3`（`package.json` / `package-lock.json` 两处 /
+  `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`）；**MCP 主包不受影响**。
+- **发布文档**：新增 `docs/release-gui-v0.1.1-beta.3.md` + `.en.md`（发布 job 的正文来源，**缺文档直接失败**，计划 D11）。
+- **后续（需维护者的动作）**：
+  1. **真机验收**（Windows 10 安装 Release 安装包）：逐项核对 A5 基线 / A6 阶段 / A9 磁盘 / A8b 深链
+     （深链需**冷启动与热启动两条路径**都试：命令行 `start tianshu://task/<id>`；若冷启动不通则按 §6.4 的
+     **降级预案**记录平台差异，不动其它批次内容）；
+  2. 批次三真机通过后，可按计划 §6.5 由维护者决定**转正 `0.1.1`**（新增发布文档、打 tag `gui-v0.1.1`）。
 
 ---
 

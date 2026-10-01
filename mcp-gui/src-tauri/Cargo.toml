@@ -1,6 +1,6 @@
 [package]
 name = "tianshu-mcp-logs"
-version = "0.1.1-beta.2"
+version = "0.1.1-beta.3"
 description = "Tianshu-mcp 日志台 —— 本地只读查看 MCP 运行日志与任务产物"
 authors = ["lanlan0811"]
 edition = "2021"
@@ -24,6 +24,10 @@ tauri-plugin-dialog = "2"
 # 因此这里必须显式收窄到 `~2.6`。升级时请两侧一起改。
 tauri-plugin-opener = "~2.6"
 tauri-plugin-updater = "2"
+# A8b 深链：`single-instance` 必须**最先注册**（插件顺序是硬性要求），并启用其 `deep-link` feature——
+# 第二个实例的 URL 参数会**先转发给 deep-link 插件**（触发首实例的 `on_open_url`），再执行我们的回调。
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-deep-link = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 notify = "7"

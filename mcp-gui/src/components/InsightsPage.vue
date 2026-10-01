@@ -10,6 +10,7 @@
 import { computed, onMounted, ref } from "vue";
 import AppIcon from "./AppIcon.vue";
 import InsightCompare from "./InsightCompare.vue";
+import InsightDisk from "./InsightDisk.vue";
 import { useI18n } from "@/i18n";
 import { avg, fillTrend, rate, reworkRate, sortGroups, toWeeks, topN } from "@/core/insights";
 import { formatDuration } from "@/core/format";
@@ -18,7 +19,7 @@ import type { InsightsDay, InsightsGroup, InsightsReasonKind } from "@/api/types
 
 const { t } = useI18n();
 
-type Section = "board" | "reasons" | "trend" | "compare";
+type Section = "board" | "reasons" | "trend" | "compare" | "disk";
 type TrendBucket = InsightsDay & { key: string };
 
 const section = ref<Section>("board");
@@ -31,6 +32,7 @@ const SECTIONS: { key: Section; labelKey: string }[] = [
   { key: "reasons", labelKey: "insights.sectionReasons" },
   { key: "trend", labelKey: "insights.sectionTrend" },
   { key: "compare", labelKey: "insights.sectionCompare" },
+  { key: "disk", labelKey: "insights.sectionDisk" },
 ];
 
 const REASON_KINDS: InsightsReasonKind[] = [
@@ -204,13 +206,16 @@ const reworkLine = computed(() => linePoints((b) => reworkRate(b)));
       </div>
     </header>
 
-    <div v-if="!data && section !== 'compare'" class="empty">
+    <div v-if="!data && section !== 'compare' && section !== 'disk'" class="empty">
       {{ app.insights.loading ? t("common.loading") : t("insights.empty") }}
     </div>
 
     <div v-else class="ins-body">
       <!-- A4 多任务对比（不依赖洞察聚合结果，故不随 data 为空而消失） -->
       <InsightCompare v-if="section === 'compare'" />
+
+      <!-- A9 磁盘占用（同理：只读扫描，不依赖聚合结果） -->
+      <InsightDisk v-else-if="section === 'disk'" />
 
       <!-- A1 效能看板 -->
       <template v-else-if="section === 'board'">

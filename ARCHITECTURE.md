@@ -1152,6 +1152,31 @@ Rust 侧字段一律 `#[serde(default)]`，旧调用方不传不报错。
 （满额返回 `null` = 这次不生效，**绝不顶替**已有勾选）；报告**按需**读最新一轮 `report-<轮次>.json` 并按 `taskId`
 缓存，切换数据目录即清空勾选与缓存；缺失值一律 `null` → 界面显示 `—`，**不编造时长与结论**。
 
+### 16.10 深链与单实例契约（0.1.1-beta.3 起）
+
+`gui-v0.1.1-beta.3` 起支持 `tianshu://task/<任务ID>`。链路每一段的职责**不得互换**（改动前先读本节）：
+
+| 环节 | 位置 | 约定 |
+|---|---|---|
+| 单实例 | `lib.rs` 的 `.plugin(tauri_plugin_single_instance::init(..))` | **必须最先注册**（插件顺序是硬性要求）；启用其 `deep-link` feature，第二个实例的 URL 参数**先转发给 deep-link 插件**再执行回调（回调只负责唤出已有窗口） |
+| 平台注册 | `lib.rs` setup：`deep_link().register("tianshu")` | 失败**不阻塞启动**（macOS 返回 `UnsupportedPlatform` 属预期）；协议声明在 `tauri.conf.json` 的 `plugins.deep-link.desktop.schemes` |
+| 入队 | `queue_deeplinks()` | 冷启动（`get_current`）与热启动（`on_open_url`）都只做「**入队 + 发 `gui://deeplink` 信号**」；**队列是唯一事实来源**——冷启动时事件早于前端监听，只发事件会丢链接 |
+| 取数与解析 | `take_pending_deeplinks` 命令 + `core/deeplink.ts` | 前端挂载时与收到信号时都调同一次「取队列 → 解析 → 路由」；**解析只在纯函数里**（可单测），Rust 不做业务判断 |
+| 权限 | `capabilities/default.json` | **不新增 `deep-link:default`**：前端不调用该插件的 JS API，webview 不需要这项能力（与 §16.8 的最小权限口径一致） |
+
+**解析规则（外部输入，按此收口）**：只接受 `tianshu://task/<id>`；host 比对**统一小写**（URL 只保证 scheme 小写化）；
+ID 走字符白名单 `[A-Za-z0-9_-]`（ID 会拼进 `tasks/<id>/…` 路径）；含 `..` / `%2e` 的写法**直接拒绝**
+（URL 归一化会把 `..` 消掉，归一化后无法还原原样，与其静默猜成另一个 ID 不如判为无法识别）；
+无法识别的链接在界面上**如实提示**，不静默丢弃。
+
+**降级预案**：若某平台冷启动路由不通，保留热启动路径并在 `docs/gui-log-viewer` 如实记录平台差异；
+**不**为了「看起来都支持」而隐藏差异。
+
+**只读边界（A5 / A9 的两个新命令）**：`read_baseline` 只读 `tasks/<任务>/baseline.json`（缺失 / 损坏一律
+`present = false`）；`scan_disk_usage` 只 `stat` 文件、**不读内容、不删除任何文件**，且**按实测目录统计**
+（`logs/` + `tasks/` 下所有子目录，**不按 `tsk_`/`vfy_` 前缀过滤**——与任务列表的口径**有意不同**，
+过滤前缀会漏算真实占盘，界面已标注）。
+
 ---
 
 ## 17. 延伸阅读

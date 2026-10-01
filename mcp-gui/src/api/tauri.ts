@@ -4,11 +4,15 @@
  * 命令名与 `src-tauri/src/lib.rs` 的 `#[tauri::command]` 一一对应。
  */
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { DEEPLINK_EVENT } from "@/core/deeplink";
 import type {
   AppVersionInfo,
+  BaselineInfo,
   CheckUpdateResult,
   DataHomeState,
+  DiskUsage,
   ExportResult,
   InsightsResult,
   InstallUpdateResult,
@@ -32,6 +36,10 @@ export const tauriApi: GuiApi = {
   pickSavePath: (defaultName) => invoke<string | null>("pick_save_path", { defaultName }),
   listTasks: (req) => invoke<TaskSummary[]>("list_tasks", { req }),
   getInsights: (req) => invoke<InsightsResult>("get_insights", { req }),
+  readBaseline: (req) => invoke<BaselineInfo>("read_baseline", { req }),
+  scanDiskUsage: (req) => invoke<DiskUsage>("scan_disk_usage", { req }),
+  takePendingDeepLinks: () => invoke<string[]>("take_pending_deeplinks"),
+  onDeepLink: async (handler) => listen(DEEPLINK_EVENT, () => handler()),
   readEvents: (req) => invoke<ReadEventsResult>("read_events", { req }),
   readLog: (req) => invoke<LogChunk>("read_log", { req }),
   readReport: (req) => invoke<ReadReportResult>("read_report", { req }),

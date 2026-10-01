@@ -16,6 +16,7 @@
  */
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import AppIcon from "./components/AppIcon.vue";
+import BaselinePanel from "./components/BaselinePanel.vue";
 import CommandPalette from "./components/CommandPalette.vue";
 import DataHomeBar from "./components/DataHomeBar.vue";
 import OverviewPage from "./components/OverviewPage.vue";
@@ -34,10 +35,13 @@ import { buildStaticCommands, type PaletteCommand } from "@/core/palette";
 import {
   app,
   clearError,
+  drainDeepLinks,
   openTab,
   refreshTasks,
   selectTask,
   setActiveDataHome,
+  setError,
+  subscribeDeepLinks,
   type TabKey,
 } from "@/stores/app";
 
@@ -62,6 +66,7 @@ const SECTIONS: { key: TabKey; labelKey: string; icon: string }[] = [
   { key: "agentLogs", labelKey: "tabs.agentLogs", icon: "file" },
   { key: "verifyLogs", labelKey: "tabs.verifyLogs", icon: "check" },
   { key: "reports", labelKey: "tabs.reports", icon: "archive" },
+  { key: "baseline", labelKey: "tabs.baseline", icon: "baseline" },
 ];
 
 /** 侧栏「任务列表」：回概览页的卡片网格 */
@@ -140,6 +145,36 @@ function onKeydown(event: KeyboardEvent): void {
 
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
+
+/* ---------------- A8b 深链（tianshu://task/<id>） ---------------- */
+
+/**
+ * 取走待处理深链并路由。
+ *
+ * Rust 侧把 URL 记入队列后发 `gui://deeplink` 信号（冷启动时事件早于本监听，故队列才是事实来源），
+ * 因此「挂载时主动取一次」与「收到信号再取一次」走的是同一个函数——两条路径都不丢链接。
+ */
+async function drainDeepLinkQueue(): Promise<void> {
+  const { target, invalid } = await drainDeepLinks();
+  if (invalid.length > 0) {
+    setError(t("deeplink.invalid", { url: invalid[0] ?? "" }));
+  }
+  if (!target) return;
+  await openTask(target.taskId);
+}
+
+let unsubscribeDeepLinks: (() => void) | null = null;
+
+onMounted(async () => {
+  await drainDeepLinkQueue();
+  unsubscribeDeepLinks = await subscribeDeepLinks(() => {
+    void drainDeepLinkQueue();
+  });
+});
+onUnmounted(() => {
+  unsubscribeDeepLinks?.();
+  unsubscribeDeepLinks = null;
+});
 </script>
 
 <template>
@@ -240,6 +275,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
           :title="t('tabs.verifyLogs')"
         />
         <ReportPanel v-else-if="app.tab === 'reports'" />
+        <BaselinePanel v-else-if="app.tab === 'baseline'" />
         <LogViewer v-else kind="server" :title="t('tabs.serverLog')" />
       </WorkspacePage>
 

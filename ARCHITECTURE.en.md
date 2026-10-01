@@ -1225,6 +1225,34 @@ pure function `nextCompareSelection` (returning `null` means "not applied this t
 pick); reports are read **on demand** (the latest `report-<round>.json`) and cached per `taskId`, and switching the data
 home clears both the selection and the cache; missing values stay `null` and render as `—` — **no invented times or verdicts**.
 
+### 16.10 Deep link and single-instance contract (from 0.1.1-beta.3)
+
+From `gui-v0.1.1-beta.3` the app handles `tianshu://task/<taskId>`. Each link in the chain has a fixed responsibility —
+**do not swap them** (read this section before changing anything here):
+
+| Link | Location | Contract |
+|---|---|---|
+| Single instance | `.plugin(tauri_plugin_single_instance::init(..))` in `lib.rs` | **Must be registered first** (plugin order is a hard requirement); its `deep-link` feature forwards the second instance's URL arguments **to the deep-link plugin first**, and the callback only reveals the existing window |
+| Platform registration | `deep_link().register("tianshu")` in `lib.rs` setup | A failure **never blocks startup** (macOS returns `UnsupportedPlatform`, which is expected); the scheme is declared in `tauri.conf.json` under `plugins.deep-link.desktop.schemes` |
+| Enqueueing | `queue_deeplinks()` | Both cold start (`get_current`) and hot start (`on_open_url`) only **enqueue and emit `gui://deeplink`**; **the queue is the source of truth** — on cold start the event fires before the frontend listens, so emitting alone would lose the link |
+| Draining and parsing | the `take_pending_deeplinks` command + `core/deeplink.ts` | On mount and on every signal the frontend runs the same "drain → parse → route"; **parsing lives only in a pure function** (unit-tested) and Rust makes no business decisions |
+| Permissions | `capabilities/default.json` | **`deep-link:default` is not added**: the frontend never calls that plugin's JS API, so the webview needs no such capability (the same minimal-permission stance as §16.8) |
+
+**Parsing rules (external input, closed here)**: only `tianshu://task/<id>` is accepted; the host is compared
+**case-insensitively** (the URL spec only lowercases the scheme); the id must match `[A-Za-z0-9_-]` (it ends up in a
+`tasks/<id>/…` path); anything containing `..` / `%2e` is **rejected outright** (URL normalisation erases `..` and cannot
+be reversed, so rather than guessing a different id the link is reported as unrecognised); unrecognised links produce an
+**honest UI notice** and are never dropped silently.
+
+**Fallback**: if cold-start routing turns out not to work on a platform, the hot path stays and the platform difference is
+documented honestly in `docs/gui-log-viewer`; the difference is **never hidden** to look uniformly supported.
+
+**Read-only boundaries (the two new A5 / A9 commands)**: `read_baseline` only reads `tasks/<task>/baseline.json`
+(missing or broken ⇒ `present = false`); `scan_disk_usage` only `stat`s files — **no contents are read and nothing is ever
+deleted** — and it measures **actual directories** (`logs/` plus every subdirectory of `tasks/`, with **no `tsk_`/`vfy_`
+prefix filter**, deliberately different from the task-list scan because filtering would under-report real disk usage; the
+UI states this).
+
 ---
 
 ## 17. Further reading

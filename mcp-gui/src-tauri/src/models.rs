@@ -202,6 +202,9 @@ pub struct ReadEventsRequest {
     pub limit: Option<i64>,
     #[serde(default)]
     pub window_bytes: Option<u64>,
+    /// `true` = 读**全量**事件流（阶段甘特用）；缺省 `false` 时行为与既有完全一致（仍读尾部窗口）
+    #[serde(default)]
+    pub full: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -486,6 +489,78 @@ pub const UPDATE_ENDPOINT_GITHUB: &str =
     "https://raw.githubusercontent.com/lanlan0811/tianshu-mcp/master/update/gui/latest.json";
 pub const UPDATE_ENDPOINT_GITEE: &str =
     "https://gitee.com/lan0811/tianshu-mcp/raw/master/update/gui/latest-gitee.json";
+
+/* ---------------- A5 基线漂移（只读） ---------------- */
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BaselineRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
+    pub data_home: String,
+    pub task_id: String,
+}
+
+/// `tasks/<任务>/baseline.json` 的容错摘要（**文件缺失不是错误**，`present = false`）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BaselineInfo {
+    pub present: bool,
+    pub is_repo: bool,
+    pub head: Option<String>,
+    pub dirty: bool,
+    pub dirty_files_count: i64,
+    pub pre_existing_changed_count: i64,
+    pub pre_existing_untracked_count: i64,
+    pub captured_at: Option<String>,
+    pub message: Option<String>,
+}
+
+/* ---------------- A9 磁盘占用（只读统计，不删除任何文件） ---------------- */
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskUsageRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
+    pub data_home: String,
+}
+
+/// 任务内单个文件
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskUsageFile {
+    pub name: String,
+    pub bytes: u64,
+}
+
+/// 一个目录的体积条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskUsageItem {
+    /// 任务目录名；`logs/` 这类非任务条目为 `null`
+    pub task_id: Option<String>,
+    /// 相对数据目录的路径（正斜杠）
+    pub rel_path: String,
+    pub bytes: u64,
+    pub files: i64,
+    /// 该目录内体积最大的文件
+    pub heaviest: Option<DiskUsageFile>,
+    /// `heaviest.bytes / bytes`（目录为空时为 0）
+    pub heaviest_ratio: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskUsage {
+    pub total_bytes: u64,
+    pub logs_bytes: u64,
+    pub tasks_bytes: u64,
+    /// **任务目录**体积前 20（`logs/` 单列在 `logs_bytes`，不进此表，避免污染「可清理」的相对口径）
+    pub top_tasks: Vec<DiskUsageItem>,
+    /// 扫描到的任务目录数
+    pub scanned_dirs: i64,
+}
 
 /// 手动下载兜底入口（更新失败时给用户；**按源分开**，与本次实际使用的源一致）
 pub const MANUAL_DOWNLOAD_URL_GITHUB: &str = "https://github.com/lanlan0811/tianshu-mcp/releases";

@@ -21,8 +21,11 @@ import type { GuiApi } from "./gui-api";
 import type {
   AppVersionInfo,
   ArtifactRounds,
+  BaselineInfo,
   CheckUpdateResult,
   DataHomeState,
+  DiskUsage,
+  DiskUsageItem,
   ExportResult,
   InsightsResult,
   InstallUpdateResult,
@@ -74,6 +77,21 @@ function emptyArtifacts(): ArtifactRounds {
     dryRunJson: [],
     hasBaseline: false,
     hasDryRunPlan: false,
+  };
+}
+
+/** 与 Rust `BaselineInfo::default()` 同形：缺失 / 损坏一律「没有可用基线」 */
+function emptyBaseline(): BaselineInfo {
+  return {
+    present: false,
+    isRepo: false,
+    head: null,
+    dirty: false,
+    dirtyFilesCount: 0,
+    preExistingChangedCount: 0,
+    preExistingUntrackedCount: 0,
+    capturedAt: null,
+    message: null,
   };
 }
 
@@ -390,10 +408,99 @@ export const mockApi: GuiApi = {
     return aggregateInsights(records, req, { scannedTasks, scannedReports, badReports });
   },
 
+  /** A5：从 fixtures 读 `baseline.json`（缺失即 `present = false`，与 Rust 同口径） */
+  readBaseline: async (req): Promise<BaselineInfo> => {
+    const raw = MOCK_FILES.get(`tasks/${req.taskId}/baseline.json`);
+    if (raw === undefined) return emptyBaseline();
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const str = (k: string): string | null => (typeof parsed[k] === "string" ? (parsed[k] as string) : null);
+      const count = (k: string): number => {
+        const value = parsed[k];
+        if (Array.isArray(value)) return value.length;
+        return typeof value === "number" && Number.isFinite(value) ? value : 0;
+      };
+      return {
+        present: true,
+        isRepo: parsed.isRepo === true,
+        head: str("head"),
+        dirty: parsed.dirty === true,
+        dirtyFilesCount: count("dirtyFiles"),
+        preExistingChangedCount: count("preExistingChanged"),
+        preExistingUntrackedCount: count("preExistingUntracked"),
+        capturedAt: str("capturedAt"),
+        message: str("message"),
+      };
+    } catch {
+      // 基线损坏：如实当「没有可用基线」，不编造零值
+      return emptyBaseline();
+    }
+  },
+
+  /**
+   * A9：用 fixtures 文件体积统计（**口径镜像 Rust `diskscan.rs`**：只统计 `logs/` 与 `tasks/<目录>/`,
+   * 不按 `tsk_`/`vfy_` 前缀过滤，`top_tasks` 只取任务目录前 20）。
+   */
+  scanDiskUsage: async (): Promise<DiskUsage> => {
+    const logsText = MOCK_FILES.get("logs/server.log") ?? "";
+    const logsBytes = byteLength(logsText);
+
+    const byDir = new Map<string, DiskUsageItem>();
+    for (const [rel, text] of MOCK_FILES.entries()) {
+      const m = /^tasks\/([^/]+)\//.exec(rel);
+      if (!m) continue;
+      const taskId = m[1] ?? "";
+      const name = rel.slice(`tasks/${taskId}/`.length);
+      if (name.includes("/")) continue;
+      const item =
+        byDir.get(taskId) ??
+        ({
+          taskId,
+          relPath: `tasks/${taskId}`,
+          bytes: 0,
+          files: 0,
+          heaviest: null,
+          heaviestRatio: 0,
+        } satisfies DiskUsageItem);
+      const bytes = byteLength(text);
+      item.bytes += bytes;
+      item.files += 1;
+      if (item.heaviest === null || bytes > item.heaviest.bytes) item.heaviest = { name, bytes };
+      byDir.set(taskId, item);
+    }
+
+    const items = [...byDir.values()].map((item) => ({
+      ...item,
+      heaviestRatio: item.bytes > 0 && item.heaviest ? item.heaviest.bytes / item.bytes : 0,
+    }));
+    const tasksBytes = items.reduce((sum, item) => sum + item.bytes, 0);
+    const topTasks = items
+      .slice()
+      .sort((a, b) => b.bytes - a.bytes || a.relPath.localeCompare(b.relPath))
+      .slice(0, 20);
+
+    return {
+      totalBytes: tasksBytes + logsBytes,
+      logsBytes,
+      tasksBytes,
+      topTasks,
+      scannedDirs: items.length,
+    };
+  },
+
+  /** A8b：预览模式没有系统协议注册，如实返回空队列（不假装收到深链） */
+  takePendingDeepLinks: async () => [],
+
+  /** A8b：预览模式无深链信号；返回空取消函数（调用方按同一份代码处理两种运行时） */
+  onDeepLink: async () => () => {},
+
   readEvents: async (req): Promise<ReadEventsResult> => {
     const rel = `tasks/${req.taskId}/task.jsonl`;
     const text = MOCK_FILES.get(rel) ?? "";
-    const sliced = sliceTailByBytes(text, req.windowBytes ?? DEFAULT_WINDOW_BYTES);
+    // `full` 时给全文（阶段甘特用）；缺省仍走尾部窗口，与 Rust 侧同口径
+    const sliced = req.full
+      ? { text, totalBytes: byteLength(text), fromByte: 0, toByte: byteLength(text) }
+      : sliceTailByBytes(text, req.windowBytes ?? DEFAULT_WINDOW_BYTES);
     const parsed = parseEventStream(sliced.text);
     const events: TaskEvent[] = parsed.events;
     return {

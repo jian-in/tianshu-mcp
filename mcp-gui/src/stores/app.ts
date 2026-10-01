@@ -6,8 +6,10 @@
 import { computed, reactive } from "vue";
 import { api, isMockRuntime } from "@/api";
 import type {
+  BaselineInfo,
   CheckUpdateResult,
   DataHomeState,
+  DiskUsage,
   InsightsResult,
   LogChunk,
   ProbeSourceResult,
@@ -21,13 +23,21 @@ import type {
 } from "@/api/types";
 import { emptyLogFilter, type LogFilter } from "@/core/logline";
 import { emptyFilter, facetValues, filterTasks, sortTasks } from "@/core/filter";
+import { firstDeepLinkTarget, parseDeepLink, type DeepLinkTarget } from "@/core/deeplink";
 import { nextCompareSelection } from "@/core/insights";
 import { summarizeReport, type ReportSummary } from "@/core/report";
 import { DEFAULT_WINDOW_BYTES } from "@/core/tailwindow";
 import { shouldPrompt } from "@/core/version";
 import { preferences, updatePreferences } from "@/stores/preferences";
 
-export type TabKey = "events" | "agentLogs" | "verifyLogs" | "reports" | "serverLog" | "search";
+export type TabKey =
+  | "events"
+  | "agentLogs"
+  | "verifyLogs"
+  | "reports"
+  | "baseline"
+  | "serverLog"
+  | "search";
 export type ReportKind = "md" | "json" | "html" | "dry-run-md" | "dry-run-json";
 
 export interface SearchState {
@@ -86,6 +96,20 @@ export const app = reactive({
   eventsTotalBytes: 0,
   eventsWindowBytes: DEFAULT_WINDOW_BYTES,
   eventsLoading: false,
+
+  // 事件流**全量**（A6 阶段甘特：按需读取，同一任务只读一次）
+  eventsFull: [] as TaskEvent[],
+  eventsFullTaskId: null as string | null,
+  eventsFullBadLines: 0,
+  eventsFullLoading: false,
+
+  // A5 基线漂移（按任务读取）
+  baseline: null as BaselineInfo | null,
+  baselineLoading: false,
+
+  // A9 磁盘占用（只读统计）
+  disk: null as DiskUsage | null,
+  diskLoading: false,
 
   // 原始日志（agent-* / verify-* / server.log 共用）
   logRelPath: "",
@@ -176,14 +200,24 @@ export async function setActiveDataHome(path: string): Promise<void> {
   try {
     app.dataHome = await api.setActiveDataHome(path);
     app.selectedTaskId = null;
-    // 换目录后对比勾选与报告缓存都失效（任务属于旧目录）
+    // 换目录后以下缓存都失效（它们属于旧目录的任务）
     clearCompareTasks();
+    clearTaskScopedCaches();
     await refreshTasks();
     // 已加载过洞察时切目录要重载（D12：不做实时监听，但切目录必须跟着变）
     if (app.insights.data) await loadInsights();
   } catch (err) {
     setError(err);
   }
+}
+
+/** 清掉「属于某个任务 / 某次扫描」的缓存：基线、全量事件、磁盘占用 */
+function clearTaskScopedCaches(): void {
+  app.baseline = null;
+  app.eventsFull = [];
+  app.eventsFullTaskId = null;
+  app.eventsFullBadLines = 0;
+  app.disk = null;
 }
 
 export async function addDataHome(): Promise<void> {
@@ -258,6 +292,9 @@ export async function openTab(tab: TabKey): Promise<void> {
     case "reports":
       await openReport(currentReportRound(), app.reportKind);
       break;
+    case "baseline":
+      await loadBaseline();
+      break;
     case "serverLog":
       await openLog("logs/server.log");
       break;
@@ -313,6 +350,74 @@ export async function loadMoreEvents(): Promise<void> {
   if (app.eventsLoadedFrom <= 0) return;
   app.eventsWindowBytes = app.eventsWindowBytes * 4;
   await loadEvents(false);
+}
+
+/**
+ * A6 阶段甘特：按需读**全量**事件（`full = true`）。
+ * 同一任务**只读一次**（切换任务后允许重读）；工具栏的「刷新」会清掉缓存再读。
+ */
+export async function loadEventsFull(): Promise<void> {
+  const taskId = app.selectedTaskId;
+  if (!taskId) return;
+  if (app.eventsFullTaskId === taskId) return;
+  app.eventsFullLoading = true;
+  try {
+    const res = await api.readEvents({
+      dataHome: app.dataHome.active,
+      taskId,
+      full: true,
+    });
+    app.eventsFull = res.events;
+    app.eventsFullBadLines = res.badLines;
+    app.eventsFullTaskId = taskId;
+    app.error = null;
+  } catch (err) {
+    setError(err);
+  } finally {
+    app.eventsFullLoading = false;
+  }
+}
+
+/** 丢弃全量事件缓存（下次进入阶段视图会重新读取） */
+export function invalidateEventsFull(): void {
+  app.eventsFull = [];
+  app.eventsFullTaskId = null;
+  app.eventsFullBadLines = 0;
+}
+
+/* ---------------- A5 基线漂移 ---------------- */
+
+/** 读取当前任务的动工前基线；**没有基线不是错误**（`present = false` 由界面如实提示） */
+export async function loadBaseline(): Promise<void> {
+  const taskId = app.selectedTaskId;
+  if (!taskId) {
+    app.baseline = null;
+    return;
+  }
+  app.baselineLoading = true;
+  try {
+    app.baseline = await api.readBaseline({ dataHome: app.dataHome.active, taskId });
+    app.error = null;
+  } catch (err) {
+    setError(err);
+  } finally {
+    app.baselineLoading = false;
+  }
+}
+
+/* ---------------- A9 磁盘占用 ---------------- */
+
+/** 扫描产物磁盘占用（**只读统计，不删任何文件**）；进入复盘分区 / 手动刷新时调用 */
+export async function loadDiskUsage(): Promise<void> {
+  app.diskLoading = true;
+  try {
+    app.disk = await api.scanDiskUsage({ dataHome: app.dataHome.active });
+    app.error = null;
+  } catch (err) {
+    setError(err);
+  } finally {
+    app.diskLoading = false;
+  }
 }
 
 /* ---------------- 原始日志 ---------------- */
@@ -648,6 +753,45 @@ export async function openExternalUrl(url: string): Promise<void> {
     app.error = null;
   } catch (err) {
     setError(err);
+  }
+}
+
+/* ---------------- A8b 深链 ---------------- */
+
+export interface DeepLinkDrainResult {
+  /** 第一条可识别的目标（`tianshu://task/<id>`）；没有可识别的返回 `null` */
+  target: DeepLinkTarget | null;
+  /** 无法识别的原始 URL（由界面如实提示，不静默丢弃） */
+  invalid: string[];
+}
+
+/**
+ * 取走待处理深链队列并解析。
+ *
+ * **冷启动与热启动共用这一条路径**：Rust 侧把 URL 记入队列（冷启动事件早于前端监听，
+ * 因此队列是唯一事实来源），热启动再补发一个 `gui://deeplink` 信号驱动前端来取。
+ */
+export async function drainDeepLinks(): Promise<DeepLinkDrainResult> {
+  let urls: string[] = [];
+  try {
+    urls = await api.takePendingDeepLinks();
+  } catch (err) {
+    setError(err);
+    return { target: null, invalid: [] };
+  }
+  if (urls.length === 0) return { target: null, invalid: [] };
+  return {
+    target: firstDeepLinkTarget(urls),
+    invalid: urls.filter((url) => parseDeepLink(url) === null),
+  };
+}
+
+/** 订阅深链信号（返回取消订阅函数）；订阅失败不阻塞主流程 */
+export async function subscribeDeepLinks(handler: () => void): Promise<() => void> {
+  try {
+    return await api.onDeepLink(handler);
+  } catch {
+    return () => {};
   }
 }
 
