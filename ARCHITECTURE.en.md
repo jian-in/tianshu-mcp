@@ -1194,6 +1194,31 @@ clicked. Any GUI code that needs to open something externally must follow the ta
 | Scope of use | its only current use is the "Manual download" fallback entry (opening a release page); it **must not** be used to open business data paths (export / reveal has its own commands) |
 | Failure isolation | a failed open goes through the existing `setError` and **never blocks the log-viewing main flow** (same rule as the update path) |
 
+### 16.9 Filter semantics and command-palette contract (from 0.1.1-beta.2)
+
+**Filtering is implemented twice and the two must agree** (the same idea as the two-way schema in §16.2):
+
+| Location | Implementation | Notes |
+|---|---|---|
+| Desktop runtime | `matches_filter` in `src-tauri/src/scanner.rs` | `TaskFilter` arrives via `list_tasks`; the backend filters first |
+| Frontend (and local preview) | `filterTasks` in `src/core/filter.ts` | `visibleTasks` filters again; mock's `listTasks` ignores its arguments, so **local preview relies entirely on this copy** |
+
+Adding a filter field therefore means changing **both** copies, with semantics stated word for word: `errorType` is an
+exact match (empty string = no restriction), `dryRun` is an exact match, `reworked` = `roundsUsed > 1`
+(**one round is not rework**) and `hasVisual` = `artifacts.reportHtml` is non-empty. Every Rust-side field is
+`#[serde(default)]`, so older callers that omit it do not fail.
+
+**Where palette actions live**: `src/core/hotkeys.ts` (key → action) and `src/core/palette.ts` (command assembly +
+fuzzy matching) are pure and unit-tested; **actions are implemented only in `App.vue`** (the palette component knows
+nothing about view state and merely dispatches a command `id`). While the palette is open, `matchHotkey` only
+recognises the close keys, so no global action fires behind it; `Ctrl/Cmd + R` is `preventDefault`ed (otherwise the
+webview would reload), and combinations with `Alt` / `Shift` are never intercepted.
+
+**Data boundaries of multi-task compare (A4)**: the selection limit is `COMPARE_MAX = 4` and the decision lives in the
+pure function `nextCompareSelection` (returning `null` means "not applied this time" — it **never replaces** an existing
+pick); reports are read **on demand** (the latest `report-<round>.json`) and cached per `taskId`, and switching the data
+home clears both the selection and the cache; missing values stay `null` and render as `—` — **no invented times or verdicts**.
+
 ---
 
 ## 17. Further reading

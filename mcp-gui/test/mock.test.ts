@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MOCK_APP_VERSION, MOCK_HOME, fixtureFileCount, mockApi } from "@/api/mock";
+import { emptyFilter } from "@/core/filter";
 import { DEFAULT_WINDOW_BYTES } from "@/core/tailwindow";
 import { compareVersion } from "@/core/version";
 
@@ -17,7 +18,7 @@ describe("mock 数据出口", () => {
   it("listTasks 解析快照并聚合产物轮次", async () => {
     const tasks = await mockApi.listTasks({
       dataHome: MOCK_HOME,
-      filter: { keyword: "", agentId: null, status: null, projectPath: null, from: null, to: null, onlyActive: false },
+      filter: emptyFilter(),
       sortKey: "updatedAt",
       sortDir: "desc",
     });

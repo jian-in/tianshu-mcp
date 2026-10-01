@@ -78,6 +78,74 @@ describe("filterTasks", () => {
   });
 });
 
+describe("filterTasks · 结构化筛选增强（口径同 Rust matches_filter）", () => {
+  const withArtifacts = (taskId: string, reportHtml: number[], patch: Partial<TaskSummary> = {}) =>
+    task({
+      taskId,
+      artifacts: {
+        agentLogs: [],
+        verifyLogs: [],
+        reportMd: [],
+        reportJson: [],
+        reportHtml,
+        dryRunMd: [],
+        dryRunJson: [],
+        hasBaseline: false,
+        hasDryRunPlan: false,
+      },
+      ...patch,
+    });
+
+  const rows: TaskSummary[] = [
+    withArtifacts("tsk_a", [], { errorType: "timeout", roundsUsed: 1, dryRun: true }),
+    withArtifacts("tsk_b", [0], { errorType: "build", roundsUsed: 3 }),
+    withArtifacts("tsk_c", [], { roundsUsed: 2 }),
+  ];
+
+  it("errorType 精确匹配（null = 不限）", () => {
+    expect(filterTasks(rows, { ...emptyFilter(), errorType: "timeout" }).map((t) => t.taskId)).toEqual([
+      "tsk_a",
+    ]);
+    expect(filterTasks(rows, { ...emptyFilter(), errorType: "nope" })).toHaveLength(0);
+    expect(filterTasks(rows, emptyFilter())).toHaveLength(3);
+  });
+
+  it("dryRun 三态（roundsUsed 无关）", () => {
+    expect(filterTasks(rows, { ...emptyFilter(), dryRun: true }).map((t) => t.taskId)).toEqual([
+      "tsk_a",
+    ]);
+    expect(filterTasks(rows, { ...emptyFilter(), dryRun: false }).map((t) => t.taskId)).toEqual([
+      "tsk_b",
+      "tsk_c",
+    ]);
+  });
+
+  it("reworked 以 roundsUsed > 1 为界（边界 1 轮不算返修）", () => {
+    expect(filterTasks(rows, { ...emptyFilter(), reworked: true }).map((t) => t.taskId)).toEqual([
+      "tsk_b",
+      "tsk_c",
+    ]);
+    expect(filterTasks(rows, { ...emptyFilter(), reworked: false }).map((t) => t.taskId)).toEqual([
+      "tsk_a",
+    ]);
+  });
+
+  it("hasVisual 以 artifacts.reportHtml 是否非空判定", () => {
+    expect(filterTasks(rows, { ...emptyFilter(), hasVisual: true }).map((t) => t.taskId)).toEqual([
+      "tsk_b",
+    ]);
+    expect(filterTasks(rows, { ...emptyFilter(), hasVisual: false }).map((t) => t.taskId)).toEqual([
+      "tsk_a",
+      "tsk_c",
+    ]);
+  });
+
+  it("多项叠加取交集", () => {
+    const out = filterTasks(rows, { ...emptyFilter(), reworked: true, hasVisual: false });
+    expect(out.map((t) => t.taskId)).toEqual(["tsk_c"]);
+  });
+});
+
 describe("sortTasks", () => {
   it("按更新时间倒序（默认）", () => {
     const out = sortTasks(
@@ -105,6 +173,17 @@ describe("facetValues / countByPhase", () => {
     expect(facets.agents).toEqual(["codex", "traework"]);
     expect(facets.projects).toEqual(["/p/a", "/p/b"]);
     expect(facets.statuses).toEqual(["failed", "running", "succeeded"]);
+    expect(facets.errorTypes).toEqual([]);
+  });
+
+  it("errorTypes 分面只收非空值", () => {
+    const facets = facetValues([
+      task({ taskId: "t1", errorType: null }),
+      task({ taskId: "t2", errorType: "timeout" }),
+      task({ taskId: "t3", errorType: "build" }),
+      task({ taskId: "t4", errorType: "timeout" }),
+    ]);
+    expect(facets.errorTypes).toEqual(["build", "timeout"]);
   });
 
   it("统计活动态与终态", () => {

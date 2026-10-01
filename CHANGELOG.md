@@ -7,6 +7,29 @@
 
 ---
 
+## [0.1.1-beta.2] — 2026-10-02 — mcp-gui 独立版本线
+
+> 本段记录 GUI 独立版本线 `0.1.1` 的两个预发布批次；**MCP 主包零改动**（GUI 与主包版本线互相独立，独立 tag `gui-v*`）。
+> `0.1.1-beta.2` 的三项全部是**只读**增强：结构化筛选、多任务对比、命令面板。
+
+### 新增
+
+- **A7 结构化筛选增强（`0.1.1-beta.2`）**：概览页筛选浮层由 7 项扩为 11 项，新增**错误类型 `errorType`**（选项取自当前任务集合的**分面**，不硬编码枚举）、**干跑 `dryRun`**、**返修 `reworked`**（`roundsUsed > 1`，1 轮不算返修）、**视觉验收 `hasVisual`**（存在 `report-<轮次>.html`）；Rust `TaskFilter`（`models.rs`）+ `scanner.rs` 的 `matches_filter` 与前端 `core/filter.ts` 的 `filterTasks` **双份同口径实现**，Rust 侧新字段全部 `#[serde(default)]`（旧调用方不传不失败）。
+- **A4 多任务对比（`0.1.1-beta.2`）**：洞察页新增「任务对比」子分区——左侧勾选 **2–4 个**任务（超上限**明确提示、不顶替**已有勾选），右侧并排指标矩阵（状态 / Agent / 项目 / 轮次 / 验收耗时 / 改动行数 / 改动文件数 / 最新报告判定 / 失败检查项 / 错误类型 / 结论说明），轮次与耗时两行标注**横向最优**；报告**按需读取**并按 `taskId` 缓存，缺失一律显示 `—`（不编造）。
+- **A8a 命令面板与快捷键（`0.1.1-beta.2`）**：`Ctrl/Cmd + K` 打开命令面板（**子序列模糊匹配**、`↑` `↓` 移动、`Enter` 执行、`Esc` 关闭；面板打开时**不触发**其他全局快捷键），`Ctrl/Cmd + R` 刷新（已拦截，不会触发 webview 重载；带 `Alt` / `Shift` 的组合一律不拦截）；命令复用既有数据与动作（跳页面 / 切数据目录 / 直接打开任务，任务命令上限 50 条）。
+- **洞察页骨架 + A1 效能看板 / A2 失败归因 / A3 时间趋势（`0.1.1-beta.1`）**：侧栏新增「洞察」整页（`view` 扩为四态）；后端新增只读聚合命令 `get_insights`（`insights.rs` + `timestamps.rs`，只做**计数与求和**，比率 / TopN / 趋势补齐 / 周历聚合留在前端纯函数）；时间趋势支持**按天 / 按周**（周一为周始）与**返修率**。
+
+### 测试
+
+- **`0.1.1-beta.2`**：前端 **147 passed**（13 文件；新增 `test/hotkeys.test.ts` / `test/palette.test.ts`，`test/filter.test.ts` 补四项新筛选，`test/insights.test.ts` 补 `compareTasks` / `bestOf` / `nextCompareSelection`），`check:schema` / `typecheck` / `lint` / `build` 全绿；Rust 新增 `matches_filter_supports_new_dimensions` 单测（本机 `cargo fmt --check` 通过，`clippy` / `cargo test` 交 `gui.yml`）。
+- **模拟真机（无头 Edge + mock 预览）13/13 通过**：新筛选控件齐全且「返修 = 是」实际生效（4 → 1）、`Ctrl+K` 开面板并模糊命中后跳转洞察页、对比矩阵列头与指标行齐全、选满 4 个、无 `pageerror`。
+
+### 文档
+
+- 新增 `docs/release-gui-v0.1.1-beta.1.md` + `.en.md` 与 `docs/release-gui-v0.1.1-beta.2.md` + `.en.md`；`docs/gui-log-viewer` 双语补 §3.7 任务对比 / §3.8 命令面板与快捷键 / §3.1 筛选增强；README 双语补「结构化筛选 / 多任务对比 / 命令面板」；ARCHITECTURE 双语新增 §16.9「筛选口径与命令面板契约」；HANDOFF 顶部快照与交接段同步。
+
+---
+
 ## [0.7.7] - 2026-10-01
 
 ### 新增

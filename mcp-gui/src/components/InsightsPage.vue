@@ -9,6 +9,7 @@
  */
 import { computed, onMounted, ref } from "vue";
 import AppIcon from "./AppIcon.vue";
+import InsightCompare from "./InsightCompare.vue";
 import { useI18n } from "@/i18n";
 import { avg, fillTrend, rate, reworkRate, sortGroups, toWeeks, topN } from "@/core/insights";
 import { formatDuration } from "@/core/format";
@@ -17,7 +18,7 @@ import type { InsightsDay, InsightsGroup, InsightsReasonKind } from "@/api/types
 
 const { t } = useI18n();
 
-type Section = "board" | "reasons" | "trend";
+type Section = "board" | "reasons" | "trend" | "compare";
 type TrendBucket = InsightsDay & { key: string };
 
 const section = ref<Section>("board");
@@ -29,6 +30,7 @@ const SECTIONS: { key: Section; labelKey: string }[] = [
   { key: "board", labelKey: "insights.sectionBoard" },
   { key: "reasons", labelKey: "insights.sectionReasons" },
   { key: "trend", labelKey: "insights.sectionTrend" },
+  { key: "compare", labelKey: "insights.sectionCompare" },
 ];
 
 const REASON_KINDS: InsightsReasonKind[] = [
@@ -202,13 +204,16 @@ const reworkLine = computed(() => linePoints((b) => reworkRate(b)));
       </div>
     </header>
 
-    <div v-if="!data" class="empty">
+    <div v-if="!data && section !== 'compare'" class="empty">
       {{ app.insights.loading ? t("common.loading") : t("insights.empty") }}
     </div>
 
     <div v-else class="ins-body">
+      <!-- A4 多任务对比（不依赖洞察聚合结果，故不随 data 为空而消失） -->
+      <InsightCompare v-if="section === 'compare'" />
+
       <!-- A1 效能看板 -->
-      <template v-if="section === 'board'">
+      <template v-else-if="section === 'board'">
         <section class="ins-block">
           <h2 class="ins-block-title">{{ t("insights.boardAgents") }}</h2>
           <p class="ins-block-hint">{{ t("insights.boardHint") }}</p>

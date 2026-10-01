@@ -116,6 +116,14 @@ export interface TaskFilter {
   /** ISO 时间上界（含） */
   to: string | null;
   onlyActive: boolean;
+  /** 精确匹配 `task.errorType`（null = 不限） */
+  errorType: string | null;
+  /** true / false 精确匹配 `task.dryRun`（null = 不限） */
+  dryRun: boolean | null;
+  /** true = `roundsUsed > 1`；false = `roundsUsed <= 1`（null = 不限） */
+  reworked: boolean | null;
+  /** true = 存在 `report-<轮次>.html`（null = 不限） */
+  hasVisual: boolean | null;
 }
 
 export type SortKey = "updatedAt" | "createdAt" | "taskId";

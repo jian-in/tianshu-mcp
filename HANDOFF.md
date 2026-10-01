@@ -20,7 +20,12 @@
 > - **文档**：新增 [等待原语](docs/wait-task.md) 双语；README / ARCHITECTURE / tianshu-integration / core-principles / SKILL / usage-examples 同步 11→13 与工具表。
 > - **发布链**：见下方「发布流程」——GitHub 主仓 + Gitee 镜像 Release、npm `tianshu-mcp@0.7.7`。
 >
-> **日志台 GUI（独立交付面，同会话并行交付）**：`mcp-gui` 推进到 **`0.1.1-beta.1`**（计划 `.trae/documents/mcp-gui-insights-0.1.1-plan.md` 的**批次一**）——
+> **日志台 GUI（独立交付面，同会话并行交付）**：`mcp-gui` 推进到 **`0.1.1-beta.2`**（计划 `.trae/documents/mcp-gui-insights-0.1.1-plan.md` 的**批次二**）——
+> **A7 结构化筛选增强**（概览页筛选新增错误类型 / 干跑 / 返修 / 视觉验收四项，前后端同口径）、**A4 多任务对比**
+> （洞察页新增「任务对比」子分区，勾选 2–4 个任务并排看指标，报告按需读取并缓存）、**A8a 命令面板与快捷键**
+> （`Ctrl/Cmd + K` 开面板、`Ctrl/Cmd + R` 刷新）。三项全部为**只读**增强，不新增 Tauri 插件。
+> 详见下方「独立交付面 · 日志台 GUI **「洞察」批次二**」。
+> **历史快照（批次一）**：`mcp-gui` 推进到 **`0.1.1-beta.1`**（计划**批次一**）——
 > 侧栏新增「洞察」整页：**A1 效能看板**（按 Agent / 项目的任务数、成功率、平均轮次、一次通过率、平均验收耗时、报告缺失）+ **A2 失败归因**
 > （`errorType` / 失败检查项 / 阻塞问题 / 代码信号 四类 TOP）+ **A3 时间趋势**（按天 / 按周，任务量柱 + 成功率与返修率折线）；
 > 后端新增**只读**聚合命令 `get_insights`（`insights.rs` + `timestamps.rs`）。详见下方「独立交付面 · 日志台 GUI **「洞察」批次一**」。
@@ -196,6 +201,39 @@
   **MCP 主包不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。
 - **后续批次**：`0.1.1-beta.2` = A4 多任务对比 + A7 结构化筛选增强 + A8a 命令面板；
   `0.1.1-beta.3` = A5 基线漂移 + A6 状态跃迁甘特 + A9 磁盘占用 + A8b 深链（**唯一有架构风险项**，需 Tauri 插件 + 协议注册）。
+
+---
+
+### 独立交付面 · 日志台 GUI **「洞察」批次二（结构化筛选 / 多任务对比 / 命令面板）**（`mcp-gui/`，`0.1.1-beta.2`）
+
+- **计划文档**：`.trae/documents/mcp-gui-insights-0.1.1-plan.md` §5（A4 + A7 + A8a；**批次三** = A5 + A6 + A9 + A8b 仍待交付）。
+- **A7 结构化筛选增强**：
+  - Rust：`src-tauri/src/models.rs` 的 `TaskFilter` 新增 `error_type` / `dry_run` / `reworked` / `has_visual`（全部 `#[serde(default)]`，
+    旧调用方不传不失败）；`scanner.rs` 的 `matches_filter` 实现四项，并新增单测 `matches_filter_supports_new_dimensions`。
+  - 前端：`src/api/types.ts` 同步四项；`src/core/filter.ts` 的 `emptyFilter` / `filterTasks` / `facetValues`（新增 `errorTypes` 分面）同口径实现；
+    `OverviewPage.vue` 筛选浮层新增 4 个控件（错误类型用分面下拉，另三项为「全部 / 是 / 否」三态）。
+  - **口径**：`reworked` = `roundsUsed > 1`（**1 轮不算返修**）；`hasVisual` = `artifacts.reportHtml` 非空；`errorType` 精确匹配（空串 = 不限）。
+    Rust 与 TS **双份同口径**（与「双份 schema」同一约束，见 `ARCHITECTURE` §16.9）。
+- **A4 多任务对比**：新增 `src/components/InsightCompare.vue`（洞察页第 4 个子分区）+ `core/insights.ts` 的
+  `compareTasks` / `bestOf` / `nextCompareSelection` / `COMPARE_MAX`；`stores/app.ts` 的 `InsightsState` 新增
+  `compareIds` / `compareReports` / `compareLoading` 与 `toggleCompareTask` / `clearCompareTasks`。
+  勾选上限 4（满额时**明确提示、不顶替**）；报告**按需**读最新一轮 `report-<轮次>.json` 并按 `taskId` 缓存；
+  切换数据目录清空勾选与缓存；缺失值一律 `—`（**不编造时长与结论**）。
+- **A8a 命令面板与快捷键**：新增 `src/core/hotkeys.ts`（`matchHotkey`，面板打开时只认关闭键）+ `src/core/palette.ts`
+  （`buildCommands` / `filterCommands` / `fuzzyScore` / `stepIndex`，任务命令上限 50）+ `src/components/CommandPalette.vue`；
+  `App.vue` 挂载面板并在 window 上统一监听分发（`Ctrl/Cmd + K` 开关、`Ctrl/Cmd + R` 刷新并 `preventDefault`、
+  `Esc` 关闭），侧栏新增常驻入口。**动作实现只在 `App.vue`**（面板只派发命令 `id`）。
+- **验证（本机）**：`check:schema`（版本一致 `0.1.1-beta.2` + 三方词表无漂移）/ `typecheck` / `lint` /
+  `vitest`（**147 passed**，13 文件，较批次一 +21）/ `vite build` 全绿；`cargo fmt --all --check` 通过
+  （**本机仍不跑 `cargo clippy` / `cargo test`**，Rust 门禁交 `gui.yml`，与 issue #25 决策 D2 一致）。
+- **模拟真机**：`puppeteer-core` + 本机无头 Edge 打开 mock 预览（`vite preview`），DOM 断言 **13/13 通过**
+  （新筛选控件齐全、返修=是 实际生效 4→1、`Ctrl+K` 开面板并模糊命中后跳转到洞察页、对比矩阵列头与 11 行指标齐全、
+  选满 4 个不越界、无 `pageerror`）；探针脚本为临时文件，未入库。
+- **版本边界**：`mcp-gui` 四处版本同步 `0.1.1-beta.1 → 0.1.1-beta.2`（`package.json` / `package-lock.json` 两处 /
+  `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`），随本版发布 tag `gui-v0.1.1-beta.2`；
+  `update/gui/latest*.json` 由发布 job 自动生成并提交（`[skip ci]`）。**MCP 主包不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。
+- **发布文档**：新增 `docs/release-gui-v0.1.1-beta.2.md` + `.en.md`（发布 job 的正文来源，**缺文档直接失败**，计划 D11）。
+- **后续**：批次三（`0.1.1-beta.3`）= A5 基线漂移 + A6 状态跃迁甘特 + A9 磁盘占用 + A8b 深链（**唯一有架构风险项**，需 Tauri 插件 + 协议注册）。
 
 ---
 

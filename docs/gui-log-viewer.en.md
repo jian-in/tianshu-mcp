@@ -81,10 +81,10 @@ The added directories are persisted in the **system application config directory
 
 ### 3.1 Task overview
 
-- **The UI is a permanent left sidebar plus four full pages**: a **task overview page**, an **insights page**, an **MCP capabilities page** and a **full-page workspace**. The sidebar runs brand → global search → main nav (Tasks / **Insights** / Server log / **MCP capabilities** / **Settings**) → **data home (with refresh / add / remove on the same row)** → task section nav, while the overview runs a five-cell metrics strip (total / active / finished / succeeded / failed) → status chip row → task card grid; the **settings entry and the data home both sit in the main nav area** (the data home directly below "Settings", separated by a grouping rule), the **data-home row carries three icon buttons — refresh / add directory / remove**, **nothing permanent sits at the bottom of the sidebar**, and the brand row shows just the app name with no decorative colour square;
+- **The UI is a permanent left sidebar plus four full pages**: a **task overview page**, an **insights page**, an **MCP capabilities page** and a **full-page workspace**. The sidebar runs brand → global search → main nav (Tasks / **Insights** / Server log / **MCP capabilities** / **Settings** / **Command palette**) → **data home (with refresh / add / remove on the same row)** → task section nav, while the overview runs a five-cell metrics strip (total / active / finished / succeeded / failed) → status chip row → task card grid; the **settings entry and the data home both sit in the main nav area** (the data home directly below "Settings", separated by a grouping rule), the **data-home row carries three icon buttons — refresh / add directory / remove**, **nothing permanent sits at the bottom of the sidebar**, and the brand row shows just the app name with no decorative colour square;
 - Tasks are shown as **cards**: the left rail carries the status color (semantic tone via `statusTone`), the title has a `›` prefix, and each card shows the status label, `agent · taskId`, `updated · rounds [· report round]` and a dry-run tag;
 - The **status chips** (all / running / succeeded / failed / needs attention / needs human) are **page-level grouping** and do not rewrite the filter conditions;
-- The `[Filter]` popover carries the full set: keyword, agent, status, project, time range, active-only, plus sorting (updated / created / task ID, ascending or descending) and "Reset filters";
+- The `[Filter]` popover carries the full set: keyword, agent, status, project, time range, **error type / dry run / reworked / visual acceptance** (from 0.1.1-beta.2), active-only, plus sorting (updated / created / task ID, ascending or descending) and "Reset filters". Error-type options come from the **facets** of the current task set (no hard-coded enum), the three boolean conditions are tri-state (all / yes / no), and their semantics map one-to-one onto task-snapshot fields (reworked = `roundsUsed > 1`, visual acceptance = a `report-<round>.html` exists);
 - Covers both `tsk_*` (dispatched tasks) and `vfy_*` (standalone path verification records). Clicking a card opens that task's **full-page workspace**.
 
 ### 3.2 Event stream
@@ -158,6 +158,34 @@ Data access: the Tauri command `get_insights` (`mcp-gui/src-tauri/src/insights.r
 only does **counting and summing**; rates / TopN / trend gap-filling / week bucketing live in the frontend pure
 functions in `mcp-gui/src/core/insights.ts` (unit-tested). The page loads once when opened, has a Refresh button and
 reloads when the data home changes — **no live watching**.
+
+### 3.7 Compare tasks (from 0.1.1-beta.2)
+
+The fourth section of the Insights page, "**Compare tasks**": pick tasks on the left (reusing the task list plus
+keyword filtering, limited to **4**, with an explicit notice and **no silent replacement** of existing picks) and read
+a **side-by-side metric matrix** on the right (columns are tasks, rows are metrics): status / agent / project / rounds
+used / verify time / changed lines (+ / -) / files changed / latest verdict / failed checks / error type / message.
+The rounds and verify-time rows mark the **best value across tasks**.
+
+- **Reports are read on demand**: only when a task is picked does the app read its latest `report-<round>.json`
+  (preferring the snapshot's `reportRound`), cached per `taskId`; switching the data home clears both selection and cache.
+- **Anything missing shows `—`**: without a report the verdict and diff stats stay empty, and verify time falls back to
+  the task snapshot's `createdAt → finishedAt`, staying blank if neither parses — **no invented times, no invented winners**.
+- **Read-only**: it only reads `task.json` / `report-*.json` and writes no business data.
+
+### 3.8 Command palette and hotkeys (from 0.1.1-beta.2)
+
+| Shortcut | Behaviour |
+|---|---|
+| `Ctrl/Cmd + K` | Open / close the command palette (the sidebar also has a permanent entry) |
+| `Esc` | Close the palette |
+| `Ctrl/Cmd + R` | Refresh the task list (intercepted, so the webview never reloads) |
+
+Typing performs **subsequence fuzzy matching** (skipping characters is fine, but order must match); `↑` `↓` move and
+`Enter` runs. While the palette is open **no other global hotkey fires**, and combinations with `Alt` / `Shift` are never
+intercepted. Every command reuses existing data and actions: Tasks / Insights / Server log / MCP capabilities,
+cross-task global search, open Settings, switch data home (the active one is labelled), open a task directly (at most 50
+entries). **The palette adds no write operations.**
 
 ---
 

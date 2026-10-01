@@ -12,6 +12,7 @@
  * - 分母为 0 一律返回 `null`——**不编造 0%**
  */
 import { ACTIVE_STATUSES } from "@/core/events";
+import type { ReportSummary } from "@/core/report";
 import type {
   InsightsDay,
   InsightsGroup,
@@ -19,6 +20,7 @@ import type {
   InsightsRequest,
   InsightsResult,
   InsightsSummary,
+  TaskSummary,
 } from "@/api/types";
 
 const DAY_MS = 86_400_000;
@@ -391,4 +393,102 @@ function toGroups(map: Map<string, InsightsSummary>): InsightsGroup[] {
   return [...map.entries()]
     .map(([key, summary]) => ({ key, summary }))
     .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/* ---------------- A4 多任务对比（纯函数） ---------------- */
+
+/** 对比上限（超出即由界面明确提示，不静默截断） */
+export const COMPARE_MAX = 4;
+
+/** 两个 ISO 时间都能解析且不倒挂时给出耗时（ms），否则 `null`（不编造时长） */
+function spanBetween(startedAt: string | null, finishedAt: string | null): number | null {
+  if (!startedAt || !finishedAt) return null;
+  const start = parseUtcMillis(startedAt);
+  const end = parseUtcMillis(finishedAt);
+  if (start === null || end === null || end < start) return null;
+  return end - start;
+}
+
+/** 一行对比数据（各任务同一列，缺失一律 `null`，界面显示 `—`） */
+export interface CompareRow {
+  taskId: string;
+  status: string;
+  agentId: string;
+  projectPath: string;
+  roundsUsed: number;
+  /** 验收耗时（ms）：优先最新报告起止，回退任务快照起止；两者都不可得即 `null` */
+  spanMs: number | null;
+  /** 改动行数：来自最新报告 diffstat；无报告即 `null` */
+  totalAdd: number | null;
+  totalDel: number | null;
+  changedFiles: number;
+  /** 最新报告判定；无报告即 `null` */
+  reportPassed: boolean | null;
+  verdict: string | null;
+  message: string | null;
+  /** 最新报告里失败的检查项名（去重升序） */
+  failedChecks: string[];
+  errorType: string | null;
+}
+
+/**
+ * 组装对比行：`reports` 为 `taskId → 已解析的最新报告摘要`（缺失即 `null`）。
+ * 输入的 `tasks` 顺序即输出顺序（由调用方按勾选顺序给），本函数只做**对齐与兜底**。
+ */
+export function compareTasks(
+  tasks: TaskSummary[],
+  reports: Record<string, ReportSummary | null | undefined>,
+): CompareRow[] {
+  return tasks.map((t) => {
+    const report = reports[t.taskId] ?? null;
+    return {
+      taskId: t.taskId,
+      status: t.status,
+      agentId: t.agentId,
+      projectPath: t.projectPath,
+      roundsUsed: t.roundsUsed,
+      // 报告的起止时间优先；缺失或不可解析时回退任务快照，仍不可得则如实留 null
+      spanMs:
+        spanBetween(report?.startedAt ?? null, report?.finishedAt ?? null) ??
+        spanBetween(t.createdAt, t.finishedAt),
+      totalAdd: report ? report.diffstat.totalAdd : null,
+      totalDel: report ? report.diffstat.totalDel : null,
+      changedFiles: report
+        ? report.diffstat.perFile.length > 0
+          ? report.diffstat.perFile.length
+          : report.changedFiles.length
+        : t.changedFiles.length,
+      reportPassed: report ? report.passed : null,
+      verdict: report ? report.verdict : null,
+      message: report ? report.message || null : t.lastMessage,
+      failedChecks: report
+        ? [...new Set(report.checks.filter((c) => !c.passed && !c.skipped).map((c) => c.name))].sort()
+        : [],
+      errorType: t.errorType,
+    };
+  });
+}
+
+/**
+ * 某个对比指标的**横向最优值**（数值越小越好，如轮次 / 耗时），用于界面标注。
+ * 全部缺失即 `null`——不编造赢家。
+ */
+export function bestOf(rows: CompareRow[], pick: (row: CompareRow) => number | null): number | null {
+  const values = rows.map(pick).filter((v): v is number => v !== null && Number.isFinite(v));
+  if (values.length === 0) return null;
+  return Math.min(...values);
+}
+
+/**
+ * 勾选状态的**下一步**：已选中则取消；未满上限则追加到末尾；
+ * 已满上限返回 `null`——由界面明确提示，**绝不顶替**已有勾选（返 `null` 即「这次没生效」）。
+ */
+export function nextCompareSelection(
+  ids: string[],
+  taskId: string,
+  max = COMPARE_MAX,
+): string[] | null {
+  if (ids.includes(taskId)) return ids.filter((id) => id !== taskId);
+  if (ids.length >= max) return null;
+  return [...ids, taskId];
 }

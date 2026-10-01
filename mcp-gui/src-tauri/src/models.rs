@@ -155,6 +155,18 @@ pub struct TaskFilter {
     pub to: Option<String>,
     #[serde(default)]
     pub only_active: bool,
+    /// 精确匹配 `task.errorType`（`None` / 空串 = 不限）
+    #[serde(default)]
+    pub error_type: Option<String>,
+    /// `None` = 不限；`Some(true/false)` 精确匹配 `task.dryRun`
+    #[serde(default)]
+    pub dry_run: Option<bool>,
+    /// `Some(true)` = `roundsUsed > 1`；`Some(false)` = `roundsUsed <= 1`
+    #[serde(default)]
+    pub reworked: Option<bool>,
+    /// `Some(true)` = 存在 `report-<轮次>.html`（`artifacts.reportHtml` 非空）
+    #[serde(default)]
+    pub has_visual: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

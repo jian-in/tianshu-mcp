@@ -8,6 +8,30 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.1.1-beta.2] — 2026-10-02 — mcp-gui independent line
+
+> This section records the two pre-release batches of the GUI's independent `0.1.1` line. **The MCP package is
+> untouched** (the GUI versions independently of the package, under its own `gui-v*` tags). All three items in
+> `0.1.1-beta.2` are **read-only** enhancements: structured filters, multi-task compare and a command palette.
+
+### Added
+
+- **A7 richer structured filtering (`0.1.1-beta.2`)**: the overview filter sheet grows from 7 to 11 conditions, adding **error type `errorType`** (options come from the **facets** of the current task set — no hard-coded enum), **dry run `dryRun`**, **reworked `reworked`** (`roundsUsed > 1`; a single round is not rework) and **visual acceptance `hasVisual`** (a `report-<round>.html` exists). Rust's `TaskFilter` (`models.rs`) plus `matches_filter` in `scanner.rs` and the frontend's `filterTasks` in `core/filter.ts` are **two copies with identical semantics**; every new Rust field is `#[serde(default)]`, so older callers that omit it keep working.
+- **A4 multi-task compare (`0.1.1-beta.2`)**: a new "Compare tasks" section on the Insights page — pick **2–4** tasks on the left (going past the limit gives an **explicit notice and never replaces** an existing pick) and read a side-by-side metric matrix on the right (status / agent / project / rounds / verify time / changed lines / files changed / latest verdict / failed checks / error type / message), with the rounds and verify-time rows marking the **best value across tasks**. Reports are read **on demand** and cached per `taskId`; anything missing shows `—` (never invented).
+- **A8a command palette and hotkeys (`0.1.1-beta.2`)**: `Ctrl/Cmd + K` opens the palette (**subsequence fuzzy matching**; `↑` `↓` to move, `Enter` to run, `Esc` to close; while open **no other global hotkey fires**), and `Ctrl/Cmd + R` refreshes (intercepted, so the webview never reloads; combinations with `Alt` / `Shift` are never intercepted). Commands reuse existing data and actions (jump to pages / switch data home / open a task directly, capped at 50 task commands).
+- **Insights page skeleton + A1 scoreboard / A2 attribution / A3 trend (`0.1.1-beta.1`)**: a new full "Insights" page in the sidebar (the shell `view` grows to four states); a new read-only aggregation command `get_insights` (`insights.rs` + `timestamps.rs`) that only **counts and sums**, leaving rates / TopN / trend gap-filling / week bucketing to frontend pure functions; the trend supports **by day / by week** (Monday week start) and a **rework rate**.
+
+### Tests
+
+- **`0.1.1-beta.2`**: frontend **147 passed** (13 files; new `test/hotkeys.test.ts` / `test/palette.test.ts`, four new filter cases in `test/filter.test.ts`, and `compareTasks` / `bestOf` / `nextCompareSelection` cases in `test/insights.test.ts`), with `check:schema` / `typecheck` / `lint` / `build` all green. Rust gains the `matches_filter_supports_new_dimensions` test (local `cargo fmt --check` passes; `clippy` / `cargo test` run in `gui.yml`).
+- **Simulated real-machine run (headless Edge + mock preview) passed 13/13**: all new filter controls present and "reworked = yes" actually filtering (4 → 1), `Ctrl+K` opening the palette, fuzzy-matching and jumping to the Insights page, the compare matrix headers and metric rows, the 4-task cap, and no `pageerror`.
+
+### Docs
+
+- Added `docs/release-gui-v0.1.1-beta.1.md` + `.en.md` and `docs/release-gui-v0.1.1-beta.2.md` + `.en.md`; `docs/gui-log-viewer` gained §3.7 Compare tasks, §3.8 Command palette and hotkeys and §3.1 filter details in both languages; README gained the "structured filters / multi-task compare / command palette" bullet; ARCHITECTURE gained §16.9 "Filter semantics and command-palette contract" in both languages; HANDOFF's top snapshot and handoff section were updated.
+
+---
+
 ## [0.7.7] - 2026-10-01
 
 ### Added

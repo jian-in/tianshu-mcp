@@ -1125,6 +1125,28 @@ Tauri 2 的 webview 会**拦截新建窗口请求**（`target="_blank"` / `windo
 | 使用范围 | 目前唯一用途是「手动下载」兜底入口（打开发行页）；**不得**用它打开业务数据路径（导出/揭示文件另有命令） |
 | 失败隔离 | 打开失败并入既有 `setError`，**不影响日志查看主流程**（与更新链路同一口径） |
 
+### 16.9 筛选口径与命令面板契约（0.1.1-beta.2 起）
+
+**筛选条件是「双份实现」，必须同口径**（与 §16.2 的双份 schema 同源思路）：
+
+| 位置 | 实现 | 说明 |
+|---|---|---|
+| 桌面运行时 | `src-tauri/src/scanner.rs` 的 `matches_filter` | `TaskFilter` 由 `list_tasks` 接收，后端先过滤一次 |
+| 前端（含本地预览） | `src/core/filter.ts` 的 `filterTasks` | `visibleTasks` 再过滤一次；mock 的 `listTasks` 忽略入参，**本地预览全靠这一份** |
+
+因此新增筛选字段必须**同时改两处**，并且语义逐字对应：`errorType` 精确匹配（空串 = 不限）、`dryRun` 精确匹配、
+`reworked` = `roundsUsed > 1`（**1 轮不算返修**）、`hasVisual` = `artifacts.reportHtml` 非空；
+Rust 侧字段一律 `#[serde(default)]`，旧调用方不传不报错。
+
+**命令面板与快捷键的动作归属**：`src/core/hotkeys.ts`（按键 → 动作）与 `src/core/palette.ts`（命令装配 + 模糊匹配）
+都是纯函数、可单测；**动作实现只在 `App.vue`**（面板组件不知道视图状态，只派发命令 `id`）。
+面板打开时 `matchHotkey` 只认关闭键——避免在面板背后触发刷新等全局动作；
+`Ctrl/Cmd + R` 已 `preventDefault`（否则会触发 webview 重载）；带 `Alt` / `Shift` 的组合一律不拦截。
+
+**多任务对比（A4）的取数边界**：勾选上限 `COMPARE_MAX = 4`，判定由纯函数 `nextCompareSelection` 承担
+（满额返回 `null` = 这次不生效，**绝不顶替**已有勾选）；报告**按需**读最新一轮 `report-<轮次>.json` 并按 `taskId`
+缓存，切换数据目录即清空勾选与缓存；缺失值一律 `null` → 界面显示 `—`，**不编造时长与结论**。
+
 ---
 
 ## 17. 延伸阅读

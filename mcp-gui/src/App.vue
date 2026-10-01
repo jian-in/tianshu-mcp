@@ -10,9 +10,13 @@
  * 布局契约：任务分区导航（事件流 / Agent 日志 / 验收日志 / 验收报告）**并入同一条侧栏**，
  * 页面里不存在第二层左栏；全局 `server.log` 由主导航「运行日志」承担，其形态由
  * `app.tab === "serverLog"` 派生——它一出现，任务上下文（摘要带与分区导航）即整体让位。
+ *
+ * 全局快捷键（`Ctrl/Cmd + K` 命令面板、`Ctrl/Cmd + R` 刷新）在本组件统一监听与分发；
+ * 命令目录由 `@/core/palette` 装配，面板组件只派发命令 `id`（见 `CommandPalette.vue`）。
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import AppIcon from "./components/AppIcon.vue";
+import CommandPalette from "./components/CommandPalette.vue";
 import DataHomeBar from "./components/DataHomeBar.vue";
 import OverviewPage from "./components/OverviewPage.vue";
 import InsightsPage from "./components/InsightsPage.vue";
@@ -25,7 +29,17 @@ import SettingsDrawer from "./components/SettingsDrawer.vue";
 import UpdateDialog from "./components/UpdateDialog.vue";
 import { useI18n } from "@/i18n";
 import { isMockRuntime } from "@/api";
-import { app, clearError, openTab, selectTask, type TabKey } from "@/stores/app";
+import { matchHotkey } from "@/core/hotkeys";
+import { buildCommands, type PaletteCommand } from "@/core/palette";
+import {
+  app,
+  clearError,
+  openTab,
+  refreshTasks,
+  selectTask,
+  setActiveDataHome,
+  type TabKey,
+} from "@/stores/app";
 
 const { t } = useI18n();
 
@@ -34,6 +48,8 @@ const view = ref<"overview" | "insights" | "capabilities" | "workspace">("overvi
 /** 概览页模式（提升到外壳：侧栏搜索框聚焦即进入搜索模式） */
 const overviewMode = ref<"tasks" | "search">("tasks");
 const settingsOpen = ref(false);
+/** 命令面板（`Ctrl/Cmd + K`） */
+const paletteOpen = ref(false);
 
 /** 工作区的 server.log 形态，由 tab 派生（不再单设状态位） */
 const isServerLog = computed(() => view.value === "workspace" && app.tab === "serverLog");
@@ -87,6 +103,44 @@ function goInsights(): void {
 function onNavigated(): void {
   view.value = "workspace";
 }
+
+/* ---------------- 命令面板与全局快捷键 ---------------- */
+
+/** 命令目录：来自既有任务列表与数据目录（`@/core/palette` 只装配、不执行） */
+const paletteCommands = computed<PaletteCommand[]>(() =>
+  buildCommands(t, {
+    tasks: app.tasks,
+    dataHomes: app.dataHome.entries.map((entry) => entry.path),
+    activeHome: app.dataHome.active,
+  }),
+);
+
+/** 命令派发：动作只在壳体实现（面板不知道视图状态） */
+function onPaletteSelect(id: string): void {
+  paletteOpen.value = false;
+  if (id === "nav:overview") goOverview();
+  else if (id === "nav:insights") goInsights();
+  else if (id === "nav:serverLog") void openServerLog();
+  else if (id === "nav:capabilities") goCapabilities();
+  else if (id === "nav:search") openSearch();
+  else if (id === "nav:settings") settingsOpen.value = true;
+  else if (id.startsWith("task:")) void openTask(id.slice("task:".length));
+  else if (id.startsWith("home:")) void setActiveDataHome(id.slice("home:".length));
+}
+
+/** 全局按键：未打开面板时认 `Ctrl/Cmd + K`（开面板）与 `Ctrl/Cmd + R`（刷新）；面板打开时只认关闭键 */
+function onKeydown(event: KeyboardEvent): void {
+  const action = matchHotkey(event, paletteOpen.value);
+  if (action === null) return;
+  // 命中即拦截，避免 `Ctrl/Cmd + R` 触发 webview 重载
+  event.preventDefault();
+  if (action === "paletteToggle") paletteOpen.value = !paletteOpen.value;
+  else if (action === "paletteClose") paletteOpen.value = false;
+  else if (action === "refresh") void refreshTasks();
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
@@ -134,6 +188,12 @@ function onNavigated(): void {
         <button class="navitem" :class="{ 'is-on': settingsOpen }" @click="settingsOpen = true">
           <AppIcon name="settings" size="14" />
           <span class="grow truncate">{{ t("settings.title") }}</span>
+        </button>
+
+        <button class="navitem" :class="{ 'is-on': paletteOpen }" @click="paletteOpen = true">
+          <AppIcon name="command" size="14" />
+          <span class="grow truncate">{{ t("palette.title") }}</span>
+          <span class="tag palette-key">{{ t("palette.shortcut") }}</span>
         </button>
 
         <DataHomeBar />
@@ -194,6 +254,14 @@ function onNavigated(): void {
     </main>
 
     <SettingsDrawer v-if="settingsOpen" @close="settingsOpen = false" />
+
+    <!-- 命令面板：目录来自外壳，面板只派发 id（`@/core/palette`） -->
+    <CommandPalette
+      v-if="paletteOpen"
+      :commands="paletteCommands"
+      @select="onPaletteSelect"
+      @close="paletteOpen = false"
+    />
 
     <!-- 更新日志面板：启动静默检查命中或手动检查后打开（面板内部自行关闭） -->
     <UpdateDialog v-if="app.update.dialogOpen" />

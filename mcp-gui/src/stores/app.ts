@@ -21,6 +21,8 @@ import type {
 } from "@/api/types";
 import { emptyLogFilter, type LogFilter } from "@/core/logline";
 import { emptyFilter, facetValues, filterTasks, sortTasks } from "@/core/filter";
+import { nextCompareSelection } from "@/core/insights";
+import { summarizeReport, type ReportSummary } from "@/core/report";
 import { DEFAULT_WINDOW_BYTES } from "@/core/tailwindow";
 import { shouldPrompt } from "@/core/version";
 import { preferences, updatePreferences } from "@/stores/preferences";
@@ -55,6 +57,11 @@ export interface InsightsState {
   /** 时间范围（按 `updatedAt`，ISO 串；null = 不限） */
   from: string | null;
   to: string | null;
+  /** A4 多任务对比：已勾选的任务 ID（按勾选先后顺序，最多 4 个） */
+  compareIds: string[];
+  /** A4：`taskId → 最新报告摘要`；`null` = 已尝试读取但报告缺失或不可解析 */
+  compareReports: Record<string, ReportSummary | null>;
+  compareLoading: boolean;
 }
 
 const EMPTY_HOME: DataHomeState = { detected: "", active: "", entries: [] };
@@ -130,6 +137,9 @@ export const app = reactive({
     loading: false,
     from: null,
     to: null,
+    compareIds: [],
+    compareReports: {},
+    compareLoading: false,
   } as InsightsState,
 });
 
@@ -166,6 +176,8 @@ export async function setActiveDataHome(path: string): Promise<void> {
   try {
     app.dataHome = await api.setActiveDataHome(path);
     app.selectedTaskId = null;
+    // 换目录后对比勾选与报告缓存都失效（任务属于旧目录）
+    clearCompareTasks();
     await refreshTasks();
     // 已加载过洞察时切目录要重载（D12：不做实时监听，但切目录必须跟着变）
     if (app.insights.data) await loadInsights();
@@ -209,6 +221,10 @@ export async function refreshTasks(): Promise<void> {
     if (app.selectedTaskId && !app.tasks.some((t) => t.taskId === app.selectedTaskId)) {
       app.selectedTaskId = null;
     }
+    // 对比勾选只保留仍存在的任务（否则上限会被幽灵项占满）
+    app.insights.compareIds = app.insights.compareIds.filter((id) =>
+      app.tasks.some((t) => t.taskId === id),
+    );
     if (!app.selectedTaskId && app.tasks.length > 0) {
       await selectTask(app.tasks[0]?.taskId ?? null);
     }
@@ -424,6 +440,63 @@ export async function loadInsights(): Promise<void> {
     setError(err);
   } finally {
     app.insights.loading = false;
+  }
+}
+
+/* ---------------- A4 多任务对比 ---------------- */
+
+/**
+ * 勾选 / 取消勾选一个任务参与对比。
+ * 上限（`COMPARE_MAX`，见 `@/core/insights`）：已满时返回 `false` 由界面明确提示——**不静默顶替已有勾选**。
+ * 勾选成功后**按需**拉取该任务最新一轮报告（只读 `readReport`），已取过的不重复请求。
+ */
+export async function toggleCompareTask(taskId: string): Promise<boolean> {
+  const next = nextCompareSelection(app.insights.compareIds, taskId);
+  if (next === null) return false;
+  const added = !app.insights.compareIds.includes(taskId);
+  app.insights.compareIds = next;
+  if (added) await ensureCompareReport(taskId);
+  return true;
+}
+
+export function clearCompareTasks(): void {
+  app.insights.compareIds = [];
+  app.insights.compareReports = {};
+}
+
+/** 报告按 `taskId` 缓存：已取过（含「确认缺失」的 `null`）就不再请求 */
+async function ensureCompareReport(taskId: string): Promise<void> {
+  if (taskId in app.insights.compareReports) return;
+  const task = app.tasks.find((t) => t.taskId === taskId);
+  if (!task) return;
+  const round = task.reportRound ?? (task.artifacts.reportJson.length > 0
+    ? (task.artifacts.reportJson[task.artifacts.reportJson.length - 1] ?? null)
+    : null);
+  app.insights.compareLoading = true;
+  try {
+    let summary: ReportSummary | null = null;
+    if (round !== null) {
+      const res = await api.readReport({
+        dataHome: app.dataHome.active,
+        taskId,
+        round,
+        kind: "json",
+      });
+      if (!res.missing) {
+        try {
+          summary = summarizeReport(JSON.parse(res.text) as unknown);
+        } catch {
+          // 报告损坏：如实记为「不可解析」，不猜内容
+          summary = null;
+        }
+      }
+    }
+    app.insights.compareReports[taskId] = summary;
+    app.error = null;
+  } catch (err) {
+    setError(err);
+  } finally {
+    app.insights.compareLoading = false;
   }
 }
 

@@ -141,6 +141,27 @@ fn matches_filter(task: &TaskSummary, filter: &TaskFilter) -> bool {
             return false;
         }
     }
+    // 以下四项与前端 `core/filter.ts` 的 `filterTasks` **逐行同口径**，改一处必须改两处
+    if let Some(error_type) = &filter.error_type {
+        if !error_type.is_empty() && task.error_type.as_deref() != Some(error_type.as_str()) {
+            return false;
+        }
+    }
+    if let Some(want) = filter.dry_run {
+        if task.dry_run != want {
+            return false;
+        }
+    }
+    if let Some(want) = filter.reworked {
+        if (task.rounds_used > 1) != want {
+            return false;
+        }
+    }
+    if let Some(want) = filter.has_visual {
+        if (!task.artifacts.report_html.is_empty()) != want {
+            return false;
+        }
+    }
     let keyword = filter.keyword.trim().to_lowercase();
     if !keyword.is_empty() {
         let haystack = format!(
@@ -283,6 +304,84 @@ mod tests {
             ..req
         };
         assert_eq!(list_tasks(&home, &active_only).len(), 1);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn matches_filter_supports_new_dimensions() {
+        let home = std::env::temp_dir().join("tianshu-gui-filter-test");
+        let _ = std::fs::remove_dir_all(&home);
+
+        let dir1 = home.join("tasks/tsk_1");
+        std::fs::create_dir_all(&dir1).expect("建目录");
+        let s1 = r#"{"status":"failed","roundsUsed":1,"dryRun":true,"errorType":"timeout"}"#;
+        std::fs::write(dir1.join("task.json"), s1).expect("写快照");
+
+        let dir2 = home.join("tasks/tsk_2");
+        std::fs::create_dir_all(&dir2).expect("建目录");
+        std::fs::write(
+            dir2.join("task.json"),
+            r#"{"status":"succeeded","roundsUsed":3}"#,
+        )
+        .expect("写快照");
+
+        let dir3 = home.join("tasks/tsk_3");
+        std::fs::create_dir_all(&dir3).expect("建目录");
+        std::fs::write(
+            dir3.join("task.json"),
+            r#"{"status":"succeeded","roundsUsed":2}"#,
+        )
+        .expect("写快照");
+        // 只有 tsk_3 带视觉验收产物
+        std::fs::write(dir3.join("report-0.html"), "<html>").expect("写报告");
+
+        let base = ListTasksRequest {
+            data_home: home.to_string_lossy().to_string(),
+            filter: TaskFilter::default(),
+            sort_key: "taskId".to_string(),
+            sort_dir: "asc".to_string(),
+        };
+        let ids = |filter: TaskFilter| -> Vec<String> {
+            let req = ListTasksRequest {
+                filter,
+                ..base.clone()
+            };
+            list_tasks(&home, &req)
+                .into_iter()
+                .map(|t| t.task_id)
+                .collect()
+        };
+
+        let dry = TaskFilter {
+            dry_run: Some(true),
+            ..TaskFilter::default()
+        };
+        assert_eq!(ids(dry), vec!["tsk_1"]);
+
+        let reworked = TaskFilter {
+            reworked: Some(true),
+            ..TaskFilter::default()
+        };
+        assert_eq!(ids(reworked), vec!["tsk_2", "tsk_3"]);
+
+        let one_pass = TaskFilter {
+            reworked: Some(false),
+            ..TaskFilter::default()
+        };
+        assert_eq!(ids(one_pass), vec!["tsk_1"]);
+
+        let err = TaskFilter {
+            error_type: Some("timeout".to_string()),
+            ..TaskFilter::default()
+        };
+        assert_eq!(ids(err), vec!["tsk_1"]);
+
+        let visual = TaskFilter {
+            has_visual: Some(true),
+            ..TaskFilter::default()
+        };
+        assert_eq!(ids(visual), vec!["tsk_3"]);
+
         let _ = std::fs::remove_dir_all(&home);
     }
 }

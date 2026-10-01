@@ -2186,3 +2186,206 @@ input[type="checkbox"] {
 .ins-dot-rework {
   background: var(--tone-warn);
 }
+
+/* A4 多任务对比：左选择器 + 右指标矩阵（窄屏改为上下堆叠） */
+.cmp {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .cmp {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cmp-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.cmp-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--line-hair);
+  border-radius: var(--r-1);
+  background: var(--bg-inset);
+}
+
+.cmp-check {
+  width: 100%;
+  gap: var(--sp-3);
+}
+
+/* 勾选行在窄容器里必须允许收缩，否则 tag 会把长 ID 挤出去 */
+.cmp-check .truncate {
+  min-width: 0;
+}
+
+.cmp-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+/* 指标矩阵可能宽于容器：横向滚动而不是压扁列 */
+.cmp-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line-hair);
+  border-radius: var(--r-1);
+}
+
+.cmp-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--fs-12);
+  color: var(--fg-dim);
+}
+
+.cmp-table th,
+.cmp-table td {
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--line-hair);
+  text-align: left;
+  vertical-align: top;
+}
+
+.cmp-table thead th {
+  background: var(--bg-inset);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+.cmp-table tbody th {
+  font-weight: 400;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+/* 该行的横向最优（轮次最少 / 耗时最短）：只加语义色，不加装饰 */
+.cmp-table td.is-best {
+  color: var(--tone-ok);
+}
+
+.cmp-task {
+  font-family: var(--font-mono);
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+/* ============================================================
+ * 22. 命令面板（A8a：`Ctrl/Cmd + K`）
+ * 复用 `.poverlay` 遮罩；面板锚在顶部（列表向下增长，不随结果多少跳动）。
+ */
+.poverlay-top {
+  align-items: flex-start;
+  padding: 12vh var(--sp-4) var(--sp-4);
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  max-width: 92vw;
+  max-height: 70vh;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--bg-panel);
+  box-shadow: var(--sh-panel);
+  animation: rise var(--dur) var(--ease);
+}
+
+.palette-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line-hair);
+  color: var(--fg-faint);
+}
+
+.palette-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+}
+
+.palette-input::placeholder {
+  color: var(--fg-faint);
+}
+
+.palette-input:focus {
+  outline: none;
+}
+
+/* 快捷键提示片：与侧栏导航项里的同一枚标记共用样式 */
+.palette-key {
+  flex: none;
+  font-family: var(--font-mono);
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-2);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-1);
+  color: var(--fg-dim);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 高亮只改背景与前景色，不做位移（键盘导航时不抖动） */
+.palette-item.is-active {
+  background: var(--accent-quiet);
+  color: var(--fg);
+}
+
+.palette-item .hint {
+  max-width: 45%;
+}
+
+.palette-empty {
+  flex: 1 1 auto;
+}
+
+.palette-foot {
+  flex: none;
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--line-hair);
+}

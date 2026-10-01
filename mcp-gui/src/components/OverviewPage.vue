@@ -39,6 +39,13 @@ const STATUS_CHIPS: { tone: StatusTone | null; labelKey: string }[] = [
   { tone: "info", labelKey: "status.needs_user" },
 ];
 
+/** 三态布尔筛选（全部 / 是 / 否）；`null` = 不限 */
+const TRI_STATES: { value: boolean | null; labelKey: string }[] = [
+  { value: null, labelKey: "common.all" },
+  { value: true, labelKey: "common.yes" },
+  { value: false, labelKey: "common.no" },
+];
+
 const counts = computed(() => countByPhase(app.tasks));
 const succeededCount = computed(() => app.tasks.filter((task) => task.status === "succeeded").length);
 const failedCount = computed(() => app.tasks.filter((task) => task.status === "failed").length);
@@ -160,6 +167,37 @@ async function onSortChange(key: SortKey, dir: SortDir): Promise<void> {
           <div class="field">
             <span class="field-label">{{ t("tasks.filterTo") }}</span>
             <input v-model="toDate" class="input" type="date" />
+          </div>
+          <div class="field">
+            <span class="field-label">{{ t("tasks.filterErrorType") }}</span>
+            <select v-model="app.filter.errorType" class="select" @change="onFilterChange">
+              <option :value="null">{{ t("common.all") }}</option>
+              <option v-for="e in facets.errorTypes" :key="e" :value="e">{{ e }}</option>
+            </select>
+          </div>
+          <div class="field">
+            <span class="field-label">{{ t("tasks.filterDryRun") }}</span>
+            <select v-model="app.filter.dryRun" class="select" @change="onFilterChange">
+              <option v-for="opt in TRI_STATES" :key="String(opt.value)" :value="opt.value">
+                {{ t(opt.labelKey) }}
+              </option>
+            </select>
+          </div>
+          <div class="field">
+            <span class="field-label">{{ t("tasks.filterReworked") }}</span>
+            <select v-model="app.filter.reworked" class="select" @change="onFilterChange">
+              <option v-for="opt in TRI_STATES" :key="String(opt.value)" :value="opt.value">
+                {{ t(opt.labelKey) }}
+              </option>
+            </select>
+          </div>
+          <div class="field">
+            <span class="field-label">{{ t("tasks.filterHasVisual") }}</span>
+            <select v-model="app.filter.hasVisual" class="select" @change="onFilterChange">
+              <option v-for="opt in TRI_STATES" :key="String(opt.value)" :value="opt.value">
+                {{ t(opt.labelKey) }}
+              </option>
+            </select>
           </div>
         </div>
 

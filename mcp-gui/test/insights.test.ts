@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateInsights,
   avg,
+  bestOf,
+  compareTasks,
   dayOf,
   extractReportFields,
   fillTrend,
   mondayOf,
+  nextCompareSelection,
   parseUtcMillis,
   rate,
   reworkRate,
@@ -14,7 +17,8 @@ import {
   toWeeks,
   type InsightRecord,
 } from "@/core/insights";
-import type { InsightsDay, InsightsGroup, InsightsReason } from "@/api/types";
+import type { CheckSummary, ReportSummary } from "@/core/report";
+import type { InsightsDay, InsightsGroup, InsightsReason, TaskSummary } from "@/api/types";
 
 const day = (
   date: string,
@@ -394,5 +398,153 @@ describe("insights · 聚合镜像（与 Rust insights.rs 单测同数据同结�
     expect(empty.days).toEqual([]);
     expect(empty.agents).toEqual([]);
     expect(empty.scannedTasks).toBe(0);
+  });
+});
+
+describe("insights · A4 多任务对比", () => {
+  const snap = (patch: Partial<TaskSummary> & { taskId: string }): TaskSummary => ({
+    status: "succeeded",
+    workspaceMode: "project",
+    projectPath: "D:/p1",
+    displayPath: "D:/p1",
+    agentId: "codex",
+    task: "做点事",
+    roundsUsed: 1,
+    reportRound: 0,
+    createdAt: "2026-09-26T10:00:00Z",
+    updatedAt: "2026-09-26T10:30:00Z",
+    finishedAt: "2026-09-26T10:20:00Z",
+    lastMessage: null,
+    dryRun: false,
+    errorType: null,
+    checkSummary: null,
+    diffstat: null,
+    changedFiles: [],
+    dataHome: "/home",
+    artifacts: {
+      agentLogs: [],
+      verifyLogs: [],
+      reportMd: [],
+      reportJson: [],
+      reportHtml: [],
+      dryRunMd: [],
+      dryRunJson: [],
+      hasBaseline: false,
+      hasDryRunPlan: false,
+    },
+    ...patch,
+  });
+
+  const report = (patch: Partial<ReportSummary> = {}): ReportSummary => ({
+    round: 0,
+    taskId: null,
+    projectPath: null,
+    startedAt: "2026-09-26T10:05:00Z",
+    finishedAt: "2026-09-26T10:05:02Z",
+    passed: true,
+    verdict: "passed",
+    message: "全部通过",
+    checks: [],
+    counts: { total: 0, passed: 0, failed: 0, skipped: 0, optional: 0 },
+    changedFiles: [],
+    untrackedFiles: [],
+    diffstat: { totalAdd: 0, totalDel: 0, perFile: [] },
+    signals: {},
+    bigFileChanges: [],
+    warnings: [],
+    notes: [],
+    blockingIssues: [],
+    hasVisual: false,
+    dryRunReason: null,
+    ...patch,
+  });
+
+  const check = (name: string, passed: boolean): CheckSummary => ({
+    name,
+    cmd: "",
+    passed,
+    durationMs: 1,
+    exitCode: passed ? 0 : 1,
+    timeout: false,
+    skipped: false,
+    optional: false,
+    aborted: false,
+    reason: null,
+    outputTail: "",
+  });
+
+  it("对齐各任务指标；有报告时优先用报告的起止与改动统计", () => {
+    const rows = compareTasks(
+      [
+        snap({ taskId: "t1", roundsUsed: 3, errorType: "timeout", changedFiles: ["a", "b"] }),
+        snap({ taskId: "t2", roundsUsed: 1, projectPath: "D:/p2", agentId: "zcode" }),
+      ],
+      {
+        t1: report({
+          passed: false,
+          verdict: "failed",
+          message: "构建失败",
+          startedAt: "2026-09-26T10:00:00Z",
+          finishedAt: "2026-09-26T10:00:05Z",
+          checks: [check("build", false), check("build", false), check("typecheck", true)],
+          diffstat: {
+            totalAdd: 12,
+            totalDel: 3,
+            perFile: [{ file: "a.ts", add: 12, del: 3, binary: false }],
+          },
+        }),
+        t2: null,
+      },
+    );
+
+    expect(rows.map((r) => r.taskId)).toEqual(["t1", "t2"]);
+    expect(rows[0]).toMatchObject({
+      roundsUsed: 3,
+      errorType: "timeout",
+      spanMs: 5000,
+      totalAdd: 12,
+      totalDel: 3,
+      changedFiles: 1,
+      reportPassed: false,
+      verdict: "failed",
+      message: "构建失败",
+      failedChecks: ["build"],
+    });
+    // t2 无报告：改动统计与判定为 null（显示「—」），耗时回退任务快照 20 分钟
+    expect(rows[1]!.totalAdd).toBeNull();
+    expect(rows[1]!.reportPassed).toBeNull();
+    expect(rows[1]!.verdict).toBeNull();
+    expect(rows[1]!.changedFiles).toBe(0);
+    expect(rows[1]!.spanMs).toBe(20 * 60_000);
+  });
+
+  it("运行中（finishedAt 为空）与非法时间：耗时如实留 null", () => {
+    const rows = compareTasks(
+      [
+        snap({ taskId: "running", status: "running", finishedAt: null }),
+        snap({ taskId: "badtime", createdAt: "not-a-time" }),
+      ],
+      {},
+    );
+    expect(rows[0]!.spanMs).toBeNull();
+    expect(rows[1]!.spanMs).toBeNull();
+  });
+
+  it("bestOf：只在实际存在的数值里取最小值；全缺失即 null（不编造赢家）", () => {
+    const rows = compareTasks([snap({ taskId: "a", roundsUsed: 4 }), snap({ taskId: "b" })], {});
+    expect(bestOf(rows, (r) => r.roundsUsed)).toBe(1);
+    expect(bestOf(rows, (r) => r.spanMs)).toBe(20 * 60_000);
+    expect(bestOf(rows, (r) => r.totalAdd)).toBeNull();
+    expect(bestOf([], (r) => r.roundsUsed)).toBeNull();
+  });
+
+  it("nextCompareSelection：追加保持勾选顺序、取消即移除、满额返回 null（不顶替）", () => {
+    expect(nextCompareSelection([], "a")).toEqual(["a"]);
+    expect(nextCompareSelection(["a", "b"], "c")).toEqual(["a", "b", "c"]);
+    expect(nextCompareSelection(["a", "b"], "a")).toEqual(["b"]);
+    expect(nextCompareSelection(["a", "b", "c", "d"], "e")).toBeNull();
+    // 满额但目标是「已选中项」→ 仍可取消（否则会卡死在上限）
+    expect(nextCompareSelection(["a", "b", "c", "d"], "b")).toEqual(["a", "c", "d"]);
+    expect(nextCompareSelection(["a", "b"], "c", 3)).toEqual(["a", "b", "c"]);
   });
 });
