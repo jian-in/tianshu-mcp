@@ -1,6 +1,6 @@
 /**
  * server.ts：组装 —— 加载配置、初始化数据目录/日志、TaskManager/AcceptanceEngine/
- * Registry、注册 11 个工具到 McpServer、触发技能自检安装。被 index.ts 调用以 stdio 启动。
+ * Registry、注册 13 个工具到 McpServer、触发技能自检安装。被 index.ts 调用以 stdio 启动。
  */
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -87,7 +87,7 @@ export async function buildServer(
     {
       capabilities: { tools: {} },
       instructions:
-        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/traework/kimicode/qoder）完成项目开发、验收、返修闭环。ZCode 提问或等待用户环境处理时进入 needs_user，可用 continue_task 恢复原会话。run_task 异步返回 taskId，再用 query_task 轮询。",
+        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/traework/kimicode/qoder）完成项目开发、验收、返修闭环。ZCode 提问或等待用户环境处理时进入 needs_user，可用 continue_task 恢复原会话。run_task 异步返回 taskId；随后用 wait_task 阻塞等待任务到达停点（终态或 needs_user），超时则再次调用本工具继续等待；需要看进度细节时用 query_task 轮询。",
     },
   );
 
@@ -120,7 +120,9 @@ export async function buildServer(
           title: tool.name,
         },
       },
-      async (args) => {
+      // issue #28：把 SDK 的请求 extra（含 signal）透传给 handler，供 wait_task/wait_any
+      // 感知请求取消 / 连接关闭；其余 handler 不读 extra，行为不变。
+      async (args, extra) => {
         try {
           const parsed = tool.inputSchema.safeParse(args ?? {});
           if (!parsed.success) {
@@ -132,7 +134,7 @@ export async function buildServer(
               isError: true,
             };
           }
-          return await handler(parsed.data as Record<string, unknown>);
+          return await handler(parsed.data as Record<string, unknown>, extra);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           return { content: [{ type: "text" as const, text: `Error: ${msg}` }], isError: true };

@@ -35,7 +35,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design
 | # | 实测约束 | 架构后果 | 代码落点 |
 |---|---|---|---|
 | C1 | 天枢的 MCP 工具**只回文本**（`content[].text` 被拼成字符串，`isError` 透传） | 所有结果统一为「人类可读文本 + `---tianshu-mcp-meta---` JSON 块」，便于宿主正则抽取；不依赖 resources / prompts | `src/mcp/formatter.ts:104-106` |
-| C2 | 天枢**按次同步**调用 `tools/call` | 长任务必须异步化：`run_task` 秒回 `taskId`，`query_task` 轮询；无服务端推送 | `src/mcp/tools.ts:56`（`run_task` 定义）、`src/mcp/tools.ts:65`（`query_task`） |
+| C2 | 天枢**按次同步**调用 `tools/call` | 长任务必须异步化：`run_task` 秒回 `taskId`，`wait_task` 阻塞等到停点（`query_task` 轮询看进度）；无服务端推送 | `src/mcp/tools.ts:58`（`run_task` 定义）、`src/mcp/tools.ts:109`（`wait_task`）、`src/mcp/tools.ts:67`（`query_task`） |
 | C3 | 桌面 agent 的请求在传输层加密，无法在客户端外构造 | 唯一可行路径是 **CDP 驱动桌面 UI，从 DOM 提取结果** | `src/agents/{codex,zcode,traework,kimicode,qoder,opendesign}/cdp.ts` |
 | C4 | Codex 桌面端是 **MSIX 商店包**，GUI 宿主无法直接 `CreateProcess` | 必须经 COM 激活并注入专属 `--user-data-dir` 才能开 CDP 端口 | `src/agents/codex/launcher.ts` |
 
@@ -51,7 +51,7 @@ C3 与 C4 是同一类问题的两种表现：**只要能驱动 UI 环境，就�
 flowchart TB
   T["天枢 Tianshu（TUI × GUI）<br/>按次同步调 tools/call，只消费 content[].text 与 isError"]
   subgraph S["tianshu-mcp（标准 MCP stdio server）"]
-    L1["L1 协议边 · index.ts / server.ts / mcp/<br/>入口分流 · 装配 · 11 工具注册 · 参数校验 · 文本+meta 格式化"]
+    L1["L1 协议边 · index.ts / server.ts / mcp/<br/>入口分流 · 装配 · 13 工具注册 · 参数校验 · 文本+meta 格式化"]
     L2["L2 任务域 · tasks/<br/>状态机 · 每项目串行队列 · 全局并发闸 · 事件流落盘 · 取消语义"]
     L3["L3 编排 · loop/<br/>派发 → 验收 → 返修 → 再验收 · 轮次记账与终止判定"]
     L4a["L4a 执行面 · agents/<br/>AgentAdapter 契约 · CLI spawn / GUI CDP"]
@@ -209,23 +209,25 @@ sequenceDiagram
 
 ---
 
-## 6. MCP 工具面（11 个）
+## 6. MCP 工具面（13 个）
 
 `src/mcp/tools.ts` 中逐个核对（行号即 `name:` 所在行）：
 
 | 行 | 工具 | 能力族 | 需审批 | 作用 |
 |---|---|---|---|---|
-| 33 | `prepare_visual_baseline` | write | 是 | 生成基准候选与摘要，不落正式基准 |
-| 40 | `approve_visual_baseline` | write | 是 | 用户审阅后核对摘要并写入基准 |
-| 48 | `continue_task` | write | 是 | 恢复 `needs_user` 的原会话 |
-| 56 | `run_task` | write | 是 | 派活，异步返回 `taskId` |
-| 65 | `query_task` | read | 否 | 轮询状态 / 进度 / 日志尾 / 最近事件 |
-| 77 | `list_tasks` | read | 否 | 历史任务列表 |
-| 84 | `get_task_report` | read | 否 | 取某轮 `report.md` 全文 |
-| 91 | `cancel_task` | write | 是 | 取消；对终态 GUI 任务兼任人工确认入口 |
-| 99 | `verify_task` | **execute** | 否 | 独立跑一次验收（会跑项目命令，但不改源码） |
-| 107 | `rework_task` | write | 是 | 手动返修，把失败摘要喂回同一 agent |
-| 118 | `get_profiles` | read | 否 | agent 适配与可执行探测结果 |
+| 35 | `prepare_visual_baseline` | write | 是 | 生成基准候选与摘要，不落正式基准 |
+| 42 | `approve_visual_baseline` | write | 是 | 用户审阅后核对摘要并写入基准 |
+| 50 | `continue_task` | write | 是 | 恢复 `needs_user` 的原会话 |
+| 58 | `run_task` | write | 是 | 派活，异步返回 `taskId` |
+| 67 | `query_task` | read | 否 | 轮询状态 / 进度 / 日志尾 / 最近事件 |
+| 79 | `list_tasks` | read | 否 | 历史任务列表 |
+| 86 | `get_task_report` | read | 否 | 取某轮 `report.md` 全文 |
+| 93 | `cancel_task` | write | 是 | 取消；对终态 GUI 任务兼任人工确认入口 |
+| 101 | `verify_task` | **execute** | 否 | 独立跑一次验收（会跑项目命令，但不改源码） |
+| 109 | `wait_task` | read | 否 | 阻塞等待单任务到停点（终态或 `needs_user`）或超时；纯只读、无害 |
+| 117 | `wait_any` | read | 否 | 阻塞等待一组任务中数组顺序首个到停点者，返回其快照 + 全部状态 |
+| 125 | `rework_task` | write | 是 | 手动返修，把失败摘要喂回同一 agent |
+| 136 | `get_profiles` | read | 否 | agent 适配与可执行探测结果 |
 
 **三族语义（R11）**：`read` 无副作用；`write` 有副作用、全部需审批；`execute` 会执行项目侧命令但不改源码——当前仅 `verify_task`。
 

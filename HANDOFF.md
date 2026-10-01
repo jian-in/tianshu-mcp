@@ -1,5 +1,26 @@
 # HANDOFF.md — 项目交接说明
 
+> **交接快照：2026-10-01 · 已发布版本 `0.7.7`（tag `v0.7.7` + npm `tianshu-mcp@0.7.7`）。**
+> **本轮（0.7.6 → 0.7.7）交付**：新增**阻塞等待原语** `wait_task` / `wait_any`（**issue #28**，功能请求 P6）——
+> 工具面 **11 → 13**（`read` 族 +2，纯只读、免审批）。诉求：`run_task` 秒回 `taskId` 后**调用方没有任何方式等到任务结束**，
+> 而目标调用方（天枢 agent 会话）**回合驱动**——只在收到用户消息的回合内运行、回合之间不运行，**无法自行轮询**，
+> 于是每次任务完成都必须人工再发一条消息触发查询。
+> - **停点**（单一判定点 `isWaitSettled(status) = isTerminal(status) || status === "needs_user"`）：任务**停止推进**的时刻即应唤醒调用方；
+>   `needs_user` 虽非终态但已停等人工（可被 `continue_task` 恢复、之后可能再次进入），不等它会空等到超时。
+> - `wait_task(taskId, timeoutMs?)` 阻塞等到停点或超时；`wait_any(taskIds, timeoutMs?)` 等一组（1..20）中**数组顺序首个**停者。
+>   超时 `timeoutMs` 缺省 **50000ms**（低于生态常见 60s 客户端超时）、上限 **600000ms**，超上限**钳制并如实披露**；超时返回体引导循环调用（每轮 ≈50s）。
+> - **无损**：等待**纯只读**，被截断 / 连接中断 / 超时都**不影响任务本体**；`extra.signal` 让循环在请求取消时立即退出（SDK `_onclose` 会 abort 全部 in-flight handler）。
+> - **物理前提已实测**：SDK 请求**互不阻塞**（探针：3s `slow` 发出后 +200ms 的 `fast` 仅 215ms 返回）——等待期间的 `cancel_task` / `query_task` 照常处理。
+> - **代码**：新增 `src/tasks/wait.ts`（`waitForStops` 纯逻辑、依赖注入 `getMeta`）、`src/tasks/task.ts`（`isWaitSettled`）、
+>   `TaskManager.waitForStops`；`src/config/schema.ts`（常量 + 两个 ParamsSchema + `clampWaitTimeout`）；
+>   `src/mcp/tools.ts`（+2）、`handlers.ts`（`waitTaskHandler`/`waitAnyHandler` + `HandlerExtra`）、
+>   `formatter.ts`（`waitSettled`/`waitedMs`）、`server.ts`（透传 `extra` + instructions）。
+> - **测试**：新增 `test/unit/wait-task.test.ts`（8 例）+ `test/integration/wait-task.test.ts`（6 例）；`protocol.test.ts` 同步 13 工具真值表。
+>   **全量 1447 passed / 12 skipped**（1459 项，122 文件）。
+> - **文档**：新增 [等待原语](docs/wait-task.md) 双语；README / ARCHITECTURE / tianshu-integration / core-principles / SKILL / usage-examples 同步 11→13 与工具表。
+> - **发布链**：见下方「发布流程」——GitHub 主仓 + Gitee 镜像 Release、npm `tianshu-mcp@0.7.7`。
+>
+> **历史快照（0.7.6）**
 > **交接快照：2026-09-30 · 已发布版本 `0.7.6`（tag `v0.7.6` + npm `tianshu-mcp@0.7.6`）。**
 > **本轮（0.7.5 → 0.7.6）交付**：修掉 **issue #27** 的三条 ZCode 缺陷 —— ① 项目采集渠道分裂导致的绑定死锁
 > （3.14.3 上 `workspace-item-*` **并未从 DOM 消失**，只是被滚出视口：真机实测 **42 个节点中 40 个不可见**；

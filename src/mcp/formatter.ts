@@ -85,6 +85,13 @@ export interface MetaBlockFields {
    * 形成「先审后做」闭环。
    */
   dryRunPlanDoc?: string;
+  /**
+   * 等待原语（issue #28）：`wait_task` / `wait_any` 是否等到了停点（终态或 needs_user）。
+   * `true`=已到停点；`false`=超时 / 被中断。仅等待工具填充，其余工具省略。
+   */
+  waitSettled?: boolean;
+  /** 等待原语（issue #28）：本次调用实际等待时长（ms）。仅等待工具填充。 */
+  waitedMs?: number;
 }
 
 export type ToolResult = {

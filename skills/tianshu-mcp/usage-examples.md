@@ -224,10 +224,65 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 ### 2.10 通用约定
 
 - `run_task` 是**异步契约**：立即返回 `taskId` + 队列位置，不要当同步调用等结果。
-- 轮询间隔 5–10 秒（`query_task` 缺省返回 agent 日志末 40 行）；同项目串行 + 全局并发默认 2，重复派单只会排队。
+- **优先用 `wait_task` 等结果（issue #28）**：回合驱动调用方无法自行轮询，`run_task` 后在本回合内直接 `wait_task(taskId)` 阻塞等到停点，无需用户再发消息触发查询；要看进度细节才用 `query_task` 轮询（间隔 5–10 秒，缺省返回 agent 日志末 40 行）。同项目串行 + 全局并发默认 2，重复派单只会排队。
 - **重试复用同一条 `idempotencyKey`（issue #15）**：`tools/call` 超时、断线、宿主重启后重发同一意图时，`run_task` 会返回**原 `taskId` 与当前状态**（不排队第二轮 agent），`verify_task` 会返回「进行中」或既有报告（不重跑检查）。**参数变了就换 key**——同键异参 fail-closed 报错并回报原记录 id。幂等重放的响应文本以「幂等重放：」开头、meta 带 `idempotencyReplay`，不要汇报成「已重新派单」。
 - 只有 `needs_user` 能用 `continue_task` 恢复，且当前支持 **codex / zcode / kimicode / qoder / opendesign**（opendesign 会产出 `login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance` 五类，均支持 `continue_task` 恢复）；traework 与 spawn 类会被明确拒绝。
 - `autoVerify` 不传时**默认开**；`autoFixRounds` 不传时取 agent 缺省（codex 5 / zcode 2 / kimicode 2 / qoder 3 / traework 落 server 默认 0）。
+
+### 2.11 等待任务：`wait_task` / `wait_any`（issue #28）
+
+**动机**：`run_task` 秒回 `taskId`，但回合驱动调用方（天枢 agent 会话）只在收到用户消息的回合内运行、无法自行轮询——过去「每次任务完成都必须人工发一条消息触发查询」。`wait_task` 用**一次阻塞只读调用**承载等待：等到任务到达**停点**（终态或 `needs_user`）或超时后返回。
+
+**模式 A：单任务等待（成功 → 读报告）**
+
+```text
+run_task(projectPath=D:/repo/app, agentId=codex, model="GPT-5.6 Sol",
+         task="…", autoVerify=true, autoFixRounds=2)
+  → taskId
+wait_task(taskId=tsk_..., timeoutMs=50000)
+  → 任务已到停点（等待 37 秒）：状态: [PASS] 任务成功
+     可用 get_task_report 查看验收报告。
+  → get_task_report(taskId=tsk_...)
+```
+
+**模式 B：超时循环（任务比单次上限长）**
+
+```text
+wait_task(taskId=tsk_..., timeoutMs=50000)
+  → 等待超时（50 秒）：状态: 运行中（agent 正在开发）。任务本体不受影响；
+     请再次调用 wait_task 继续等待，或用 query_task 查看细节。
+wait_task(taskId=tsk_...)          # 再次调用即续等（无损）
+  → …直到停点
+```
+
+**模式 C：needs_user 循环（任务在等人工处理）**
+
+```text
+wait_task(taskId=tsk_...)
+  → 任务已到停点（等待 12 秒）：状态: 等待用户处理（可用 continue_task 恢复）。
+     任务在等待人工处理：请用 continue_task 恢复，恢复后再次调用 wait_task 继续等待。
+# 让用户在客户端处理（回答问题 / 登录 / 关旧实例…），然后：
+continue_task(taskId=tsk_..., message="已处理")
+wait_task(taskId=tsk_...)          # 恢复后继续等（needs_user 可多次进入）
+```
+
+**模式 D：多任务先到者**
+
+```text
+wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
+  → 已有任务到达停点（等待 8 秒）：tsk_b —— 状态: [FAIL] 任务失败
+     全部任务当前状态：
+     - tsk_a: 运行中（agent 正在开发）
+     - tsk_b: [FAIL] 任务失败
+     - tsk_c: 排队中（每项目串行，等待前面任务完成）
+```
+
+要点：
+
+- `wait_task` / `wait_any` 是**纯只读**工具（免审批、`readOnlyHint=true`）：不写任务状态、不动任务本体；被客户端截断 / 连接中断 / 超时**都无害**，最坏只是多调几次。
+- `timeoutMs` 缺省 **50000ms**（低于生态常见 60s 客户端超时），上限 **600000ms**；显式传超过上限的值会被**钳制并在响应正文写明**（不静默改值）。
+- 停点含 **`needs_user`**（非终态）：任务已停止推进、在等人工，必须立即唤醒调用方——这正是需要转达用户的时刻。
+- `wait_any` 按 `taskIds` **数组顺序**返回首个到停点者（确定性优先，不看完成时间）；入口校验全部 id 存在，缺一即 fail-closed 报错并列出缺失 id。
 
 ---
 
@@ -245,6 +300,8 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 | `extraChecks` / `checksMode` / `baselineRef` | 仅 verify_task | 独立 projectPath 下 `baselineRef` 只能是 git ref，不能是任务 ID |
 | `idempotencyKey` | run_task / verify_task | trim 后 1..128 字符、不含控制字符；**两工具各自独立命名空间**；同键异参 fail-closed；不传即维持原行为 |
 | `tailLines` | query_task | 缺省 40 行 |
+| `timeoutMs` | wait_task / wait_any | 缺省 **50000ms**、上限 **600000ms**；超上限被**钳制并在响应正文披露**；超时后再次调用即续等 |
+| `taskIds` | wait_any | 1..20 个；**全部必须存在**，缺一即 fail-closed 报错并列出缺失 id |
 | `round` | get_task_report | **0-based**；缺省最新；显式 `0` 合法 |
 
 ---

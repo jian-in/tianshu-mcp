@@ -1,6 +1,6 @@
 # 天枢接入教程（tianshu-integration.md）
 
-本 MCP server（`tianshu-mcp`）是标准 **MCP stdio server**（TypeScript + 官方 `@modelcontextprotocol/sdk`）。天枢把它当作普通 MCP server 接入后，会话里会出现 11 个工具（`mcp__tianshu-mcp__*`），由天枢调度去驱动外部 AI-Agent 完成「派活 → 验收 → 返修 → 再验收」闭环。
+本 MCP server（`tianshu-mcp`）是标准 **MCP stdio server**（TypeScript + 官方 `@modelcontextprotocol/sdk`）。天枢把它当作普通 MCP server 接入后，会话里会出现 13 个工具（`mcp__tianshu-mcp__*`），由天枢调度去驱动外部 AI-Agent 完成「派活 → 验收 → 返修 → 再验收」闭环。
 
 > 天枢官方仓库：[github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness)（基于 harness 工程的终端编程智能体运行时，TUI × GUI）。
 
@@ -25,7 +25,7 @@
 | 命令 | `npx` | `node` |
 | 参数（空格分隔） | `-y tianshu-mcp` | `<仓库绝对路径>/dist/index.js` |
 
-- 服务器 ID 决定工具前缀：填 `tianshu-mcp` → 工具名 `mcp__tianshu-mcp__run_task` 等 11 个。
+- 服务器 ID 决定工具前缀：填 `tianshu-mcp` → 工具名 `mcp__tianshu-mcp__run_task` 等 13 个。
 - 参数按空格分隔，不要加引号；本地开发需把 `<仓库绝对路径>` 换成真实绝对路径。
 - 界面没有环境变量输入框；需要自定义数据目录（`TIANSHU_MCP_HOME`）时用下面的 `config.json` 方式。
 
@@ -85,7 +85,7 @@
 
 > **`verify_task` 自 v0.6.1 起服务端已默认为 `execute`**（会跑项目命令、可产生构建产物），不再需要宿主在 policy 里手动上调。它**仍然免审批**（`requireApproval` 为 false，按 R11 的「验收不改源码」结论）。**宿主需知**：`verify_task` 下发的 MCP `readOnlyHint` 已由 `true` 变为 **`false`**——若你的策略层硬编码该注解（例如「readOnly=false 即视为需审批」），需改为以 `_meta.requireApproval` 为准，否则会把免审批的验收误当成需授权操作。
 
-## 3. 工具面（11 个）
+## 3. 工具面（13 个）
 
 | 工具 | 能力/审批 | 作用 |
 |---|---|---|
@@ -96,6 +96,8 @@
 | `get_task_report` | read | 某轮验收报告全文 |
 | `cancel_task` | write + 审批 | 取消（CLI kill 进程树；GUI agent 经 CDP 点击停止并等待空闲） |
 | `verify_task` | **execute**（不改源码，免审批） | 对任务/项目路径做一次验收（会跑项目命令、可产生构建产物，故 `readOnlyHint=false`；不改源码、仍免审批） |
+| `wait_task` | read | 阻塞等待单任务到停点（终态或 `needs_user`）或超时；`timeoutMs` 缺省 50000、上限 600000，超时后再次调用继续等待。纯只读、无害 |
+| `wait_any` | read | 阻塞等待一组任务（1..20）中数组顺序首个到停点者；返回该任务快照 + 全部任务当前状态。校验全部 id 存在，缺一即报错 |
 | `rework_task` | write + 审批 | 手动返修（失败报告喂回同一 agent） |
 | `get_profiles` | read | 查看 agent 探测结果 |
 | `prepare_visual_baseline` | write + 审批 | 视觉基准候选准备（截图或导入参考图，不采用正式基准） |
@@ -106,16 +108,17 @@
 ## 4. 操作步骤（天枢会话冒烟）
 
 1. **设置/API 加 server**：用上面任一模式配置并连接；`GET /mcp/status` 应 connected。
-2. **新开会话**，确认工具面出现 11 个 `mcp__tianshu-mcp__*` 工具。
+2. **新开会话**，确认工具面出现 13 个 `mcp__tianshu-mcp__*` 工具。
 3. **stub 预演**（不碰真实登录态）：`test/stub-agent/stub-agent.mjs` 配成 profile，跑一次 `run_task(autoVerify:true)` → query_task → succeeded。
 4. **真实 agent**：切 codex profile，跑 `run_task`（见 skills/tianshu-mcp/SKILL.md 用法）。
 5. **热路径验证**：热重启/热注入一次；删除 server 一次（任务应标 interrupted 且可查历史）。
 
 ## 5. 长任务与超时注意
 
-- 天枢按次同步调用 `tools/call`；本 server **全异步**：`run_task` 秒回 taskId，长任务经 `query_task` 轮询（建议 5–10s）。
+- 天枢按次同步调用 `tools/call`；本 server **全异步**：`run_task` 秒回 taskId。
+- **首选 `wait_task`**（issue #28）：回合驱动调用方无法自行轮询，`run_task` 后在本回合内直接调 `wait_task(taskId)` 阻塞等到**停点**（终态或 `needs_user`），无需用户再发消息触发查询。超时（`timeoutMs` 缺省 50000、上限 600000）返回后再次调用本工具继续等待；需要进度细节时用 `query_task` 轮询（建议 5–10s）。等待是纯只读操作，被截断 / 中断对任务本体零影响。
+- **若联调发现 `tools/call` 有更短的上层超时**：把 `wait_task` 的 `timeoutMs` 调到略低于该超时（例如 30s 客户端用 20000ms）；即便被截断，调用方再次调用即可续等，任务不受影响。多任务并行等待可用 `wait_any`。
 - 任务级默认超时 30 分钟（run_task 可传 `taskTimeoutMs`）；验收单条命令默认 5 分钟。
-- 若联调发现 tools/call 有更短上层超时，天枢侧需接受先拿 taskId 的模式。
 
 ## 6. 日志与 stdout/stderr 契约
 

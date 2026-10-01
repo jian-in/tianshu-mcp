@@ -1,6 +1,7 @@
 /**
- * 11 个工具的具体 handler。统一返回 ToolResult（文本 + meta 块）。
- * run_task / rework / verify 依赖 AppContext 提供的 manager/engine/services。
+ * 13 个工具的具体 handler。统一返回 ToolResult（文本 + meta 块）。
+ * run_task / rework / verify 依赖 AppContext 提供的 manager/engine/services；
+ * wait_task / wait_any（issue #28）额外接收 SDK 的请求 `extra`（用其 `signal` 感知中断）。
  */
 import fsp from "node:fs/promises";
 import { validateQoderReferences } from "../agents/qoder/references.js";
@@ -23,10 +24,16 @@ import {
   type VerifyTaskParams,
   type ReworkTaskParams,
   type ContinueTaskParams,
+  type WaitTaskParams,
+  type WaitAnyParams,
   type ServerConfig,
   type ProjectRecord,
 } from "../config/schema.js";
-import { QUERY_TASK_EVENT_LIMIT_DEFAULT } from "../config/schema.js";
+import {
+  QUERY_TASK_EVENT_LIMIT_DEFAULT,
+  WAIT_TASK_TIMEOUT_MAX_MS,
+  clampWaitTimeout,
+} from "../config/schema.js";
 import { toAcceptanceDef, type DataHome } from "../config/store.js";
 import type { TaskManager } from "../tasks/task-manager.js";
 import type { AcceptanceEngine } from "../verify/acceptance.js";
@@ -296,13 +303,21 @@ export function makeHandlers(ctx: AppContext, defaults: Defaults) {
     get_task_report: getReportHandler(ctx),
     cancel_task: cancelTaskHandler(ctx),
     verify_task: verifyTaskHandler(ctx, idempotency),
+    wait_task: waitTaskHandler(ctx),
+    wait_any: waitAnyHandler(ctx),
     rework_task: reworkTaskHandler(ctx),
     continue_task: continueTaskHandler(ctx),
     get_profiles: getProfilesHandler(ctx),
   };
 }
 
-type Handler = (args: Record<string, unknown>) => Promise<ToolResult>;
+/** wait_task / wait_any 用到的请求上下文（SDK `RequestHandlerExtra` 的结构子集）。 */
+export interface HandlerExtra {
+  /** 请求取消 / 连接关闭信号（SDK 注入）——wait 循环据此立即退出，不泄漏后台等待。 */
+  signal?: AbortSignal;
+}
+
+type Handler = (args: Record<string, unknown>, extra?: HandlerExtra) => Promise<ToolResult>;
 
 /**
  * 仓库未提交变更计数（git status --porcelain 行数）。
@@ -703,6 +718,114 @@ function queryTaskHandler(ctx: AppContext): Handler {
         : "",
     ].filter((s) => s !== "");
     return formatToolResult(lines.join("\n"), metaFromTask(meta, { recentEvents }));
+  };
+}
+
+/* ---------------- 等待原语（issue #28） ---------------- */
+
+/** 停点后的后续动作指引：终态 → 取报告；needs_user → continue 后再次 wait。 */
+function waitNextStep(status: TaskStatus): string {
+  if (status === "needs_user") {
+    return "任务在等待人工处理：请用 continue_task 恢复，恢复后再次调用 wait_task 继续等待。";
+  }
+  if (status === "succeeded") return "可用 get_task_report 查看验收报告。";
+  return "可用 get_task_report / query_task 查看详情。";
+}
+
+/** 钳制披露（仅在显式 timeoutMs 超上限时非空）：如实说明已钳制，不静默改值。 */
+function waitClampNote(clamped: boolean): string {
+  return clamped ? `（timeoutMs 超上限，已钳制到 ${WAIT_TASK_TIMEOUT_MAX_MS}ms）` : "";
+}
+
+function waitTaskHandler(ctx: AppContext): Handler {
+  const { manager } = ctx;
+  return async (rawArgs, extra) => {
+    const args = rawArgs as WaitTaskParams;
+    const meta = await manager.getMeta(args.taskId);
+    if (!meta) return errorResult(`任务不存在: ${args.taskId}`);
+    const { timeoutMs, clamped } = clampWaitTimeout(args.timeoutMs);
+    const result = await manager.waitForStops([args.taskId], timeoutMs, extra?.signal);
+    const waitedSec = Math.round(result.waitedMs / 1000);
+    const clampNote = waitClampNote(clamped);
+
+    if (result.aborted) {
+      // 连接已断时本响应自然丢弃；循环已释放（SDK _onclose abort 全部 in-flight handler）。
+      return formatToolResult(
+        `等待被取消（调用方中断 / 连接关闭），任务不受影响。${describeStatus(meta)}`,
+        metaFromTask(meta, { waitSettled: false, waitedMs: result.waitedMs }),
+      );
+    }
+    if (result.stopped.length > 0) {
+      const hit = result.stopped[0]!;
+      return formatToolResult(
+        [
+          `任务已到停点（等待 ${waitedSec} 秒）：${describeStatus(hit.meta)}`,
+          waitNextStep(hit.meta.status),
+        ].join("\n"),
+        metaFromTask(hit.meta, { waitSettled: true, waitedMs: result.waitedMs }),
+      );
+    }
+    // 超时：重读一次最新快照，避免回显等待开始前的旧 meta
+    const current = (await manager.getMeta(args.taskId)) ?? meta;
+    return formatToolResult(
+      [
+        `等待超时（${waitedSec} 秒）：${describeStatus(current)}${clampNote}`,
+        "任务本体不受影响；请再次调用 wait_task 继续等待，或用 query_task 查看细节。",
+      ].join("\n"),
+      metaFromTask(current, { waitSettled: false, waitedMs: result.waitedMs }),
+    );
+  };
+}
+
+function waitAnyHandler(ctx: AppContext): Handler {
+  const { manager } = ctx;
+  return async (rawArgs, extra) => {
+    const args = rawArgs as WaitAnyParams;
+    // 入口预检全部 id（fail-closed）：缺一即报错并列出缺失 id，绝不静默跳过。
+    const pre = await Promise.all(args.taskIds.map((id) => manager.getMeta(id)));
+    const missing = args.taskIds.filter((_, i) => pre[i] === null);
+    if (missing.length > 0) return errorResult(`任务不存在: ${missing.join(", ")}`);
+
+    const { timeoutMs, clamped } = clampWaitTimeout(args.timeoutMs);
+    const result = await manager.waitForStops(args.taskIds, timeoutMs, extra?.signal);
+    const waitedSec = Math.round(result.waitedMs / 1000);
+    const clampNote = waitClampNote(clamped);
+    const current = await Promise.all(args.taskIds.map((id) => manager.getMeta(id)));
+    const statusLines = args.taskIds
+      .map((id, i) => {
+        const m = current[i];
+        return `- ${id}: ${m ? describeStatus(m) : "任务不存在"}`;
+      })
+      .join("\n");
+
+    if (result.aborted) {
+      return formatToolResult(
+        ["等待被取消（调用方中断 / 连接关闭），任务不受影响。", statusLines].join("\n"),
+        { ok: false, message: "等待被取消", waitSettled: false, waitedMs: result.waitedMs },
+      );
+    }
+    if (result.stopped.length > 0) {
+      // stopped 按 taskIds 数组下标升序 → stopped[0] 即「数组顺序首个已停」（确定性优先）。
+      const hit = result.stopped[0]!;
+      return formatToolResult(
+        [
+          `已有任务到达停点（等待 ${waitedSec} 秒）：${hit.meta.taskId} —— ${describeStatus(hit.meta)}`,
+          waitNextStep(hit.meta.status),
+          "全部任务当前状态：",
+          statusLines,
+        ].join("\n"),
+        metaFromTask(hit.meta, { waitSettled: true, waitedMs: result.waitedMs }),
+      );
+    }
+    return formatToolResult(
+      [
+        `等待超时（${waitedSec} 秒）：暂无任务到达停点。${clampNote}`,
+        "任务本体不受影响；请再次调用 wait_any 继续等待，或用 query_task 查看细节。",
+        "全部任务当前状态：",
+        statusLines,
+      ].join("\n"),
+      { ok: false, message: "等待超时", waitSettled: false, waitedMs: result.waitedMs },
+    );
   };
 }
 

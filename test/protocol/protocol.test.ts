@@ -1,6 +1,6 @@
 /**
  * 协议级测试：官方 SDK client 连接 in-memory transport 后的 server。
- * 断言 11 个工具可见、调用返回格式（文本 + meta 块 / 参数校验错误）。
+ * 断言 13 个工具可见、调用返回格式（文本 + meta 块 / 参数校验错误）。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { startTestServer, callTool, parseMeta, rmrf, type TestServer } from "../test-utils.js";
@@ -69,6 +69,9 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
       { name: "verify_task", capability: "execute", requireApproval: false, readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
       { name: "rework_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
       { name: "get_profiles", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+      // issue #28：阻塞等待原语——纯只读、免审批、非幂等（每次等待是新的时间片）
+      { name: "wait_task", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+      { name: "wait_any", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
       { name: "prepare_visual_baseline", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
       { name: "approve_visual_baseline", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
     ];
@@ -104,6 +107,8 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
       "cancel_task",
       "rework_task",
       "continue_task",
+      "wait_task",
+      "wait_any",
       "prepare_visual_baseline",
       "approve_visual_baseline",
     ]) {
@@ -113,7 +118,7 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
 });
 
 describe("工具面", () => {
-  it("注册 11 个工具且名称与能力标注符合视觉验收计划", async () => {
+  it("注册 13 个工具且名称与能力标注符合视觉验收计划", async () => {
     const tools = await ts.client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
     expect(names).toEqual([
@@ -128,6 +133,8 @@ describe("工具面", () => {
       "rework_task",
       "run_task",
       "verify_task",
+      "wait_any",
+      "wait_task",
     ]);
     // 每个工具在 TOOL_DEFS 有声明
     for (const t of tools.tools) {

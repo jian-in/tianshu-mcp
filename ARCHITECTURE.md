@@ -54,7 +54,7 @@ ZCode 属于同类问题：无随包 headless CLI，故同样走 CDP（M2 已实
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
 │ L1 协议边     src/index.ts · src/server.ts · src/mcp/             │
-│   入口与 CLI 分流 · 装配 · 11 工具注册 · 参数校验 · 文本+meta 格式化 │
+│   入口与 CLI 分流 · 装配 · 13 工具注册 · 参数校验 · 文本+meta 格式化 │
 ├──────────────────────────────────────────────────────────────────┤
 │ L2 任务域     src/tasks/                                           │
 │   状态机 · 每项目串行队列 · 全局并发闸 · 事件流落盘 · 取消语义        │
@@ -100,7 +100,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
   → TaskStore → AgentAdapterRegistry(loadProfiles) → AcceptanceEngine
   → TaskManager(+makeBuildCtx) → manager.initialize({maxRunning, guiStopWaitMs})  # 归档重启遗留的 active 任务
   → 技能自检安装（后台，不阻塞握手）
-  → 注册 11 个工具 → 返回 ServerAssembly{server, manager, dataHome, store, logger, close}
+  → 注册 13 个工具 → 返回 ServerAssembly{server, manager, dataHome, store, logger, close}
 ```
 
 `close()` = `manager.shutdownInterrupt()`（归档活动任务 + 终止子进程）→ `engine.close()` → `server.close()`。
@@ -171,7 +171,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 
 ## 4. MCP 工具面与返回契约
 
-11 个工具（`src/mcp/tools.ts`），按能力分为三族：`read`（读/查询，无副作用）、`write`（有副作用，全部需审批）、`execute`（执行项目侧命令但不改源码，当前仅 `verify_task`，按 R11 仍免审批）：
+13 个工具（`src/mcp/tools.ts`），按能力分为三族：`read`（读/查询，无副作用）、`write`（有副作用，全部需审批）、`execute`（执行项目侧命令但不改源码，当前仅 `verify_task`，按 R11 仍免审批）：
 
 | 工具 | 能力 | 审批 | 作用 |
 |---|---|---|---|
@@ -182,6 +182,8 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 | `get_task_report` | read | 否 | 取某轮 `report.md` 全文 |
 | `cancel_task` | write | 是 | 取消（CLI 杀进程树；GUI 尽力点停止 + 有界等待） |
 | `verify_task` | **execute** | 否 | 对任务或项目路径做一次验收：会跑项目命令、可产生构建产物，但**不改源码**，故免审批 |
+| `wait_task` | read | 否 | 阻塞等待单任务到停点（终态或 `needs_user`）或超时；纯只读、无害 |
+| `wait_any` | read | 否 | 阻塞等待一组任务（1..20）中数组顺序首个到停点者，返回其快照 + 全部状态 |
 | `rework_task` | write | 是 | 手动返修，把失败摘要喂回同一 agent |
 | `get_profiles` | read | 否 | agent 适配与可执行探测结果 |
 | `prepare_visual_baseline` | write | 是 | 生成基准候选与摘要（不落正式基准） |
@@ -343,6 +345,21 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 | 与 `note` 的关系 | `note` 语义不变，仍是进度 / 审计通道（承载 `progressSummary` / `lastRunSignal`）；`recentEvents` 只过滤词表内 5 类，不混入 `note` |
 
 **如实披露**：事件属观测能力而非交付保证——不保证送达，`query_task` 只反映「最后一次落盘的事件」；`file_modification_started` 是启发式推断，确切改动证据请看验收报告的 `changedFiles` / `diffstat`。详见 [事件流](docs/event-stream.md)。
+
+### 5.9 阻塞等待原语（`wait_task` / `wait_any`，issue #28）
+
+回合驱动的调用方（天枢 agent 会话）只在收到用户消息的回合内运行，无法自行轮询——`run_task` 秒回 `taskId` 后，「谁在任务完成时叫醒会话」成为工具面的真实空白。本能力以**一次阻塞式只读调用**承载等待。
+
+| 决策 | 实现与理由 |
+|---|---|
+| 停点定义 | `isWaitSettled(status) = isTerminal(status) \|\| status === "needs_user"`（`src/tasks/task.ts`，单一判定点）。任务**停止推进**的时刻即应唤醒调用方：`needs_user` 非终态但已停等人工（可被 `continue_task` 恢复，之后可能再次进入）——不等它，wait 会空等到 timeout，调用方对「任务在等人」一无所知 |
+| 等待核心 | `src/tasks/wait.ts` 的 `waitForStops(taskIds, getMeta, {timeoutMs, pollIntervalMs=500, signal})`：**纯逻辑、依赖注入 `getMeta`**，不触文件系统 / TaskManager 构造，可独立单测；`TaskManager.waitForStops` 只做接线（注入 `(id) => this.getMeta(id)`，复用 `waitForStatusWrite` 屏障 + 内存优先 + 快照兜底） |
+| 只读与无损 | 等待期间**不写任何任务状态、不动任务本体**；被客户端截断 / 连接中断 / 超时都不影响任务继续执行——最坏结果只是调用方多调几次，重连后 `query_task` 即拿到最新事实 |
+| 超时策略 | `timeoutMs` 缺省 `WAIT_TASK_TIMEOUT_DEFAULT_MS`（50s，低于生态常见 60s 客户端超时，留序列化/往返余量）；显式上限 `WAIT_TASK_TIMEOUT_MAX_MS`（600s），超上限**钳制并如实披露**（不静默改值，`clampWaitTimeout`）。超时返回体引导循环调用（每轮 ≈50s，长任务靠多次调用） |
+| 中断感知 | SDK 的 `RequestHandlerExtra.signal`（`server.ts` 把 `extra` 透传给 handler）在连接关闭 / 请求取消时触发，等待循环立即退出、不泄漏后台等待（SDK `_onclose` 会 abort 全部 in-flight handler） |
+| `wait_any` 返回语义 | 按 `taskIds` **数组顺序**返回首个处于停点的任务（确定性优先，不做 `finishedAt` 排序）；入口预检全部 id 存在，缺一即 fail-closed 报错并列出缺失 id |
+
+**已知限制**：等待是**进程内**的——server 重启后原 wait 调用随连接终止（调用方重连后 `query_task` 复核）；单次调用等待上限 600s，更长场景靠循环调用（无损）。详见 [等待原语](docs/wait-task.md)。
 
 ---
 
@@ -911,7 +928,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 |---|---|---|
 | 单元 | `test/unit/` | 纯函数与组件逻辑：五个 driver 的 reply / selectors / launcher / liveness / recovery、验收引擎（含并行）、基线归因、原子写、热加载、路径闸门、视觉模块 |
 | 集成 | `test/integration/` | stub-agent 三剧本、取消 / 超时 / 基线、假 CDP 的 TraeWork / Codex / ZCode / Kimi Code 全流程与返修循环、竞态回归、视觉 services / capture / flow |
-| 协议 | `test/protocol/` | 官方 SDK 客户端断言 11 工具面与返回格式 |
+| 协议 | `test/protocol/` | 官方 SDK 客户端断言 13 工具面与返回格式 |
 | 真机（手动） | `scripts/probe-*.mjs`、`scripts/smoke-zcode.mjs`、`scripts/evidence-visual-windows.mjs` | 需真实客户端 / 已安装浏览器 |
 | 消费者 | `scripts/check-visual-consumer.mjs` | 从生产 tarball 装到无开发依赖目录，跑真实浏览器视觉验收与离线报告 |
 

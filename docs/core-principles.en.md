@@ -35,7 +35,7 @@ This is the key to the whole project. `README.md` and `ARCHITECTURE.md` §1.1 bo
 | # | Measured constraint | Architectural consequence | Code anchor |
 |---|---|---|---|
 | C1 | Tianshu's MCP tools **return text only** (`content[].text` is concatenated into a string, `isError` is passed through) | Every result is standardized as "human-readable text + a `---tianshu-mcp-meta---` JSON block" so the host can extract it with a regex; no reliance on resources / prompts | `src/mcp/formatter.ts:104-106` |
-| C2 | Tianshu calls `tools/call` **once per turn, synchronously** | Long tasks must be asynchronous: `run_task` returns a `taskId` immediately and `query_task` polls; there is no server-side push | `src/mcp/tools.ts:56` (`run_task` definition), `src/mcp/tools.ts:65` (`query_task`) |
+| C2 | Tianshu calls `tools/call` **once per turn, synchronously** | Long tasks must be asynchronous: `run_task` returns a `taskId` immediately and `wait_task` blocks until a stop point (`query_task` polls for progress); there is no server-side push | `src/mcp/tools.ts:58` (`run_task` definition), `src/mcp/tools.ts:109` (`wait_task`), `src/mcp/tools.ts:67` (`query_task`) |
 | C3 | Desktop agents' requests are encrypted at the transport layer and cannot be constructed outside the client | The only viable path is to **drive the desktop UI over CDP and extract results from the DOM** | `src/agents/{codex,zcode,traework,kimicode,qoder,opendesign}/cdp.ts` |
 | C4 | The Codex desktop app is an **MSIX store package**, so a GUI host cannot `CreateProcess` it directly | It must be activated through COM with an injected, dedicated `--user-data-dir` before a CDP port can be opened | `src/agents/codex/launcher.ts` |
 
@@ -51,7 +51,7 @@ The dependency direction is **strictly downward**: `L1 → L2 → L3 → {L4a, L
 flowchart TB
   T["Tianshu (TUI × GUI)<br/>calls tools/call once per turn, consumes only content[].text and isError"]
   subgraph S["tianshu-mcp (a standard MCP stdio server)"]
-    L1["L1 Protocol edge · index.ts / server.ts / mcp/<br/>entry dispatch · assembly · 11 tool registrations · argument validation · text+meta formatting"]
+    L1["L1 Protocol edge · index.ts / server.ts / mcp/<br/>entry dispatch · assembly · 13 tool registrations · argument validation · text+meta formatting"]
     L2["L2 Task domain · tasks/<br/>state machine · per-project serial queue · global concurrency gate · event-stream persistence · cancel semantics"]
     L3["L3 Orchestration · loop/<br/>dispatch → verify → rework → re-verify · round accounting and termination"]
     L4a["L4a Execution plane · agents/<br/>AgentAdapter contract · CLI spawn / GUI CDP"]
@@ -209,23 +209,25 @@ sequenceDiagram
 
 ---
 
-## 6. The MCP tool surface (11 tools)
+## 6. The MCP tool surface (13 tools)
 
 Each verified in `src/mcp/tools.ts` (the line number is where `name:` sits):
 
 | Line | Tool | Capability family | Requires approval | Purpose |
 |---|---|---|---|---|
-| 33 | `prepare_visual_baseline` | write | yes | Produce baseline candidates and a digest; does not adopt a formal baseline |
-| 40 | `approve_visual_baseline` | write | yes | After user review, verify the digest and write the baseline |
-| 48 | `continue_task` | write | yes | Resume the original session of a `needs_user` task |
-| 56 | `run_task` | write | yes | Dispatch work; returns `taskId` asynchronously |
-| 65 | `query_task` | read | no | Poll status / progress / log tail / recent events |
-| 77 | `list_tasks` | read | no | Historical task list |
-| 84 | `get_task_report` | read | no | Fetch the full `report.md` of a round |
-| 91 | `cancel_task` | write | yes | Cancel; for a terminal GUI task it also serves as the manual-confirmation entry point |
-| 99 | `verify_task` | **execute** | no | Run acceptance once standalone (runs project commands but does not modify source) |
-| 107 | `rework_task` | write | yes | Manual rework: feed the failure summary back to the same agent |
-| 118 | `get_profiles` | read | no | Agent adapters and executable discovery results |
+| 35 | `prepare_visual_baseline` | write | yes | Produce baseline candidates and a digest; does not adopt a formal baseline |
+| 42 | `approve_visual_baseline` | write | yes | After user review, verify the digest and write the baseline |
+| 50 | `continue_task` | write | yes | Resume the original session of a `needs_user` task |
+| 58 | `run_task` | write | yes | Dispatch work; returns `taskId` asynchronously |
+| 67 | `query_task` | read | no | Poll status / progress / log tail / recent events |
+| 79 | `list_tasks` | read | no | Historical task list |
+| 86 | `get_task_report` | read | no | Fetch the full `report.md` of a round |
+| 93 | `cancel_task` | write | yes | Cancel; for a terminal GUI task it also serves as the manual-confirmation entry point |
+| 101 | `verify_task` | **execute** | no | Run acceptance once standalone (runs project commands but does not modify source) |
+| 109 | `wait_task` | read | no | Block until one task reaches a stop point (terminal status or `needs_user`) or the timeout elapses; read-only, harmless |
+| 117 | `wait_any` | read | no | Block until the first of a group reaches a stop point, in array order; returns its snapshot plus every task's status |
+| 125 | `rework_task` | write | yes | Manual rework: feed the failure summary back to the same agent |
+| 136 | `get_profiles` | read | no | Agent adapters and executable discovery results |
 
 **The three capability families (R11)**: `read` has no side effects; `write` has side effects and always requires approval; `execute` runs project-side commands but does not modify source — currently only `verify_task`.
 

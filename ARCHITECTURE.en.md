@@ -109,7 +109,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
   → TaskStore → AgentAdapterRegistry(loadProfiles) → AcceptanceEngine
   → TaskManager(+makeBuildCtx) → manager.initialize({maxRunning, guiStopWaitMs})   # archive leftover active tasks
   → skill self-install (background, does not block the handshake)
-  → register 11 tools → return ServerAssembly{server, manager, dataHome, store, logger, close}
+  → register 13 tools → return ServerAssembly{server, manager, dataHome, store, logger, close}
 ```
 
 `close()` = `manager.shutdownInterrupt()` (archive active tasks, terminate child processes) → `engine.close()` → `server.close()`.
@@ -180,7 +180,7 @@ Module `src/util/skill-install.ts`, run **in the background** inside `buildServe
 
 ## 4. MCP tool surface and return contract
 
-Eleven tools (`src/mcp/tools.ts`), split into three families: `read` (queries, no side effects), `write` (side effects, all require approval), and `execute` (runs project-side commands without modifying sources; currently only `verify_task`, still approval-free per R11):
+Thirteen tools (`src/mcp/tools.ts`), split into three families: `read` (queries, no side effects), `write` (side effects, all require approval), and `execute` (runs project-side commands without modifying sources; currently only `verify_task`, still approval-free per R11):
 
 | Tool | Capability | Approval | Purpose |
 |---|---|---|---|
@@ -191,6 +191,8 @@ Eleven tools (`src/mcp/tools.ts`), split into three families: `read` (queries, n
 | `get_task_report` | read | no | Full text of a given round's `report.md` |
 | `cancel_task` | write | yes | Cancel (CLI: kill the process tree; GUI: best-effort stop click + bounded wait) |
 | `verify_task` | **execute** | no | Run one verification over a task or project path: it runs project commands and may produce build artifacts, but **does not modify sources**, hence approval-free |
+| `wait_task` | read | no | Block until a single task reaches a stop point (terminal status or `needs_user`) or the timeout elapses; read-only, harmless |
+| `wait_any` | read | no | Block until the first of a group (1..20) reaches a stop point, in array order; returns its snapshot plus every task's status |
 | `rework_task` | write | yes | Manual rework; feeds the failure summary back to the same agent |
 | `get_profiles` | read | no | Agent support status and executable discovery results |
 | `prepare_visual_baseline` | write | yes | Produce a baseline candidate and digest (does not adopt a baseline) |
@@ -356,6 +358,21 @@ The vocabulary lives in `src/agents/agent-events.ts` (**zero dependencies**, to 
 | Relationship to `note` | `note` is unchanged and remains the progress / audit channel (carrying `progressSummary` / `lastRunSignal`); `recentEvents` filters only the five vocabulary kinds and never mixes `note` in |
 
 **Disclosed honestly**: events are an observability capability, not a delivery guarantee — delivery is not guaranteed, and `query_task` reflects only the last persisted event; `file_modification_started` is a heuristic, so read `changedFiles` / `diffstat` from the acceptance report for hard evidence of changes. See [event stream](docs/event-stream.en.md).
+
+### 5.9 Blocking wait primitives (`wait_task` / `wait_any`, issue #28)
+
+Turn-driven callers (a Tianshu agent session) only run within the turn that received a user message and cannot poll on their own — once `run_task` returns a `taskId` immediately, "who wakes the session when the task finishes" is a real gap in the tool surface. This capability carries the wait with **one blocking, read-only call**.
+
+| Decision | Implementation and rationale |
+|---|---|
+| Stop-point definition | `isWaitSettled(status) = isTerminal(status) \|\| status === "needs_user"` (`src/tasks/task.ts`, single decision point). The moment a task **stops making progress** is the moment to wake the caller: `needs_user` is not terminal but has stopped awaiting a human (it can be resumed by `continue_task` and may re-enter) — without waiting for it, `wait_task` blocks until the timeout and the caller knows nothing about "the task is waiting for a person" |
+| Wait core | `waitForStops(taskIds, getMeta, {timeoutMs, pollIntervalMs=500, signal})` in `src/tasks/wait.ts`: **pure logic with dependency-injected `getMeta`**, touching neither the filesystem nor TaskManager construction, so it is independently unit-testable; `TaskManager.waitForStops` only wires it (injects `(id) => this.getMeta(id)`, reusing the `waitForStatusWrite` barrier + memory-first + snapshot fallback) |
+| Read-only, lossless | During the wait it **writes no task state and touches no task body**; a client truncation / connection drop / timeout never affects the task's continued execution — worst case the caller calls again, and `query_task` yields the latest fact after reconnect |
+| Timeout policy | `timeoutMs` defaults to `WAIT_TASK_TIMEOUT_DEFAULT_MS` (50 s, below the common 60 s client tool timeout to leave serialization/round-trip headroom); explicit cap `WAIT_TASK_TIMEOUT_MAX_MS` (600 s), and values above it are **clamped and disclosed honestly** (never silently rewritten, `clampWaitTimeout`). A timed-out response steers the caller into a call loop (≈50 s per round; long tasks need several calls) |
+| Interruption awareness | The SDK's `RequestHandlerExtra.signal` (`server.ts` forwards `extra` to the handler) fires on connection close / request cancellation and the wait loop exits immediately without leaking background waits (the SDK's `_onclose` aborts every in-flight handler) |
+| `wait_any` return semantics | Returns the **first task in `taskIds` array order** that has reached a stop point (determinism first; no `finishedAt` sorting); the entry point validates that all ids exist, failing closed with the missing ids listed if any is absent |
+
+**Known limits**: the wait is **in-process** — after a server restart the original wait call ends with the connection (the caller re-checks via `query_task` after reconnecting); a single call waits at most 600 s, and longer scenarios rely on repeated calls (lossless). See [wait primitives](docs/wait-task.en.md).
 
 ---
 
@@ -963,7 +980,7 @@ This requires a new adapter directory implementing `AgentAdapter` with `run()` a
 |---|---|---|
 | Unit | `test/unit/` | Pure functions and component logic: reply / selectors / launcher / liveness / recovery for all five drivers, the acceptance engine (including parallelism), baseline attribution, atomic writes, hot reload, the path gate, the visual module |
 | Integration | `test/integration/` | The three stub-agent scripts, cancel / timeout / baseline, fake-CDP TraeWork / Codex / ZCode / Kimi Code end-to-end and rework loops, race regressions, visual services / capture / flow |
-| Protocol | `test/protocol/` | An official SDK client asserting the 11-tool surface and return format |
+| Protocol | `test/protocol/` | An official SDK client asserting the 13-tool surface and return format |
 | Real-hardware (manual) | `scripts/probe-*.mjs`, `scripts/smoke-zcode.mjs`, `scripts/evidence-visual-windows.mjs` | Require a real client or an installed browser |
 | Consumer | `scripts/check-visual-consumer.mjs` | Installs the production tarball into a directory with no dev dependencies and runs real-browser visual acceptance plus the offline report |
 

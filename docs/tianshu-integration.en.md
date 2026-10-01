@@ -1,6 +1,6 @@
 # Tianshu Integration Guide
 
-`tianshu-mcp` is a standard **MCP stdio server** (TypeScript + official `@modelcontextprotocol/sdk`). Register it in Tianshu as a normal MCP server and its 11 tools (`mcp__tianshu-mcp__*`) become available to drive external AI-Agents through the "dispatch → accept → rework → re-accept" loop.
+`tianshu-mcp` is a standard **MCP stdio server** (TypeScript + official `@modelcontextprotocol/sdk`). Register it in Tianshu as a normal MCP server and its 13 tools (`mcp__tianshu-mcp__*`) become available to drive external AI-Agents through the "dispatch → accept → rework → re-accept" loop.
 
 > Official Tianshu repository: [github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) (a harness-engineering terminal coding-agent runtime, TUI × GUI).
 
@@ -25,7 +25,7 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in (transport: `s
 | Command | `npx` | `node` |
 | Arguments (space-separated) | `-y tianshu-mcp` | `<absolute-repo-path>/dist/index.js` |
 
-- The Server ID becomes the tool prefix: `tianshu-mcp` → `mcp__tianshu-mcp__run_task` and 7 others.
+- The Server ID becomes the tool prefix: `tianshu-mcp` → `mcp__tianshu-mcp__run_task` and the other 12.
 - Arguments are space-separated with **no quotes**; for local dev replace `<absolute-repo-path>` with a real path.
 - The dialog has no env-var field; to set `TIANSHU_MCP_HOME`, use the config.json option below.
 
@@ -73,7 +73,7 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in (transport: `s
 
 > **As of v0.6.1 the server already defaults `verify_task` to `execute`** (it runs project commands and may produce build artifacts), so the host no longer needs to raise it in policy. It **stays approval-free** (`requireApproval` is false, per R11's "verification does not modify sources" conclusion). **Host note**: the MCP `readOnlyHint` emitted for `verify_task` has changed from `true` to **`false`** — if your policy layer hard-codes that annotation (for example treating `readOnly=false` as "needs approval"), switch it to key off `_meta.requireApproval` instead, or you will mistake the approval-free verification for an operation that needs authorisation.
 
-## 3. Tool surface (11)
+## 3. Tool surface (13)
 
 | Tool | capability/approval | Purpose |
 |---|---|---|
@@ -84,6 +84,8 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in (transport: `s
 | `get_task_report` | read | full acceptance report |
 | `cancel_task` | write + approval | cancel (CLI: kill tree; GUI agents: CDP stop click + bounded wait) |
 | `verify_task` | **execute** (no source edits, no approval) | one acceptance round — runs project commands and may produce build artifacts, hence `readOnlyHint=false`; does not modify sources and stays approval-free |
+| `wait_task` | read | block until one task reaches a stop point (terminal status or `needs_user`) or the timeout elapses; `timeoutMs` defaults to 50000, caps at 600000 — call again after a timeout. Read-only, harmless |
+| `wait_any` | read | block until the first of a group (1..20) reaches a stop point, in array order; returns that snapshot plus every task's status. Validates all ids exist, failing if any is missing |
 | `rework_task` | write + approval | manual rework (feed failure back to same agent) |
 | `get_profiles` | read | agent probe results |
 | `prepare_visual_baseline` | write + approval | prepare a visual baseline candidate (never adopts the official baseline) |
@@ -94,13 +96,15 @@ Return format: human text + `---tianshu-mcp-meta---` JSON block (`get_task_repor
 ## 4. Smoke steps
 
 1. Add the server via settings/API and connect; `GET /mcp/status` shows connected.
-2. New session → confirm 11 `mcp__tianshu-mcp__*` tools.
+2. New session → confirm 13 `mcp__tianshu-mcp__*` tools.
 3. Rehearse with the stub agent, then switch to the `codex` profile.
 4. Validate hot-restart / hot-inject and delete-server paths.
 
 ## 5. Async & timeouts
 
-- All tools are async: `run_task` returns a taskId immediately; poll via `query_task` (5–10s).
+- All tools are async: `run_task` returns a taskId immediately.
+- **Prefer `wait_task`** (issue #28): turn-driven callers cannot poll on their own, so after `run_task` call `wait_task(taskId)` in the same turn to block until a **stop point** (terminal status or `needs_user`) — no user message needed to trigger a check. After a timeout (`timeoutMs` defaults to 50000, caps at 600000) call it again to keep waiting; use `query_task` when you need progress detail (5–10s). The wait is read-only and a truncation / interruption never affects the task itself.
+- **If integration reveals a shorter upper-layer `tools/call` timeout**: set `wait_task`'s `timeoutMs` a little below it (for example 20000 ms on a 30 s client); even if truncated, the caller simply calls again and the task is unaffected. Use `wait_any` to wait on several tasks in parallel.
 - Default task timeout 30 min (`taskTimeoutMs` overrides at call level; call > profile > server default). Per-check verify timeout default 5 min.
 
 ## 6. Logging and the stdout/stderr contract

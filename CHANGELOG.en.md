@@ -8,6 +8,29 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.7.7] - 2026-10-01
+
+### Added
+
+- **Blocking wait primitives `wait_task` / `wait_any` (issue #28)**. `run_task` returning a `taskId` immediately is the right adaptation to the host's constraints, but the intended caller (a Tianshu agent session) is **turn-driven** — it runs only within the turn that received a user message and does nothing between turns, so it cannot poll on its own. The task-completion moment could therefore only be caught by a human sending another message. Two **pure read-only, approval-free** tools now carry the waiting:
+  - `wait_task(taskId, timeoutMs?)` — block until a single task reaches a **stop point** (terminal status or `needs_user`) or the timeout elapses;
+  - `wait_any(taskIds, timeoutMs?)` — wait for the **first task in array order** among a group (1..20) to reach a stop point, returning its snapshot plus every task's current status.
+  - **Stop-point definition** (single decision point `isWaitSettled`): `isTerminal(status) || status === "needs_user"`. The moment a task **stops making progress** is the moment to wake the caller — `needs_user` is not terminal but has stopped awaiting a human (it can be resumed by `continue_task` and may re-enter); without waiting for it the wait would block until the timeout and the caller would know nothing about "the task is waiting for a person".
+  - **Timeout policy**: `timeoutMs` defaults to `50000ms` (below the common 60 s client tool timeout, leaving round-trip headroom) and caps at `600000ms`; values above the cap are **clamped and disclosed honestly** (never silently rewritten); a timed-out response steers the caller into a call loop (≈50 s per round; long tasks need several calls).
+  - **Lossless guarantee**: the wait is **read-only** — it writes no task state and touches no task body, so a client truncation / connection drop / timeout **never affects the task's continued execution**. On request cancellation / connection close the loop exits immediately via the SDK's `extra.signal`, leaking no background wait.
+  - **Tool surface 11 → 13** (`read` family +2); new bilingual [wait primitives](docs/wait-task.en.md) doc.
+
+### Changed
+
+- The `registerTool` callback in `src/server.ts` forwards the SDK request `extra` (including `signal`) to the handler — **used only by the wait tools**; every other handler is unchanged.
+- `MetaBlockFields` gains optional `waitSettled` (whether a stop point was reached) and `waitedMs` (actual wait duration) for programmatic checks by the caller.
+
+### Tests
+
+- Added `test/unit/wait-task.test.ts` (8 cases: stop-point decision / state transition / timeout / `signal` abort / missing reporting / clamp disclosure) and `test/integration/wait-task.test.ts` (6 cases: real stub long-task end-to-end / short-timeout continuation / not-found error / `cancel_task` effective during a wait / `wait_any` first settled / fail-closed on a missing id).
+- `test/protocol/protocol.test.ts` truth table and tool-name array synced to 13 (the count hard assertion covers it automatically).
+- Full suite **1447 passed / 12 skipped** (1459 tests, 122 files).
+
 ## [0.7.6] - 2026-09-30
 
 ### Fixed

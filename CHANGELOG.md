@@ -7,6 +7,35 @@
 
 ---
 
+## [0.7.7] - 2026-10-01
+
+### 新增
+
+- **阻塞等待原语 `wait_task` / `wait_any`（issue #28）**。`run_task` 秒回 `taskId` 是对宿主约束的正确适配，
+  但目标调用方（天枢 agent 会话）**回合驱动**——只在收到用户消息的回合内运行、回合之间不运行，无法自行轮询，
+  于是「任务完成时刻」只能靠人工再发一条消息触发查询。新增两个**纯只读、免审批**工具承载「等」：
+  - `wait_task(taskId, timeoutMs?)`：阻塞等待单任务到达**停点**（终态或 `needs_user`）或超时；
+  - `wait_any(taskIds, timeoutMs?)`：等待一组任务（1..20）中**数组顺序首个**到达停点者，返回其快照 + 全部任务当前状态。
+  - **停点定义**（单一判定点 `isWaitSettled`）：`isTerminal(status) || status === "needs_user"`。任务**停止推进**的时刻即应唤醒调用方——
+    `needs_user` 虽非终态但已停等人工（可被 `continue_task` 恢复，之后可能再次进入），不等它会空等到超时，调用方对「任务在等人」一无所知。
+  - **超时策略**：`timeoutMs` 缺省 `50000ms`（低于生态常见 60s 客户端超时，留序列化/往返余量）、上限 `600000ms`，
+    显式超上限的值**钳制并如实披露**（不静默改值）；超时返回体引导循环调用（每轮 ≈50s，长任务靠多次调用）。
+  - **无损保证**：等待是**纯只读**的——不写任务状态、不动任务本体；被客户端截断 / 连接中断 / 超时都**不影响任务继续执行**。
+    请求取消 / 连接关闭时经 SDK 的 `extra.signal` **立即退出**循环，不泄漏后台等待。
+  - **工具面 11 → 13**（`read` 族 +2）；新增 [等待原语](docs/wait-task.md) 双语文档。
+
+### 变更
+
+- `src/server.ts` 的 `registerTool` 回调把 SDK 的请求 `extra`（含 `signal`）透传给 handler——**仅 wait 工具使用**，其余 handler 行为不变。
+- `MetaBlockFields` 新增可选字段 `waitSettled`（是否到停点）与 `waitedMs`（实际等待时长），供调用方可编程判断。
+
+### 测试
+
+- 新增 `test/unit/wait-task.test.ts`（8 例：停点判定 / 状态跃迁 / 超时 / `signal` 中止 / 缺失上报 / 钳制披露）
+  与 `test/integration/wait-task.test.ts`（6 例：真实 stub 长任务端到端 / 短超时续等 / 不存在报错 / 等待期间 `cancel_task` 即时生效 / `wait_any` 先停者 / 缺一即报错）。
+- `test/protocol/protocol.test.ts` 真值表与工具面名字数组同步为 13（数量硬断言自动覆盖）。
+- 全量 **1447 passed / 12 skipped**（1459 项，122 文件）。
+
 ## [0.7.6] - 2026-09-30
 
 ### 修复

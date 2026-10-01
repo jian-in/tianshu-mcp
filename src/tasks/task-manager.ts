@@ -24,6 +24,7 @@ import type {
   PartialAcceptanceConfig,
 } from "../config/schema.js";
 import { TaskOrchestrator } from "../loop/fix-loop.js";
+import { waitForStops as waitForStopsCore, type WaitForStopsResult } from "./wait.js";
 import { genTaskId, nowIso } from "../util/id.js";
 import type { DataHome } from "../config/store.js";
 import type { AgentAdapterRegistry } from "../agents/registry.js";
@@ -194,6 +195,24 @@ export class TaskManager {
   async getMeta(taskId: string): Promise<TaskMeta | null> {
     await this.store.waitForStatusWrite(taskId);
     return this.tasks.get(taskId) ?? (await this.store.readSnapshot(taskId));
+  }
+
+  /**
+   * 阻塞等待一组任务到达停点（issue #28 / 计划 §2.4 C3）。
+   *
+   * **纯只读**：等待期间不写任务状态、不动任务本体；被客户端截断 / 连接中断 / 超时
+   * 都不影响任务继续执行。状态读取复用 `getMeta`（`waitForStatusWrite` 屏障 +
+   * 内存优先 + 快照兜底），因此 wait 看到的是与 `query_task` 同一口径的事实。
+   * @param taskIds 目标任务 id（`wait_task` 单个 / `wait_any` 一组）
+   * @param timeoutMs 本次等待上限（调用方已钳制）
+   * @param signal SDK 请求的取消信号（连接关闭 / 请求取消）
+   */
+  async waitForStops(
+    taskIds: string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<WaitForStopsResult> {
+    return waitForStopsCore(taskIds, (id) => this.getMeta(id), { timeoutMs, signal });
   }
 
   /** S4：外部对终态任务元数据的更新（如手动 verify 更新报告指针/轮次）——写快照并同步内存 map */

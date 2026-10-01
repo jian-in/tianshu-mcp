@@ -330,6 +330,20 @@ export function isTerminal(s: TaskStatus): boolean {
   return TERMINAL_STATUSES.includes(s);
 }
 
+/**
+ * `wait_task` / `wait_any` 的「停点」判定（issue #28 的单一判定点）：
+ * 任务**停止推进**的时刻 = 调用方应当被唤醒的时刻。
+ *
+ * 与 cancel 路径的 `settled` 语义刻意分开：`needs_user` 是**非终态**
+ * （可被 `continue_task` 恢复到 `queued`，之后可能再次进入），但此刻任务已停止推进、
+ * 在等人工处理，必须立即唤醒调用方——否则 wait 会一直空等到 timeout，
+ * 调用方对「任务在等人」一无所知。
+ * 状态机演进（新增停点）只改这一处。
+ */
+export function isWaitSettled(s: TaskStatus): boolean {
+  return isTerminal(s) || s === "needs_user";
+}
+
 /** 归一化工作区模式：缺字段一律按 project（保守，绝不把旧记录或损坏记录当作无项目）。 */
 export function workspaceModeOf(meta: Pick<TaskMeta, "workspaceMode">): WorkspaceMode {
   return meta.workspaceMode === "default" ? "default" : "project";

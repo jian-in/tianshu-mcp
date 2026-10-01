@@ -268,6 +268,55 @@ export const ContinueTaskParamsSchema = z.object({
 });
 export type ContinueTaskParams = z.infer<typeof ContinueTaskParamsSchema>;
 
+/* ---------------- 等待原语（issue #28） ---------------- */
+
+/**
+ * `wait_task` 单次等待的**默认**上限（ms）。
+ * 刻意低于生态常见的 60s 客户端单次工具超时，留出序列化 / 网络往返余量：
+ * 若客户端超时比 50s 更短，截断也只让调用方多调一次（等待无损），不会出错。
+ * 真机校准（计划 Wave 5）后如需按客户端调整，只改这一处常量。
+ */
+export const WAIT_TASK_TIMEOUT_DEFAULT_MS = 50_000;
+
+/**
+ * 单次 wait 调用可请求的等待**上限**（ms，10 分钟）：给「无超时或已知长超时」的调用方。
+ * 显式传入超过本值的值会被钳制到本值并**如实披露**（不静默改值）；更长场景靠循环调用。
+ */
+export const WAIT_TASK_TIMEOUT_MAX_MS = 600_000;
+
+/** `wait_any` 一次可等待的任务数上限。 */
+export const WAIT_ANY_TASK_IDS_MAX = 20;
+
+export const WaitTaskParamsSchema = z.object({
+  taskId: z.string().min(1),
+  /** 本次等待上限（ms）；缺省 {@link WAIT_TASK_TIMEOUT_DEFAULT_MS}，超 {@link WAIT_TASK_TIMEOUT_MAX_MS} 被钳制。 */
+  timeoutMs: z.number().int().positive().optional(),
+});
+export type WaitTaskParams = z.infer<typeof WaitTaskParamsSchema>;
+
+export const WaitAnyParamsSchema = z.object({
+  /** 一组任务 id（1..{@link WAIT_ANY_TASK_IDS_MAX}）；开始前校验全部存在，缺一即报错。 */
+  taskIds: z.array(z.string().min(1)).min(1).max(WAIT_ANY_TASK_IDS_MAX),
+  /** 本次等待上限（ms）；语义同 {@link WaitTaskParamsSchema} 的 timeoutMs。 */
+  timeoutMs: z.number().int().positive().optional(),
+});
+export type WaitAnyParams = z.infer<typeof WaitAnyParamsSchema>;
+
+/**
+ * 钳制等待上限：缺省用默认值；显式值超过上限时钳到上限并标记 `clamped`，由 handler
+ * 在响应正文里**如实披露**（计划 §2.3 缓解 1：不静默改值）。
+ * `timeoutMs` 的正整数约束由 schema 承担，此处只处理缺省与上限。
+ */
+export function clampWaitTimeout(timeoutMs?: number): { timeoutMs: number; clamped: boolean } {
+  if (timeoutMs === undefined) {
+    return { timeoutMs: WAIT_TASK_TIMEOUT_DEFAULT_MS, clamped: false };
+  }
+  if (timeoutMs > WAIT_TASK_TIMEOUT_MAX_MS) {
+    return { timeoutMs: WAIT_TASK_TIMEOUT_MAX_MS, clamped: true };
+  }
+  return { timeoutMs, clamped: false };
+}
+
 /* ---------------- server 配置 config.json ---------------- */
 
 /**

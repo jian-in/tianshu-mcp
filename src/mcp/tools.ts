@@ -1,5 +1,5 @@
 /**
- * 工具注册表：11 个工具的 name/description/inputSchema/capability/approval 元数据。
+ * 工具注册表：13 个工具的 name/description/inputSchema/capability/approval 元数据。
  * MCP 层用 inputSchema 声明；capability/requireApproval 供天枢 policy（§5/§11.3）。
  * 能力标注遵守 R11（三族语义）：
  * - read：读/查询，无副作用；`server.ts` 据此推导 MCP `readOnlyHint: true`。
@@ -18,6 +18,8 @@ import {
   VerifyTaskParamsSchema,
   ReworkTaskParamsSchema,
   ContinueTaskParamsSchema,
+  WaitTaskParamsSchema,
+  WaitAnyParamsSchema,
 } from "../config/schema.js";
 
 export interface ToolDef {
@@ -101,6 +103,22 @@ export const TOOL_DEFS: ToolDef[] = [
       "对已完成任务或项目路径执行一次验收（不改源码）：自动命令检查 + 代码分析（相对 git 基线）。可用 extraChecks 临时加验。需任务/项目二选一。可选 idempotencyKey：同一 key 重试不重跑验收——执行中的同键请求返回进行中提示，已完成的直接返回既有报告与轮次，参数变更则报冲突。",
     inputSchema: VerifyTaskParamsSchema,
     capability: "execute",
+    requireApproval: false,
+  },
+  {
+    name: "wait_task",
+    description:
+      "等待任务到达停点（阻塞只读原语）：轮询至终态（succeeded/failed/needs_attention/cancelled/interrupted）或 needs_user，或超时（timeoutMs 缺省 50000ms、上限 600000ms）后返回当前状态快照。适合回合驱动的调用方：run_task 后在本回合内等待结果。超时返回时请再次调用本工具继续等待——本调用不影响任务本体，超时/中断均无害。",
+    inputSchema: WaitTaskParamsSchema,
+    capability: "read",
+    requireApproval: false,
+  },
+  {
+    name: "wait_any",
+    description:
+      "等待一组任务中首个到达停点（终态或 needs_user）的任务；返回该任务快照与全部任务当前状态。taskIds 1..20 个，开始前校验全部存在，缺一即报错。",
+    inputSchema: WaitAnyParamsSchema,
+    capability: "read",
     requireApproval: false,
   },
   {

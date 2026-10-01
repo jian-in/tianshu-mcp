@@ -1,6 +1,6 @@
 ---
 name: tianshu-mcp
-description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder/opendesign）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/prepare_visual_baseline/approve_visual_baseline）派活、暂停继续、轮询、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
+description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder/opendesign）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 13 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/wait_task/wait_any/prepare_visual_baseline/approve_visual_baseline）派活、阻塞等待、暂停继续、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
 triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|kimicode|kimi.?code|qoder|opendesign|open.?design|claude|编排|项目开发|派活|派单'
 ---
 
@@ -16,7 +16,8 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 
 ```text
 run_task（秒回 taskId，异步）
-   → query_task 轮询（5–10 秒一次）
+   → wait_task 阻塞等到停点（终态或 needs_user；超时后再调一次继续等）
+   → 需要进度细节时 query_task 轮询（5–10 秒一次）
         ├─ needs_user      → §5：让用户在客户端处理 → continue_task 恢复
         ├─ 硬失败           → §9：读 agentEndReason，不要当“agent 没做好”重试
         └─ 终态            → §6：读 get_task_report 的 checks / analysis / visual
@@ -32,12 +33,14 @@ run_task（秒回 taskId，异步）
 
 ---
 
-## 1. 工具面（11 个）
+## 1. 工具面（13 个）
 
 | 工具 | 能力 / 审批 | 作用 | 关键入参 |
 |---|---|---|---|
 | `run_task` | write + 审批 | 派活给外部 agent；**异步**返回 `taskId` | 见 §3 |
 | `query_task` | read | 轮询状态 + agent 日志尾（`tailLines` 缺省 40 行） | `taskId`、`tailLines?` |
+| `wait_task` | read | **阻塞等待**单任务到停点（终态或 `needs_user`）或超时；超时后再次调用继续等。纯只读、无害 | `taskId`、`timeoutMs?`（缺省 50000、上限 600000） |
+| `wait_any` | read | **阻塞等待**一组任务（1..20）中数组顺序首个到停点者；返回其快照 + 全部状态 | `taskIds`、`timeoutMs?` |
 | `list_tasks` | read | 查历史任务（每行：taskId / status / agent / project / 摘要） | `projectPath?`、`status?`、`limit?`（缺省 50，上限 200） |
 | `get_task_report` | read | 读某轮验收报告 **Markdown 全文** | `taskId`、`round?`（0-based，缺省最新） |
 | `verify_task` | execute（不改源码、无需审批） | 对任务或任意项目**独立验收**（会跑项目命令、可产生构建产物，故 `readOnlyHint=false`；不改源码、无需审批） | `taskId` 或 `projectPath` 二选一、`extraChecks?`、`checksMode?`、`baselineRef?` |
@@ -206,7 +209,8 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 
 ## 7. 轮询与查询
 
-- `query_task(taskId, tailLines?)` 间隔 **5–10 秒**；返回状态行 + 最近消息 + agent 日志尾（缺省 40 行）。
+- **首选 `wait_task`（issue #28）**：回合驱动调用方无法自行轮询——`run_task` 后在本回合内调 `wait_task(taskId)` **阻塞等到停点**（终态或 `needs_user`），不必等用户再发消息触发查询。超时（`timeoutMs` 缺省 50000、上限 600000）返回后**再次调用本工具继续等待**；等待纯只读、无害，被截断/中断对任务本体零影响。多任务并行等待用 `wait_any(taskIds)`。
+- `query_task(taskId, tailLines?)` 间隔 **5–10 秒**；返回状态行 + 最近消息 + agent 日志尾（缺省 40 行）——要看进度细节时用它。
 - 查历史用 `list_tasks(projectPath?, status?, limit?)`（缺省 50，上限 200）；`projectPath` 与 `run_task` 同样做 realpath 归一。
 - **同一项目勿重复派单**：每项目串行 + 全局并发（`concurrency.maxRunning`，默认 2）；重复派只会排队，反而更慢。
 - **重试必须带幂等键（issue #15）**：`tools/call` 超时、连接抖动、宿主重启后重发同一意图时，**复用同一条 `idempotencyKey`** 调 `run_task` / `verify_task`——`run_task` 会返回原 `taskId` 与原状态（不会排队第二轮 agent），`verify_task` 执行中返回「进行中」、已完成返回既有报告（不会重跑 `build`/`e2e`/部署类检查）。**换参数就得换 key**：同键异参会直接报冲突。未带 key 时若响应里出现 `projectActiveTask`，说明该工作区已有未结束任务——先 `query_task` 复核，不要盲目再派。
@@ -327,5 +331,5 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 
 1. `get_profiles` → 确认目标 agent `[PASS] 可用`（看 profileStatus 与探测来源）；不可用就转达用户，别硬试。
 2. `run_task(projectPath=<绝对路径>, task=<任务书>, agentId=codex, model=<面板模型名>, autoVerify=true, autoFixRounds=5, idempotencyKey=<本次逻辑派单的稳定标识>)` → 拿 `taskId`。**model 以界面实际为准**，示例名不可当真；`idempotencyKey` 建议由宿主按「本次意图」生成一次并在所有重试中复用（见 §7）。
-3. `query_task(taskId)` 每 ~8 秒轮询到终态；`needs_user` 按 §5 处理，硬失败按 §9 定位。
+3. `wait_task(taskId)` 阻塞等到停点（终态或 `needs_user`，超时后再调一次继续等）；要看进度细节用 `query_task(taskId)` 每 ~8 秒轮询。`needs_user` 按 §5 处理，硬失败按 §9 定位。
 4. 终态按 §6 处理；汇报带 `get_task_report` 的 changedFiles 与 diffstat；启用视觉时一并读 `visual` 段落与离线 HTML。
