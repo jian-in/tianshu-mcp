@@ -18,7 +18,11 @@ serde_json = "1"
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-opener = "2"
+# 必须与 npm 侧 `@tauri-apps/plugin-opener`（package-lock 锁在 2.6.0）保持 **同 major/minor**：
+# Tauri CLI 构建时会校验 npm 包与 Rust crate 的配对，不一致直接报错退出。
+# Cargo 默认是 caret 语义（`"2"` → 会解析到更高的 2.7.0），且 Cargo.lock 不入库（由 CI 生成），
+# 因此这里必须显式收窄到 `~2.6`。升级时请两侧一起改。
+tauri-plugin-opener = "~2.6"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
