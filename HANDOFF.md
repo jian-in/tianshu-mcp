@@ -233,7 +233,14 @@
   `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`），随本版发布 tag `gui-v0.1.1-beta.2`；
   `update/gui/latest*.json` 由发布 job 自动生成并提交（`[skip ci]`）。**MCP 主包不受影响**（`AGENTS.md`：`mcp-gui` 不迭代主包版本）。
 - **发布文档**：新增 `docs/release-gui-v0.1.1-beta.2.md` + `.en.md`（发布 job 的正文来源，**缺文档直接失败**，计划 D11）。
-- **后续**：批次三（`0.1.1-beta.3`）= A5 基线漂移 + A6 状态跃迁甘特 + A9 磁盘占用 + A8b 深链（**唯一有架构风险项**，需 Tauri 插件 + 协议注册）。
+- **发布（2026-10-02）✅**：tag `gui-v0.1.1-beta.2` → `78f9722`。`GUI` workflow 的 **5 个 job 全 success**
+  （`Schema parity` + 三平台 `Build` + `Publish release (GitHub + Gitee)`）；三平台 job 内含 `cargo fmt --check` /
+  `clippy -D warnings` / `cargo test`，**本机跑不了的两道 Rust 门禁由此通过**（含新增的 `matches_filter_supports_new_dimensions`）。
+  GitHub 侧 pre-release 已创建（**8 个产物**、正文 7544 字符 = 完整双语说明）；Gitee 侧 pre-release 亦已创建
+  （两端各 3 个更新载体下载地址实测 **HTTP 200**，共 6 个）；`gui-v*` **未触发** `release.yml`（该 tag 下只有 GUI 一个 workflow 运行）。
+  发布后两仓各多一个机器人提交（GitHub `b9eb516` / Gitee `7eecc83`），已合并为 `e468c31` 并回推两端收敛。
+- **后续**：批次三（`0.1.1-beta.3`）= A5 基线漂移 + A6 状态跃迁甘特 + A9 磁盘占用 + A8b 深链（**唯一有架构风险项**，需 Tauri 插件 + 协议注册）；
+  真机验收（Windows 10 安装 Release 安装包，逐项核对 A4/A7/A8a）待维护者执行。
 
 ---
 
@@ -257,7 +264,9 @@
   —— 已发布 tag 的 workflow 无法重跑改写清单，只能回填已落库的清单；`version` / `pub_date` / `platforms` **均未改动**。
 - **版本边界**：**不升版本、不重打 `gui-v0.1.1-beta.1`**（`package.json` / `package-lock.json` 两处 /
   `tauri.conf.json` / `Cargo.toml` 四处仍为 `0.1.1-beta.1`）；MCP 主包**零改动**。
-- **待验证（需维护者的动作）**：下次 GUI 发版时确认清单 `notes` 为完整正文（窗口正文不再是单行标题）；
+- **待验证（需维护者的动作）**：~~下次 GUI 发版时确认清单 `notes` 为完整正文~~ **✅ 已闭环（2026-10-02）**：
+  `gui-v0.1.1-beta.2` 发布后两端清单 `notes` 均为 **7543 字符的完整双语正文**（首行 `# 日志台 0.1.1-beta.2 — …`，含英文段落），
+  即桌面端更新窗口会显示这一版发行说明，而不再是一行标题。
   本机仍不执行任何 Rust 构建 / 检查（issue #25 约束），Rust 侧门禁交 `GUI` workflow。
 
 ---
