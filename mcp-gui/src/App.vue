@@ -2,9 +2,9 @@
 /**
  * 应用外壳：**常驻左侧栏 + 内容区**。
  *
- * 左栏（`aside.rail`）承载品牌 · 全局搜索 · 主导航（含「设置」）· 数据目录（与「刷新」同排）· 任务分区（底部仅在 mock 运行时留提示条）；
- * 右区（`main.stage`）是两态内容：态一 `OverviewPage`（指标仪 / 状态圆片 / 任务卡网格 / 搜索模式），
- * 态二 `WorkspacePage`（面包屑 / 摘要带 / 内容）。
+ * 左栏（`aside.rail`）承载品牌 · 全局搜索 · 主导航（含「设置」与「MCP 能力」）· 数据目录（与「刷新」同排）· 任务分区（底部仅在 mock 运行时留提示条）；
+ * 右区（`main.stage`）是三态内容：态一 `OverviewPage`（指标仪 / 状态圆片 / 任务卡网格 / 搜索模式），
+ * 态二 `CapabilitiesPage`（MCP 工具面只读镜像），态三 `WorkspacePage`（面包屑 / 摘要带 / 内容）。
  *
  * 布局契约：任务分区导航（事件流 / Agent 日志 / 验收日志 / 验收报告）**并入同一条侧栏**，
  * 页面里不存在第二层左栏；全局 `server.log` 由主导航「运行日志」承担，其形态由
@@ -14,6 +14,7 @@ import { computed, ref } from "vue";
 import AppIcon from "./components/AppIcon.vue";
 import DataHomeBar from "./components/DataHomeBar.vue";
 import OverviewPage from "./components/OverviewPage.vue";
+import CapabilitiesPage from "./components/CapabilitiesPage.vue";
 import WorkspacePage from "./components/WorkspacePage.vue";
 import EventTimeline from "./components/EventTimeline.vue";
 import LogViewer from "./components/LogViewer.vue";
@@ -26,8 +27,8 @@ import { app, clearError, openTab, selectTask, type TabKey } from "@/stores/app"
 
 const { t } = useI18n();
 
-/** 两态：概览 / 工作区 */
-const view = ref<"overview" | "workspace">("overview");
+/** 三态：概览 / MCP 能力 / 工作区 */
+const view = ref<"overview" | "capabilities" | "workspace">("overview");
 /** 概览页模式（提升到外壳：侧栏搜索框聚焦即进入搜索模式） */
 const overviewMode = ref<"tasks" | "search">("tasks");
 const settingsOpen = ref(false);
@@ -70,6 +71,11 @@ async function openServerLog(): Promise<void> {
   view.value = "workspace";
 }
 
+/** 侧栏「MCP 能力」：静态展示工具面（不读文件系统、不连 MCP） */
+function goCapabilities(): void {
+  view.value = "capabilities";
+}
+
 /** 搜索命中跳转后：按命中落在哪个分区进入工作区（形态由 tab 派生） */
 function onNavigated(): void {
   view.value = "workspace";
@@ -110,6 +116,10 @@ function onNavigated(): void {
           <AppIcon name="terminal" size="14" />
           <span class="grow truncate">{{ t("tabs.serverLog") }}</span>
         </button>
+        <button class="navitem" :class="{ 'is-on': view === 'capabilities' }" @click="goCapabilities">
+          <AppIcon name="info" size="14" />
+          <span class="grow truncate">{{ t("capabilities.title") }}</span>
+        </button>
         <button class="navitem" :class="{ 'is-on': settingsOpen }" @click="settingsOpen = true">
           <AppIcon name="settings" size="14" />
           <span class="grow truncate">{{ t("settings.title") }}</span>
@@ -146,6 +156,8 @@ function onNavigated(): void {
         @open-task="openTask"
         @navigated="onNavigated"
       />
+
+      <CapabilitiesPage v-else-if="view === 'capabilities'" />
 
       <WorkspacePage v-else :mode="isServerLog ? 'server' : 'task'" @back="goOverview">
         <EventTimeline v-if="app.tab === 'events'" />

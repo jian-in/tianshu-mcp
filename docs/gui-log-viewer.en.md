@@ -70,7 +70,7 @@ The added directories are persisted in the **system application config directory
 
 ---
 
-## 3. The four log types
+## 3. The four log types and the MCP capabilities view
 
 | Source | Path (relative to data home) | Where in the UI |
 |---|---|---|
@@ -81,7 +81,7 @@ The added directories are persisted in the **system application config directory
 
 ### 3.1 Task overview
 
-- **The UI is a permanent left sidebar plus two full pages**: a **task overview page** and a **full-page workspace**. The sidebar runs brand → global search → main nav (Tasks / Server log / **Settings**) → **data home (with refresh / add / remove on the same row)** → task section nav, while the overview runs a five-cell metrics strip (total / active / finished / succeeded / failed) → status chip row → task card grid; the **settings entry and the data home both sit in the main nav area** (the data home directly below "Settings", separated by a grouping rule), the **data-home row carries three icon buttons — refresh / add directory / remove**, **nothing permanent sits at the bottom of the sidebar**, and the brand row shows just the app name with no decorative colour square;
+- **The UI is a permanent left sidebar plus three full pages**: a **task overview page**, an **MCP capabilities page** and a **full-page workspace**. The sidebar runs brand → global search → main nav (Tasks / Server log / **MCP capabilities** / **Settings**) → **data home (with refresh / add / remove on the same row)** → task section nav, while the overview runs a five-cell metrics strip (total / active / finished / succeeded / failed) → status chip row → task card grid; the **settings entry and the data home both sit in the main nav area** (the data home directly below "Settings", separated by a grouping rule), the **data-home row carries three icon buttons — refresh / add directory / remove**, **nothing permanent sits at the bottom of the sidebar**, and the brand row shows just the app name with no decorative colour square;
 - Tasks are shown as **cards**: the left rail carries the status color (semantic tone via `statusTone`), the title has a `›` prefix, and each card shows the status label, `agent · taskId`, `updated · rounds [· report round]` and a dry-run tag;
 - The **status chips** (all / running / succeeded / failed / needs attention / needs human) are **page-level grouping** and do not rewrite the filter conditions;
 - The `[Filter]` popover carries the full set: keyword, agent, status, project, time range, active-only, plus sorting (updated / created / task ID, ascending or descending) and "Reset filters";
@@ -114,6 +114,21 @@ The added directories are persisted in the **system application config directory
   to block all external resources, no network**;
 - `dry-run-report-*` and `report-*` are **shown separately** (static analysis vs real command acceptance);
 - Multiple rounds can be **compared** side by side.
+
+### 3.5 MCP capabilities view
+
+The sidebar "**MCP capabilities**" entry opens a full page that shows the `tianshu-mcp` **tool surface**
+read-only (13 tools today), grouped by the three capability families:
+
+- **read** (queries only, no side effects, approval-free), **write** (side effects, all requiring approval),
+  and **execute** (runs project-side commands without changing source, approval-free);
+- Each tool shows its name, approval marker (approval / no approval) and a one-line purpose; the wait
+  primitives `wait_task` / `wait_any` from issue #28 are listed here.
+
+The source is an **embedded mirror list** inside the GUI (`mcp-gui/src/core/capabilities.ts`). It **reads no
+files and connects to no MCP server** — the page has content immediately and is independent of the active data
+home. The mirror is compared item by item (name + capability + requireApproval) against the truth source
+`TOOL_DEFS` in `src/mcp/tools.ts` by `mcp-gui/scripts/check-schema-parity.mjs` in CI; any drift fails the build.
 
 ---
 

@@ -25,7 +25,9 @@ const repoRoot = path.resolve(guiRoot, "..");
 const files = {
   taskTs: path.join(repoRoot, "src", "tasks", "task.ts"),
   agentEventsTs: path.join(repoRoot, "src", "agents", "agent-events.ts"),
+  toolsTs: path.join(repoRoot, "src", "mcp", "tools.ts"),
   eventsTs: path.join(guiRoot, "src", "core", "events.ts"),
+  capabilitiesTs: path.join(guiRoot, "src", "core", "capabilities.ts"),
   schemaRs: path.join(guiRoot, "src-tauri", "src", "schema.rs"),
   packageJson: path.join(guiRoot, "package.json"),
   tauriConf: path.join(guiRoot, "src-tauri", "tauri.conf.json"),
@@ -75,6 +77,39 @@ function tsUnionMembers(source, name) {
   while ((hit = reLiteral.exec(m[1])) !== null) {
     out.push(hit[1]);
   }
+  return out;
+}
+
+/** 取出常量数组体（`export const NAME[: T] = [ ... ];` / `... ] as const;`） */
+function tsArrayBody(source, name) {
+  const re = new RegExp(
+    `export const ${name}\\s*(?::[^=]*)?=\\s*\\[([\\s\\S]*?)\\]\\s*(?:as const)?\\s*;`,
+  );
+  const m = re.exec(source);
+  if (!m) throw new Error(`未找到 TS 常量数组：${name}`);
+  return m[1];
+}
+
+/**
+ * TS：常量数组内**每个对象的字符串字段**，按出现顺序取值（如 `name: "run_task"`）。
+ * 用于工具面镜像比对——两边条目顺序一致，故按序取值即可。
+ */
+function tsObjectFieldStrings(source, name, field) {
+  const body = tsArrayBody(source, name);
+  const out = [];
+  const re = new RegExp(`${field}\\s*:\\s*["']([^"'\\n]+)["']`, "g");
+  let hit;
+  while ((hit = re.exec(body)) !== null) out.push(hit[1]);
+  return out;
+}
+
+/** TS：常量数组内每个对象的布尔字段（如 `requireApproval: false`） */
+function tsObjectFieldBooleans(source, name, field) {
+  const body = tsArrayBody(source, name);
+  const out = [];
+  const re = new RegExp(`${field}\\s*:\\s*(true|false)`, "g");
+  let hit;
+  while ((hit = re.exec(body)) !== null) out.push(hit[1] === "true");
   return out;
 }
 
@@ -177,6 +212,31 @@ const rustAllEvents = setOf([...rust.statusEventNames, "note", ...rust.agentEven
 compare("TaskEventName 全集（前端）", truthAllEvents, frontendAllEvents, "src/tasks/task.ts", "mcp-gui/src/core/events.ts");
 compare("TaskEventName 全集（Rust）", truthAllEvents, rustAllEvents, "src/tasks/task.ts", "mcp-gui/src-tauri/src/schema.rs");
 
+// MCP 工具面：真源 TOOL_DEFS ↔ GUI 镜像 MCP_TOOLS（名称 + capability + requireApproval 三元组按序比对）
+// 「MCP 能力」视图的内容就是这份镜像——新工具（如 issue #28 的 wait_task / wait_any）必须两边同步。
+try {
+  const toolTriples = (src, constName) => {
+    const names = tsObjectFieldStrings(src, constName, "name");
+    const caps = tsObjectFieldStrings(src, constName, "capability");
+    const approvals = tsObjectFieldBooleans(src, constName, "requireApproval");
+    if (names.length !== caps.length || names.length !== approvals.length) {
+      throw new Error(
+        `${constName} 字段数不一致：name=${names.length} capability=${caps.length} requireApproval=${approvals.length}`,
+      );
+    }
+    return names.map((n, i) => `${n}|${caps[i]}|${approvals[i]}`);
+  };
+  compare(
+    "MCP 工具面（前端镜像）",
+    toolTriples(read(files.toolsTs), "TOOL_DEFS"),
+    toolTriples(read(files.capabilitiesTs), "MCP_TOOLS"),
+    "src/mcp/tools.ts",
+    "mcp-gui/src/core/capabilities.ts",
+  );
+} catch (err) {
+  failures.push(`✗ MCP 工具面比对失败：${err.message}`);
+}
+
 // GUI 版本号：两个文件必须一致（否则打包产物版本与前端显示不一致）
 try {
   const pkg = JSON.parse(read(files.packageJson));
@@ -196,9 +256,9 @@ if (failures.length > 0) {
   console.error("\n词表一致性检查未通过：\n");
   for (const item of failures) console.error(item);
   console.error(
-    "\n请把差异同步到镜像文件（真源始终是 src/tasks/task.ts 与 src/agents/agent-events.ts）。",
+    "\n请把差异同步到镜像文件（真源始终是 src/tasks/task.ts、src/agents/agent-events.ts 与 src/mcp/tools.ts）。",
   );
   process.exit(1);
 }
 
-console.log("\n全部一致：TS 真源 / 前端镜像 / Rust 镜像 三方词表无漂移。");
+console.log("\n全部一致：TS 真源 / 前端镜像 / Rust 镜像 三方词表无漂移（含 MCP 工具面）。");
