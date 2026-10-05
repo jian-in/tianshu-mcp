@@ -529,6 +529,9 @@ npm run check:stdio  # 严格 stdio 冒烟（真实进程字节流校验）
     <td align="center"><a href="https://github.com/jian-in"><img src="https://github.com/jian-in.png" width="72" height="72" alt="jian-in" /><br /><sub>jian-in</sub></a></td>
     <td align="center"><a href="https://github.com/huiliyi37"><img src="https://github.com/huiliyi37.png" width="72" height="72" alt="huiliyi37" /><br /><sub>huiliyi37</sub></a></td>
   </tr>
+  <tr>
+    <td align="center"><a href="https://github.com/MToF0214"><img src="https://github.com/MToF0214.png" width="72" height="72" alt="MToF0214" /><br /><sub>MToF0214</sub></a></td>
+  </tr>
 </table>
 
 ## Star History
