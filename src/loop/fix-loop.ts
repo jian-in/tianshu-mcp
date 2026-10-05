@@ -33,6 +33,10 @@ import {
   buildOpenDesignFixPrompt,
   writeOpenDesignFixPlan,
 } from "../agents/opendesign/fixplan.js";
+import {
+  buildMinimaxFixPrompt,
+  writeMinimaxFixPlan,
+} from "../agents/minimax/fixplan.js";
 import { buildFixPrompt } from "../agents/codex/input.js";
 import { extractFailureEvidence } from "../agents/codex/verify.js";
 import {
@@ -238,13 +242,16 @@ export class TaskOrchestrator {
         // 在 shutdown 竞态里丢失适配器已回报的停止结果，只能写"无停止结果可确认"。
         if (runRes.guiStop) meta.guiStop = runRes.guiStop;
         if (runRes.session) {
-          // 会话锚点按 agent 分槽存放：zcodeSession* 与 kimicodeSession* 语义不同
-          // （旧快照里的 zcodeSession* 是 ZCode 会话，拿去 Kimi Code 里定位必然失败）。
+          // 会话锚点按 agent 分槽存放：zcodeSession* 与 kimicodeSession*/minimaxSession* 语义不同
+          // （旧快照里的 zcodeSession* 是 ZCode 会话，拿去 MiniMax Code 里定位必然失败）。
           if (meta.agentId === "qoder") {
             meta.qoderSessionId = runRes.session.id ?? meta.qoderSessionId;
           } else if (meta.agentId === "kimicode") {
             meta.kimicodeSessionId = runRes.session.id ?? meta.kimicodeSessionId;
             meta.kimicodeSessionTitle = runRes.session.title ?? meta.kimicodeSessionTitle;
+          } else if (meta.agentId === "minimax") {
+            meta.minimaxSessionId = runRes.session.id ?? meta.minimaxSessionId;
+            meta.minimaxSessionTitle = runRes.session.title ?? meta.minimaxSessionTitle;
           } else {
             meta.zcodeSessionId = runRes.session.id ?? meta.zcodeSessionId;
             meta.zcodeSessionTitle = runRes.session.title ?? meta.zcodeSessionTitle;
@@ -442,6 +449,32 @@ export class TaskOrchestrator {
               directives: verdict.report.repairDirectives,
             });
             logger.info(`[codex] 第 ${roundNo} 轮返修指令已引用修复计划 ${plan.relPath}`);
+            continue;
+          }
+
+          if (meta.agentId === "minimax") {
+            // MiniMax Code 的修复计划落在**项目根内**（默认 `.minimax/plans/`）：
+            // 计划文件名要写进发给 agent 的返修指令，agent 必须能读到它；
+            // 写进任务数据目录会导致「我让你看计划，你说读不到」。文件名含轮次号，不覆盖历史。
+            const plan = await writeMinimaxFixPlan({
+              taskId: meta.taskId,
+              round: round - 1,
+              projectPath: meta.projectPath,
+              displayPath: meta.displayPath,
+              taskText: meta.task,
+              report: verdict.report,
+              planDir: resolved.profile.minimax?.planDir,
+              logger,
+            });
+            feedback = buildMinimaxFixPrompt({
+              summary: verdict.summary,
+              planRelPath: plan.relPath,
+              reportPath: verdict.mdPath,
+              evidence: visualEvidence(verdict.report),
+            });
+            logger.info(
+              `[minimax] 第 ${round} 轮返修指令已引用修复计划 ${plan.relPath}（项目内，供 MiniMax Code 读取）`,
+            );
             continue;
           }
 

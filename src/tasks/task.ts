@@ -157,6 +157,11 @@ export interface TaskMeta {
   designSystem?: string;
   /** Open Design 设计方向（已归一为 prototype/document/clone）；其他 agent 忽略 */
   designDirection?: string;
+  /** MiniMax Code 上下文窗口（界面候选文本）；其他 agent 忽略 */
+  contextWindow?: string;
+  /** MiniMax Code 原会话锚点（id 来自主窗口 URL；标题来自侧栏会话列表） */
+  minimaxSessionId?: string;
+  minimaxSessionTitle?: string;
   /** GUI 类 agent（traework）使用的面板模式（Work/Code/Design）；CLI 类忽略 */
   mode?: TraeworkMode;
   /**

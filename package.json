@@ -87,7 +87,8 @@
     "probe:opendesign": "node scripts/probe-opendesign.mjs",
     "fixture:zcode": "node scripts/prepare-zcode-fixture.mjs",
     "pack:check": "npm pack --dry-run",
-    "evidence:visual:windows": "node scripts/evidence-visual-windows.mjs"
+    "evidence:visual:windows": "node scripts/evidence-visual-windows.mjs",
+    "probe:minimax": "node scripts/probe-minimax.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.0",

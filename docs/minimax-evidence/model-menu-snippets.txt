@@ -1,0 +1,11 @@
+### model.selector.context_window
+Change:r}){const s=e;return P.jsxs("div",{role:"group","aria-label":`${n} ${Ze("model.selector.context_window").toLowerCase()}`,"data-testid":"model-context-control",className:"flex w-full flex-col gap-px",children:[P.jsxs("div",{className:"desktop-text-ui-assist flex min-h-[23px] items-center px-1.5 py-1 text-[12px] font-normal leading-[15px] text-text_default_tertiary",children:[Ze("model.selector.context"),e!==void 0&&!t.includes(e)?` · ${Wu(e)}`:null]}),t.map(l=>{const c=
+
+### model.selector.effort
+ w-full bg-border_default"})}):null,P.jsxs("div",{role:"group","aria-label":Ze("model.selector.effort"),className:"flex flex-col gap-px",children:[P.jsx("div",{className:"px-2 py-1 text-[12px] font-normal leading-4 text-text_default_tertiary",children:Ze("model.selector.effort")}),w.effort.options.map(I=>P.jsxs("button",{type:"button",role:"menuitemradio",className:"flex h-8 items-center gap-2 rounded-[8px] px-2 text-left text-[14px] leading-5 text-text_default_primary transi
+
+### model.selector.select_model
+ngs.voice.microphone_title":M?"file_panel.tab.add":f?"file_panel.browser.more":"model.selector.select_model"),className:Vu,style:{width:v||p?"max-content":Math.min(m.width??200,t.maxWidth??200),minWidth:p?Math.min(200,h):void 0,maxWidth:p?h:t.maxWidth??200,maxHeight:Math.min(y,t.maxHeight??y),left:(i==null?void 0:i.menu.x)??16,top:(i==null?void 0:i.menu.y)??16},children:P.jsxs("div",{className:"min-h-0 overflow-y-auto mavis-dropdown-menu-thin-scroll",onScroll:()=>r(null),chil
+
+### model-context-control
+bel":`${n} ${Ze("model.selector.context_window").toLowerCase()}`,"data-testid":"model-context-control",className:"flex w-full flex-col gap-px",children:[P.jsxs("div",{className:"desktop-text-ui-assist flex min-h-[23px] items-center px-1.5 py-1 text-[12px] font-normal leading-[15px] text-text_default_tertiary",children:[Ze("model.selector.context"),e!==void 0&&!t.includes(e)?` · ${Wu(e)}`:null]}),t.map(l=>{const c=Wu(l),d=l===s;return P.jsxs("button",{type:"button",role:"menui

@@ -1,0 +1,14 @@
+=== "model-context" 出现处上下文 ===
+#1: ...nst s=e;return P.jsxs("div",{role:"group","aria-label":`${n} ${Ze("model.selector.context_window").toLowerCase()}`,"data-testid":"model-context-control",className:"flex w-full flex-col gap-px",children:[P.jsxs("div",{className:"desktop-text-ui-assist flex min-...
+
+#2: ...lassName:"shrink-0",children:c}),(i==null?void 0:i[String(l)])==="higher_usage"?P.jsx("span",{"aria-hidden":"true","data-testid":"model-context-higher-usage-tag",className:"inline-flex shrink-0 items-center justify-center rounded-[6px] bg-bg_grouped_tertiary_e...
+
+=== testid 相关赋值形态 ===
+
+
+=== 所有 "mavis-*" class 前缀 ===
+mavis-locale
+
+=== 候选：model-* / context-* 标识符 ===
+model-context-control
+model-context-higher-usage-tag

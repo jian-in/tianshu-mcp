@@ -52,6 +52,8 @@ export interface NewTaskInput {
   designSystem?: string;
   /** Open Design 设计方向（已归一为 prototype/document/clone）；其他 agent 忽略 */
   designDirection?: string;
+  /** MiniMax Code 上下文窗口（界面候选文本）；其他 agent 忽略 */
+  contextWindow?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
   /** ZCode 专用：目标项目未登记时是否允许自动导入（省略 = 允许）。 */
@@ -276,6 +278,7 @@ export class TaskManager {
       planDoc: input.planDoc,
       designSystem: input.designSystem,
       designDirection: input.designDirection,
+      contextWindow: input.contextWindow,
       mode: input.mode,
       allowCreateProject: input.allowCreateProject,
       autoVerify: input.autoVerify,
@@ -418,6 +421,24 @@ export class TaskManager {
         // 环境类（close_existing_instance / login_required / setup_recovery / system_permission）：
         // 任务尚未真正派发或绑定未完成 → 复检环境后走全新派发并**补发完整任务书**，
         // 用户确认文本只作为「已处理」说明，绝不发给模型。
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = false;
+        meta.continueReobserve = undefined;
+      }
+    } else if (meta.agentId === "minimax") {
+      // 与 kimicode 同构的三分派：agent_question 回答回原会话；user_confirmation 重连观察；
+      // 环境类复检后全新派发并补发完整任务书（用户确认文本绝不发给模型）。
+      if (meta.needsUserKind === "agent_question") {
+        if (!meta.minimaxSessionId && !meta.minimaxSessionTitle)
+          return { found: false, reason: "原 MiniMax Code 会话定位信息丢失，拒绝打开最近会话" };
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = true;
+        meta.continueReobserve = undefined;
+      } else if (meta.needsUserKind === "user_confirmation") {
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = false;
+        meta.continueReobserve = true;
+      } else {
         meta.continueMessage = message.trim();
         meta.continueSendMessage = false;
         meta.continueReobserve = undefined;

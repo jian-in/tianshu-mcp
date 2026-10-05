@@ -56,6 +56,7 @@ export function makeBuildCtx(services: AppServices) {
     planDoc: meta.planDoc,
     designSystem: meta.designSystem,
     designDirection: meta.designDirection,
+    contextWindow: meta.contextWindow,
     mode: meta.mode,
     allowCreateProject: meta.allowCreateProject,
     round,
@@ -127,6 +128,27 @@ function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
       ...(meta.continueReobserve ? { reobserve: true } : {}),
       sessionId: meta.kimicodeSessionId,
       sessionTitle: meta.kimicodeSessionTitle,
+      boundProjectPath: meta.boundProjectPath,
+      model: meta.model,
+      permissionMode: meta.permissionMode,
+    };
+  }
+  if (meta.agentId === "minimax") {
+    if (!continuing && round <= 0) return undefined;
+    /**
+     * 恢复语义（与 kimicode 同构）：
+     * - continue + sendMessage（agent_question）：定位原会话 → 回答写进输入框发送（不重发任务书）；
+     * - continue + reobserve（user_confirmation）：重连观察至终态，不发送任何消息；
+     * - rework：定位原会话 → 发送返修消息。
+     * 定位不到原会话一律 session_lost，绝不退化打开「最近会话」。
+     */
+    return {
+      kind: continuing ? "continue" : "rework",
+      message: meta.continueMessage,
+      sendMessage: meta.continueSendMessage ?? round > 0,
+      ...(meta.continueReobserve ? { reobserve: true } : {}),
+      sessionId: meta.minimaxSessionId,
+      sessionTitle: meta.minimaxSessionTitle,
       boundProjectPath: meta.boundProjectPath,
       model: meta.model,
       permissionMode: meta.permissionMode,

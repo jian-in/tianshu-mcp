@@ -46,6 +46,11 @@ export interface TaskContext {
   designSystem?: string;
   /** Open Design 设计方向（已归一 prototype/document/clone）；其他 agent 忽略 */
   designDirection?: string;
+  /**
+   * MiniMax Code 上下文窗口（已归一到界面候选文本，如 `512K` / `1M`）；其他 agent 忽略。
+   * 合法性（是否落在界面实际候选内）只能在运行期读界面候选项校验，见 minimax/run.ts。
+   */
+  contextWindow?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
   /**

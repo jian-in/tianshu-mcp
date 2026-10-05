@@ -469,6 +469,13 @@ function runTaskHandler(
       return errorResult("designDirection 是 Open Design 专用参数");
     }
 
+    if (finalAgentId === "minimax") {
+      if (args.mode !== undefined) return errorResult("MiniMax Code 不支持 mode 参数；请移除 mode 后重试");
+    } else if (args.contextWindow !== undefined) {
+      // 与 designDirection 同一决策：非专用 agent 显式传入即拒绝，绝不静默忽略。
+      return errorResult("contextWindow 是 MiniMax Code 专用参数");
+    }
+
     const cfg = await dataHome.loadConfig();
     // 有效任务超时（R2）：调用参数 > profile > server 默认值，在提交时固化
     const taskTimeoutMs =
@@ -487,6 +494,7 @@ function runTaskHandler(
         planDoc: args.planDoc,
         designSystem: args.designSystem,
         designDirection: args.designDirection,
+        contextWindow: args.contextWindow,
         mode: args.mode,
         allowCreateProject: args.allowCreateProject,
         autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,

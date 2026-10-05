@@ -160,6 +160,14 @@ export const RunTaskParamsSchema = z.object({
    * 两者混在一个枚举里会让 TraeWork 的模式识别（detectModeFromText）分支失真。
    */
   designDirection: z.string().min(1).optional(),
+  /**
+   * 上下文窗口（仅 minimax-gui 生效）：界面候选实测为 `512K` / `1M`（数值换算而来：
+   * `e/1e6 → nM`、`e/1e3 → nK`）。其他 agent 显式传入即报错。
+   *
+   * 刻意用宽松的 string 而不是枚举：候选值随模型变化（不同模型档位集合不同），
+   * 硬编码枚举会把合法值拒之门外。合法性由**界面实际渲染的候选**在发送前校验（fail-closed）。
+   */
+  contextWindow: z.string().min(1).optional(),
   autoVerify: z.boolean().optional(),
   autoFixRounds: z.number().int().min(0).max(10).optional(),
   /**
@@ -646,6 +654,47 @@ export const OPEN_DESIGN_DEFAULTS = {
   dialogOperationTimeoutMs: 60_000,
 } as const;
 
+/**
+ * MiniMax Code 专属配置（`adapter="minimax-gui"`）。
+ *
+ * 真机取证（2026-10-05，MiniMax Code 3.1.0）：模型弹层渲染在独立的 `Model menu` 窗口；
+ * 推理等级与上下文窗口**不是平铺项**，而是悬停某个模型项后展开的**二级子菜单**
+ * （`aria-haspopup="menu"` → `aria-expanded="true"`）。
+ */
+export const MinimaxProfileSchema = z.object({
+  /**
+   * 悬停模型项后等待二级子菜单展开的预算（ms）。
+   *
+   * 真机实测展开是**异步**的：hover 后需数百毫秒子菜单才渲染出 `role="group"`；
+   * 预算不足会读到空档位集合，进而把合法档位误判成「界面不支持」。
+   */
+  submenuOpenTimeoutMs: z.number().int().positive().optional(),
+  /** 等待模型菜单窗口（`Model menu`）出现的预算（ms） */
+  modelMenuTimeoutMs: z.number().int().positive().optional(),
+  /** 等待发送按钮由「不可用」变可用的预算（ms） */
+  sendReadyTimeoutMs: z.number().int().positive().optional(),
+  /**
+   * 推理等级 token → UI 显示名映射（可覆盖，应对 UI 文案漂移）。
+   * 键为内部值（default/low/medium/high/xhigh/max），值为界面上的档位文本。
+   */
+  levelLabels: z.record(z.string(), z.string()).default({}),
+  /** 修复/优化计划文档输出目录（相对项目根），默认 `.minimax/plans` */
+  planDir: z.string().optional(),
+});
+export type MinimaxProfile = z.infer<typeof MinimaxProfileSchema>;
+
+/** MiniMax Code 预算默认值（读取点兜底，profile 可覆盖） */
+export const MINIMAX_DEFAULTS = {
+  submenuOpenTimeoutMs: 8_000,
+  modelMenuTimeoutMs: 10_000,
+  sendReadyTimeoutMs: 20_000,
+  planDir: ".minimax/plans",
+  /** 枚举受管实例当前拥有的 #32770 窗口（残留对话框探测）的超时 */
+  dialogProbeTimeoutMs: 30_000,
+  /** 原生「选择文件夹」对话框「填路径 → 回读校验 → 确认 → 等关闭」的总预算 */
+  dialogOperationTimeoutMs: 60_000,
+} as const;
+
 export const AgentProfileSchema = z.object({
   id: z.string().min(1).optional(), // 仅内置 profiles 使用；数据目录 profiles 以键名为准
   displayName: z.string().default(""),
@@ -657,7 +706,15 @@ export const AgentProfileSchema = z.object({
   driver: z.enum(["spawn", "gui"]).default("spawn"),
   /** GUI adapter 显式判别；旧 profile 缺省时保持 TraeWork 兼容行为。 */
   adapter: z
-    .enum(["traework-gui", "zcode-gui", "codex-gui", "kimicode-gui", "qoder-gui", "opendesign-gui"])
+    .enum([
+      "traework-gui",
+      "zcode-gui",
+      "codex-gui",
+      "kimicode-gui",
+      "qoder-gui",
+      "opendesign-gui",
+      "minimax-gui",
+    ])
     .optional(),
   status: z.enum(["ready", "research", "unsupported"]).default("ready"),
   command: z.string().nullable().optional(),
@@ -676,6 +733,8 @@ export const AgentProfileSchema = z.object({
   gui: GuiProfileSchema.optional(),
   /** Open Design 专属配置（adapter="opendesign-gui" 时使用） */
   opendesign: OpenDesignProfileSchema.optional(),
+  /** MiniMax Code 专属配置（adapter="minimax-gui" 时使用） */
+  minimax: MinimaxProfileSchema.optional(),
   note: z.string().optional(),
 });
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;

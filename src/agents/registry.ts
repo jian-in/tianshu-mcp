@@ -13,10 +13,12 @@ import { QoderGuiAdapter } from "./qoder/adapter.js";
 import { discoverQoder } from "./qoder/discovery.js";
 import { KimicodeGuiAdapter } from "./kimicode/adapter.js";
 import { OpenDesignGuiAdapter } from "./opendesign/adapter.js";
+import { MinimaxGuiAdapter } from "./minimax/adapter.js";
 import { discoverZcode } from "./zcode/discovery.js";
 import { discoverCodex } from "./codex/discovery.js";
 import { discoverKimicode } from "./kimicode/discovery.js";
 import { discoverOpenDesign } from "./opendesign/discovery.js";
+import { discoverMinimax } from "./minimax/discovery.js";
 import { discoverTraework } from "./traework/discovery.js";
 import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
@@ -34,7 +36,16 @@ export class AgentAdapterRegistry {
   ) {
     // 默认：所有 profile 都用通用 CLI adapter（按 profile.promptMode 传递 prompt）。
     // driver=gui 的 profile 会在 resolve() 时替换为 GUI adapter（见 ensureAdapterFor）。
-    for (const id of ["codex", "zcode", "traework", "kimicode", "qoder", "opendesign", "stub"]) {
+    for (const id of [
+      "codex",
+      "zcode",
+      "traework",
+      "kimicode",
+      "qoder",
+      "opendesign",
+      "minimax",
+      "stub",
+    ]) {
       this.adapters.set(id, new CliAdapter(id));
     }
   }
@@ -47,7 +58,10 @@ export class AgentAdapterRegistry {
   private ensureAdapterFor(agentId: string, profile: AgentProfile): void {
     const adapterType = profile.adapter ?? (profile.driver === "gui" ? "traework-gui" : undefined);
     const current = this.adapters.get(agentId);
-    if (adapterType === "qoder-gui") {
+    if (adapterType === "minimax-gui") {
+      if (!(current instanceof MinimaxGuiAdapter))
+        this.adapters.set(agentId, new MinimaxGuiAdapter(agentId));
+    } else if (adapterType === "qoder-gui") {
       if (!(current instanceof QoderGuiAdapter))
         this.adapters.set(agentId, new QoderGuiAdapter(agentId));
     } else if (adapterType === "opendesign-gui") {
@@ -72,6 +86,7 @@ export class AgentAdapterRegistry {
       current instanceof KimicodeGuiAdapter ||
       current instanceof QoderGuiAdapter ||
       current instanceof OpenDesignGuiAdapter ||
+      current instanceof MinimaxGuiAdapter ||
       !current
     ) {
       this.adapters.set(agentId, new CliAdapter(agentId));
@@ -194,6 +209,46 @@ export class AgentAdapterRegistry {
               version: found.version,
             }
           : undefined,
+      };
+    }
+    if (profile.adapter === "minimax-gui") {
+      const found = await discoverMinimax(profile);
+      if (process.platform !== "win32") {
+        return {
+          id: agentId,
+          displayName: profile.displayName || agentId,
+          profile,
+          command: found?.path ?? "",
+          argsTemplate: profile.argsTemplate,
+          ok: false,
+          message: "MiniMax Code macOS research：未完成真机验证，禁止派发",
+          discovered: found ? { source: "discovery", version: found.version } : undefined,
+        };
+      }
+      if (found)
+        return {
+          id: agentId,
+          displayName: profile.displayName || agentId,
+          profile,
+          command: found.path,
+          argsTemplate: profile.argsTemplate,
+          ok: true,
+          message: `探测到 MiniMax Code: ${found.path}${found.version ? ` (v${found.version})` : ""}`,
+          discovered: {
+            source: found.source === "explicit" ? "explicit" : "discovery",
+            version: found.version,
+          },
+        };
+      return {
+        id: agentId,
+        displayName: profile.displayName || agentId,
+        profile,
+        command: "",
+        argsTemplate: profile.argsTemplate,
+        ok: false,
+        message:
+          profile.note ||
+          "未探测到 MiniMax Code 桌面端（固定盘相对路径、注册表卸载信息与标准安装目录均未命中）；请确认已安装 MiniMax Code",
       };
     }
     if (profile.adapter === "qoder-gui") {
