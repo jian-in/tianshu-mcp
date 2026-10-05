@@ -72,7 +72,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macos-latest 是**浮动标签**，指向最新的 macOS runner 池——该池容量紧张，
+        # 实测本提交的 3 条 macos-latest 腿反复在排队阶段被平台取消（Cancelled 15m，
+        # 日志 blob 都未生成），而同仓 visual-browser job 用固定标签 macos-15 全部成功。
+        # 故这里改用与之一致的**具体版本标签**（macos-15），把「等 runner」变成确定性排队。
+        os: [ubuntu-latest, windows-latest, macos-15]
         node: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
