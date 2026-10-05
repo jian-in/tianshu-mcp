@@ -520,17 +520,13 @@ npm run check:stdio  # 严格 stdio 冒烟（真实进程字节流校验）
 
 <table>
   <tr>
-    <td align="center"><a href="https://github.com/liuchsong"><img src="https://github.com/liuchsong.png" width="72" height="72" alt="liuchsong" /><br /><sub>liuchsong</sub></a></td>
-    <td align="center"><a href="https://github.com/a13612745638"><img src="https://github.com/a13612745638.png" width="72" height="72" alt="a13612745638" /><br /><sub>a13612745638</sub></a></td>
-    <td align="center"><a href="https://github.com/king195547"><img src="https://github.com/king195547.png" width="72" height="72" alt="king195547" /><br /><sub>king195547</sub></a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://github.com/zhaoxc857"><img src="https://github.com/zhaoxc857.png" width="72" height="72" alt="zhaoxc857" /><br /><sub>zhaoxc857</sub></a></td>
-    <td align="center"><a href="https://github.com/jian-in"><img src="https://github.com/jian-in.png" width="72" height="72" alt="jian-in" /><br /><sub>jian-in</sub></a></td>
-    <td align="center"><a href="https://github.com/huiliyi37"><img src="https://github.com/huiliyi37.png" width="72" height="72" alt="huiliyi37" /><br /><sub>huiliyi37</sub></a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://github.com/MToF0214"><img src="https://github.com/MToF0214.png" width="72" height="72" alt="MToF0214" /><br /><sub>MToF0214</sub></a></td>
+    <td align="center"><a href="https://github.com/liuchsong"><img src="https://github.com/liuchsong.png" width="50" height="50" alt="liuchsong" /><br /><sub>liuchsong</sub></a></td>
+    <td align="center"><a href="https://github.com/a13612745638"><img src="https://github.com/a13612745638.png" width="50" height="50" alt="a13612745638" /><br /><sub>a13612745638</sub></a></td>
+    <td align="center"><a href="https://github.com/king195547"><img src="https://github.com/king195547.png" width="50" height="50" alt="king195547" /><br /><sub>king195547</sub></a></td>
+    <td align="center"><a href="https://github.com/zhaoxc857"><img src="https://github.com/zhaoxc857.png" width="50" height="50" alt="zhaoxc857" /><br /><sub>zhaoxc857</sub></a></td>
+    <td align="center"><a href="https://github.com/jian-in"><img src="https://github.com/jian-in.png" width="50" height="50" alt="jian-in" /><br /><sub>jian-in</sub></a></td>
+    <td align="center"><a href="https://github.com/huiliyi37"><img src="https://github.com/huiliyi37.png" width="50" height="50" alt="huiliyi37" /><br /><sub>huiliyi37</sub></a></td>
+    <td align="center"><a href="https://github.com/MToF0214"><img src="https://github.com/MToF0214.png" width="50" height="50" alt="MToF0214" /><br /><sub>MToF0214</sub></a></td>
   </tr>
 </table>
 
