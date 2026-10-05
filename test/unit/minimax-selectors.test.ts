@@ -1,15 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { MM_MAIN_SELECTORS, MM_MENU_SELECTORS, cssCandidates, mainSpec, menuSpec, resolveFnSource } from "../../src/agents/minimax/selectors.js";
+import * as vm from "node:vm";
 import {
   contextOptionsExpression,
+  conversationTextExpression,
+  domClickExpression,
   effortOptionsExpression,
+  exactMatchExpression,
+  existsExpression,
+  firstPointExpression,
+  focusInputExpression,
   hoverPointExpression,
+  inputTextExpression,
+  labelExpression,
+  menuModelItemsExpression,
+  menuModelReadyExpression,
+  menuOpenCountExpression,
+  menuOpenExpression,
+  modalChooseFolderPointExpression,
+  modalOpenExpression,
+  modalProjectExpression,
+  modalSubmitPointExpression,
   newTaskPointExpression,
+  pageHiddenExpression,
   pollExpression,
+  projectGroupsExpression,
+  projectPointExpression,
   sendButtonPointExpression,
+  sendStateExpression,
+  sessionTitlesExpression,
+  singlePointExpression,
   submenuOpenExpression,
   submenuOwnerExpression,
+  textExpression,
 } from "../../src/agents/minimax/dom.js";
+import { normalizeProjectPath } from "../../src/agents/minimax/workspace.js";
 import {
   minimaxMainTargetRank,
   minimaxMenuTargetRank,
@@ -77,6 +102,71 @@ describe("MiniMax Code 选择器表", () => {
     expect(src).toContain("function __minimaxResolve");
     expect(src).toContain("normalize('NFKC')");
     expect(src).toContain("scopeSel");
+  });
+});
+
+/**
+ * 所有页面内表达式都必须在**纯 Node 沙箱**里可解析执行到「引用未定义标识符」之外的程度。
+ *
+ * 为什么要这一层（真机踩到两次）：表达式是「拼字符串」注入页面的，一旦某段 helper 没被带进去
+ * （例如自制了一个只含部分 helper 的 DOM 片段），页面会抛
+ * `ReferenceError: __minimaxResolve is not defined` —— 单测与 typecheck **都发现不了**，
+ * 只有真机跑到那一步才炸。这里用 vm 直接执行表达式，把这类错误提前到单测。
+ */
+describe("MiniMax Code 页面内表达式（沙箱可执行性）", () => {
+  const sandbox = () =>
+    ({
+      document: {
+        querySelectorAll: () => [],
+        querySelector: () => null,
+        elementFromPoint: () => null,
+        body: { children: [] },
+        visibilityState: "visible",
+      },
+      innerHeight: 800,
+      innerWidth: 1200,
+      getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+      location: { href: "" },
+    }) as unknown as Record<string, unknown>;
+
+  const expressions: Array<[string, string]> = [
+    ["exists", existsExpression(mainSpec("chatInput"))],
+    ["text", textExpression(mainSpec("modelTrigger"))],
+    ["label", labelExpression(mainSpec("modelTrigger"))],
+    ["singlePoint", singlePointExpression(mainSpec("sendButton"))],
+    ["domClick", domClickExpression(mainSpec("sendButton"))],
+    ["firstPoint", firstPointExpression(mainSpec("sessionGroupNewTask"))],
+    ["exactMatch", exactMatchExpression(mainSpec("sendButton"), "x")],
+    ["newTaskPoint", newTaskPointExpression()],
+    ["projectGroups", projectGroupsExpression()],
+    ["projectPoint", projectPointExpression(normalizeProjectPath("D:/a/b"))],
+    ["sessionTitles", sessionTitlesExpression()],
+    ["inputText", inputTextExpression()],
+    ["focusInput", focusInputExpression()],
+    ["sendButtonPoint", sendButtonPointExpression()],
+    ["sendState", sendStateExpression()],
+    ["conversationText", conversationTextExpression()],
+    ["menuOpenCount", menuOpenCountExpression()],
+    ["menuModelItems", menuModelItemsExpression()],
+    ["menuModelReady", menuModelReadyExpression()],
+    ["submenuOpen", submenuOpenExpression("M3")],
+    ["submenuOwner", submenuOwnerExpression()],
+    ["effortOptions", effortOptionsExpression("M3")],
+    ["contextOptions", contextOptionsExpression("M3")],
+    ["hoverPoint", hoverPointExpression("M3")],
+    ["poll", pollExpression()],
+    ["pageHidden", pageHiddenExpression()],
+    ["menuOpen", menuOpenExpression()],
+    ["modalOpen", modalOpenExpression()],
+    ["modalText", modalProjectExpression()],
+    ["modalChooseFolder", modalChooseFolderPointExpression()],
+    ["modalSubmit", modalSubmitPointExpression()],
+  ];
+
+  it.each(expressions)("%s：在沙箱中无未定义标识符", (_name, expr) => {
+    // 只关心「解析/执行到引用未定义标识符」这一类错误；沙箱没有真实 DOM，
+    // 因此把「DOM 相关的 TypeError」视为通过（表达式已成功进入执行体）。
+    expect(() => vm.runInNewContext(expr, sandbox())).not.toThrow(/is not defined/);
   });
 });
 

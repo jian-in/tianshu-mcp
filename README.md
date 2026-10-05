@@ -448,6 +448,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | [docs/kimi-cdp.md](docs/kimi-cdp.md) | Kimi Code：双渲染进程、工作区完整路径绑定与原生导入、模型三级选择与思考档位 |
 | [docs/qoder-cdp.md](docs/qoder-cdp.md) | Qoder CN：安装发现与实例复用、工作区原生导入、`modelSource` 与全局思考等级、原会话返修 |
 | [docs/opendesign-cdp.md](docs/opendesign-cdp.md) | Open Design：数据目录推导、sidecar 根进程判定、选择器取证表与 12 步执行链、传输层双路径、失败码表 |
+| docs/minimax-cdp.md | MiniMax Code：双渲染进程、模型二级子菜单（推理等级 / 上下文窗口）与逐模型候选、完整路径项目绑定、`Select Directory` 原生对话框 |
 
 **验收与可观测**
 

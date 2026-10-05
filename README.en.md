@@ -449,6 +449,7 @@ Decoupling and release boundaries (read before changing anything here):
 | [docs/kimi-cdp.en.md](docs/kimi-cdp.en.md) | Kimi Code: dual renderer processes, workspace full-path binding and native import, three-level model selection and reasoning levels |
 | [docs/qoder-cdp.en.md](docs/qoder-cdp.en.md) | Qoder CN: install discovery and instance reuse, native workspace import, `modelSource` and global reasoning level, same-session rework |
 | [docs/opendesign-cdp.en.md](docs/opendesign-cdp.en.md) | Open Design: data-directory derivation, sidecar root-process detection, selector evidence table and the 12-step chain, dual-path transport, failure codes |
+| docs/minimax-cdp.en.md | MiniMax Code: dual renderer processes, the model second-level submenu (reasoning level / context window) with per-model candidates, full-path project binding, the native `Select Directory` dialog |
 
 **Acceptance and observability**
 

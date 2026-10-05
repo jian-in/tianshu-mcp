@@ -385,6 +385,83 @@ export function contextOptionsExpression(model: string, overrides: SelectorOverr
   })()`;
 }
 
+/**
+ * 按完整路径唯一点选项目分组的中心坐标（分组是容器：点它的头部才是切换项目的语义）。
+ *
+ * `wanted` 由 Node 侧用 normalizeProjectPath 归一后传入，页面内只做同样的词法归一并比较，
+ * 避免两处各写一套归一逻辑产生分歧（与 Kimi Code 的 clickWorkspaceByPath 同一思路）。
+ */
+export function projectPointExpression(
+  wanted: string,
+  overrides: SelectorOverrides = {},
+): string {
+  return `(function(){${MINIMAX_DOM}/*mm:project-point*/
+    const target = ${JSON.stringify(wanted)};
+    const norm = s => (s || '').replace(/[\/]+$/, '').replace(/^([a-z]):/, (m, d) => d.toUpperCase() + ':').toLocaleLowerCase();
+    const groups = __minimaxResolve(${mainSpec("sessionGroup", overrides)});
+    const hit = groups.filter(g => norm(g.getAttribute('data-workspace-dir') || '') === target);
+    if (hit.length !== 1) return null;
+    const header = hit[0].querySelector('[aria-label]') || hit[0];
+    return mmPoint(header);
+  })()`;
+}
+
+/**
+ * 「创建项目」**应用内模态框**相关表达式（真机实测：点「新建项目」先弹它，不直接弹原生对话框）。
+ *
+ * 模态框判据是 `.responsive-modal-mask` **且内含「创建项目」标题**——
+ * 只看 mask 会把其它模态（如引导页）当成创建项目框。
+ */
+export function modalOpenExpression(): string {
+  return `(function(){/*mm:modal-open*/
+    const masks = [...document.querySelectorAll('.responsive-modal-mask')];
+    return masks.some(m => (m.innerText || '').includes('创建项目'));
+  })()`;
+}
+
+/** 模态框全文（诊断：文件夹行是否已回填路径） */
+export function modalProjectExpression(): string {
+  return `(function(){/*mm:modal-text*/
+    const masks = [...document.querySelectorAll('.responsive-modal-mask')];
+    const hit = masks.find(m => (m.innerText || '').includes('创建项目'));
+    return hit ? (hit.innerText || '').replace(/\s+/g, ' ').trim() : '';
+  })()`;
+}
+
+/**
+ * 模态框里「选择文件夹」按钮的中心坐标。
+ *
+ * 只认**按钮内文本以「选择文件夹」开头**的元素：该行还有快捷键提示（Ctrl+O），
+ * 用全等匹配会漏；用「包含」会同时命中标题「选择文件夹以创建项目」，故用 startsWith。
+ */
+export function modalChooseFolderPointExpression(): string {
+  return `(function(){/*mm:modal-choose-folder*/
+    const masks = [...document.querySelectorAll('.responsive-modal-mask')];
+    const modal = masks.find(m => (m.innerText || '').includes('创建项目'));
+    if (!modal) return null;
+    const btns = [...modal.querySelectorAll('button,[role="button"]')];
+    const hit = btns.filter(b => (b.innerText || '').trim().startsWith('选择文件夹'));
+    if (hit.length !== 1) return null;
+    const r = hit[0].getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`;
+}
+
+/** 模态框里「创建项目」提交按钮的中心坐标（最后一步） */
+export function modalSubmitPointExpression(): string {
+  return `(function(){/*mm:modal-submit*/
+    const masks = [...document.querySelectorAll('.responsive-modal-mask')];
+    const modal = masks.find(m => (m.innerText || '').includes('创建项目'));
+    if (!modal) return null;
+    const btns = [...modal.querySelectorAll('button,[role="button"]')];
+    // 「创建项目」既是标题也是提交按钮文案：取**非取消**且文本恰为「创建项目」的按钮。
+    const hit = btns.filter(b => (b.innerText || '').trim() === '创建项目');
+    if (hit.length !== 1) return null;
+    const r = hit[0].getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`;
+}
+
 /** 悬停某个模型项的中心坐标（悬停以展开二级子菜单）；cdp.ts 用鼠标事件派发 */
 export function hoverPointExpression(name: string, overrides: SelectorOverrides = {}): string {
   return `(function(){${MINIMAX_DOM}/*mm:hover-point*/

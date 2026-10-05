@@ -50,6 +50,7 @@ import {
 } from "./instance.js";
 import { listOwnedDialogs, selectMinimaxFolder, closeStrayDialogs } from "./dialog.js";
 import { ensureFreshDraft, locateSessionProject } from "./session.js";
+import { clickModalChooseFolder, dismissProjectModal, openProjectModal, submitProjectModal } from "./project-modal.js";
 import { matchMinimaxProject, normalizeProjectPath } from "./workspace.js";
 import { describeLevelValueError, exactUiName, parseMinimaxModel } from "./model.js";
 import {
@@ -273,7 +274,14 @@ async function bindProject(args: BindProjectArgs): Promise<MinimaxBindOutcome> {
       gui.dialogProbeTimeoutMs,
     );
     await cdp.dismissMenus();
-    if (!(await cdp.createProject())) return { ok: false, reason: "click" };
+    // **两步**：点「新建项目」先弹**应用内模态框**，模态框里再点「选择文件夹」才弹原生对话框。
+    // 只走一步会把「原生对话框始终不出现」误判成选择器失效（真机踩到）。
+    const modal = await openProjectModal(cdp, Math.min(15_000, Math.max(1, deadlineMs() - Date.now())), deps.sleep);
+    if (!modal.opened) return { ok: false, reason: "project" };
+    if (!(await clickModalChooseFolder(cdp))) {
+      await dismissProjectModal(cdp);
+      return { ok: false, reason: "click" };
+    }
     let selected: Awaited<ReturnType<typeof selectMinimaxFolder>>;
     try {
       selected = await budget.run(
@@ -293,12 +301,21 @@ async function bindProject(args: BindProjectArgs): Promise<MinimaxBindOutcome> {
         message: error instanceof Error ? error.message : String(error),
       };
     }
-    if (!selected.ok)
+    if (!selected.ok) {
+      await dismissProjectModal(cdp).catch(() => {});
       return {
         ok: false,
         reason: selected.needsPermission ? "permission" : "native",
         message: selected.message,
       };
+    }
+    // 原生对话框确认后：模态框的「文件夹」行应已回填，点「创建项目」提交。
+    await deps.sleep(600);
+    if (!(await submitProjectModal(cdp))) {
+      await dismissProjectModal(cdp).catch(() => {});
+      return { ok: false, reason: "click" };
+    }
+    logger.info("[minimax] 已提交「创建项目」模态框");
   }
 
   // 回读：项目分组（权威）+ 触发器文本（辅助）都要与目标路径对得上。

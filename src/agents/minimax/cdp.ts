@@ -26,6 +26,7 @@ import {
   contextOptionsExpression,
   conversationTextExpression,
   effortOptionsExpression,
+  domClickExpression,
   existsExpression,
   exactMatchExpression,
   firstPointExpression,
@@ -37,9 +38,14 @@ import {
   menuModelReadyExpression,
   menuOpenCountExpression,
   menuOpenExpression,
+  modalChooseFolderPointExpression,
+  modalOpenExpression,
+  modalProjectExpression,
+  modalSubmitPointExpression,
   newTaskPointExpression,
   pageHiddenExpression,
   pollExpression,
+  projectPointExpression,
   projectGroupsExpression,
   sendButtonPointExpression,
   sendStateExpression,
@@ -177,8 +183,6 @@ interface KeyStroke {
   modifiers?: number;
 }
 const ESCAPE_KEY: KeyStroke = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 };
-const SELECT_ALL_KEY: KeyStroke = { key: "a", code: "KeyA", windowsVirtualKeyCode: 65, modifiers: 2 };
-const BACKSPACE_KEY: KeyStroke = { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 };
 
 export class MinimaxCdpClient {
   readonly port: number;
@@ -301,7 +305,7 @@ export class MinimaxCdpClient {
       await this.clickAt(target.role, found.point.x, found.point.y);
       return true;
     }
-    return (await this.evaluateOn<boolean>(target.role, domClickSafe(target.spec))) === true;
+    return (await this.evaluateOn<boolean>(target.role, domClickExpression(target.spec))) === true;
   }
 
   /**
@@ -320,7 +324,7 @@ export class MinimaxCdpClient {
       await this.clickAt(target.role, found.point.x, found.point.y);
       return true;
     }
-    return (await this.evaluateOn<boolean>(target.role, domClickSafe(target.spec))) === true;
+    return (await this.evaluateOn<boolean>(target.role, domClickExpression(target.spec))) === true;
   }
 
   /** 按可见文本/aria 精确点击；多命中/未命中都不点击，并回报可见候选用于诊断 */
@@ -386,25 +390,56 @@ export class MinimaxCdpClient {
     if (matched.length !== 1) return { clicked: false, count: matched.length };
     // 分组是容器：点它的头部（第一个 [aria-label] 元素）才是切换项目的语义
     const point = await this.evaluate<MinimaxPoint | null>(
-      `(function(){${MINIMAX_DOM_FOR_POINT}/*mm:project-point*/
-        const groups = __minimaxResolve(${mainSpec("sessionGroup", this.selectors)});
-        const wanted = ${JSON.stringify(wanted)};
-        const norm = s => (s || '').replace(/[\\\\/]+$/, '').replace(/^([a-z]):/, (m, d) => d.toUpperCase() + ':').toLocaleLowerCase();
-        const hit = groups.filter(g => norm(g.getAttribute('data-workspace-dir') || '') === wanted);
-        if (hit.length !== 1) return null;
-        const header = hit[0].querySelector('[aria-label]') || hit[0];
-        const r = header.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-      })()`,
+      projectPointExpression(wanted, this.selectors),
     );
     if (!point) return { clicked: false, count: 1 };
     await this.clickAt("main", point.x, point.y);
     return { clicked: true, count: 1 };
   }
 
-  /** 点「新建项目」→ 触发 Win32 原生文件夹对话框 */
+  /**
+   * 点「新建项目」→ 打开**应用内「创建项目」模态框**。
+   *
+   * **注意**：真机实测它**不直接**弹原生文件夹对话框——原生对话框要等模态框里
+   * 再点「选择文件夹」才出现（见 project-modal.ts 的说明）。返回 true 只表示点击发出。
+   */
   createProject(): Promise<boolean> {
     return this.click("createProject");
+  }
+
+  /** 应用内「创建项目」模态框是否已打开 */
+  modalOpen(): Promise<boolean> {
+    return this.evaluate<boolean>(modalOpenExpression());
+  }
+
+  /** 模态框全文（诊断：文件夹行是否已回填路径） */
+  modalText(): Promise<string> {
+    return this.evaluate<string>(modalProjectExpression());
+  }
+
+  /** 模态框里点「选择文件夹」（这一步才触发原生 Select Directory） */
+  async clickModalChooseFolder(): Promise<boolean> {
+    const point = await this.evaluate<MinimaxPoint | null>(modalChooseFolderPointExpression());
+    if (!point) return false;
+    await this.clickAt("main", point.x, point.y);
+    return true;
+  }
+
+  /** 模态框里点「创建项目」提交（原生对话框回填后的最后一步） */
+  async submitProjectModal(): Promise<boolean> {
+    const point = await this.evaluate<MinimaxPoint | null>(modalSubmitPointExpression());
+    if (!point) return false;
+    await this.clickAt("main", point.x, point.y);
+    return true;
+  }
+
+  /** 关闭模态框（Esc；失败收尾用：残留模态框会吞掉后续所有点击） */
+  async dismissModal(): Promise<void> {
+    for (let i = 0; i < 4; i++) {
+      if (!(await this.modalOpen().catch(() => false))) return;
+      await this.pressEscape("main").catch(() => {});
+      await this.pause(200);
+    }
   }
 
   /* ---------------- 主窗口：输入与对话 ---------------- */
@@ -710,29 +745,3 @@ export class MinimaxCdpClient {
     return this.evaluate(`new Promise(resolve=>setTimeout(resolve,${ms}))`);
   }
 }
-
-/** DOM click 兜底表达式（放在这里避免 dom.ts 再导出一个近似重复的名字） */
-function domClickSafe(spec: string): string {
-  return `(function(){
-    const nodes = __minimaxResolve(${spec});
-    if (nodes.length !== 1) return false;
-    nodes[0].click();
-    return true;
-  })()`;
-}
-
-/** clickProjectByPath 用的最小页面内 helper（只含 resolve 函数） */
-const MINIMAX_DOM_FOR_POINT = resolveFnSourceOnly();
-
-function resolveFnSourceOnly(): string {
-  // 与 selectors.resolveFnSource() 同源；这里内联以避免把整个 MINIMAX_DOM 拖进点坐标表达式。
-  return `function __minimaxResolve(a,b,c,d,e,f){
-    var spec=Array.isArray(a)?a:[a,b,c,d,e,f];
-    var css=spec[0]||[];
-    const out=[];
-    for(const s of css){try{for(const el of document.querySelectorAll(s)){if(out.indexOf(el)<0)out.push(el)}}catch(_){}}
-    return out;
-  }`;
-}
-
-export { SELECT_ALL_KEY, BACKSPACE_KEY };
