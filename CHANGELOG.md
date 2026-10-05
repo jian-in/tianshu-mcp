@@ -58,6 +58,59 @@
 
 ---
 
+## [0.7.8] - 2026-10-06
+
+### 新增
+
+- **第七个 GUI agent 适配器：MiniMax Code（`agentId=minimax`）**。与既有 6 个并列，完成
+  「定位安装 → 启动并开 CDP → 绑定项目文件夹 → 选模型 / 推理等级 / 上下文窗口 → 发指令开发
+  → 运行检测 → 自动验收 → 失败返修 → 再验收」全流程。详见 [MiniMax Code 适配器](docs/minimax-cdp.md)。
+
+  **真机取证（2026-10-05，MiniMax Code 3.1.0 / Electron 42.8.0 / Chromium 148.0.7778.280）修正了三处
+  与实现前假设不符的关键结构**，这些结论都写进了代码注释与文档：
+
+  - **推理等级 / 上下文窗口在「二级子菜单」里**：产品前端产物显示它们是平铺的 `role="group"`，
+    但真机 DOM **只在悬停带 `aria-haspopup="menu"` 的模型项后才渲染**（`aria-expanded` 变 `true`，
+    出现第二个 `role="menu"`）。因此选模型是「悬停展开 → 选档位/窗口 → **最后**点模型项提交」
+    三步——点模型项会立即提交并关闭菜单。**且子菜单容器是复用的**：不先移开鼠标就移入不会触发
+    `mouseenter`，DOM 会保留上一个悬停模型的档位集合，据此选档位会选到别的模型——故读候选必须按
+    `aria-label` 限定归属模型。
+  - **档位 / 窗口集合随模型变化**（实测）：`M3.1-Flash-Preview` 六档（default/low/medium/high/xhigh/max）
+    + 窗口（512K/1M）；`M3` **无档位组** + 窗口；`deepseek-v4.1-flash` 三档（low/high/max）+ **无窗口组**；
+    `M2.7-highspeed` / `M2.7` **无子菜单**。对无子菜单的模型请求这两项参数一律 **fail-closed 报错**，
+    绝不静默沿用界面当前值；档位集合读不到时也拒绝猜测。
+  - **「新建项目」是两步**：点侧栏「新建项目」先弹**应用内 HTML 模态框**（`.responsive-modal-mask`），
+    模态框里再点「选择文件夹」才弹**原生 `Select Directory`** 对话框（标题实测为英文，界面中文时亦然），
+    确认后还需点模态框的「创建项目」提交。只走一步会把「原生对话框始终不出现」误判成选择器失效。
+
+  其它真机实测要点：`Model menu` 是**独立渲染进程**（与主窗口分离，故适配器跨窗口连接）；
+  该窗口在菜单关闭后**仍为 `visible`**（内容清空），所以开/关判据必须用「内容是否渲染」而非
+  `visibilityState`；「新建任务」的 testid 挂在 `<kbd>` 上（真正可点击的是祖先 `button`）；
+  发送按钮是 `DIV`（可用性读 `aria-disabled`，**没有 `disabled` 属性**）；
+  输入框是 **tiptap ProseMirror**；项目绑定的权威判据是侧栏 `data-workspace-dir` 的**完整绝对路径**。
+
+  **真机闭环已跑通**（沙箱 `MiniMax-Test`，含一个刻意保留的失败用例）：
+  派发 `M3.1-Flash-Preview / low / 512K` → `ok=true`、`endReason=reply_stable`、
+  日志实录运行信号 `stop_button`；agent 真实修改 `src/calc.mjs` 并使沙箱测试 4/4 通过
+  （独立复核：`node --test` + `git diff`）。证据见 [真机闭环实录](docs/minimax-evidence/real-machine-e2e.txt)。
+
+- **新增 `contextWindow` 参数（仅 minimax 生效）**：取值刻意宽松（界面候选随模型变化，
+  硬编码枚举会拒掉合法值），合法性由**界面实际候选**在发送前校验。非 minimax 派发时显式传入即报错。
+- **新增只读诊断探针 `scripts/probe-minimax.mjs`**（`npm run probe:minimax`）：
+  打印安装探测、进程与 CDP 拓扑、模型/子菜单候选（**只悬停不点击**）、项目分组、运行信号快照、
+  原生对话框枚举——可复现上述全部结论。
+
+### 测试
+
+- 新增 `test/unit/minimax-*`（6 文件 **121 例**）：安装探测顺序、参数面、模型档位/窗口集合校验
+  （fail-closed 路径全覆盖）、选择器结构契约、运行判定与提问检测、项目路径归一与会话定位。
+- 其中**新增一类「页面内表达式沙箱可执行性」测试**：用 `node:vm` 逐个执行全部页面内表达式，
+  以 `/is not defined/` 断言——这类「拼字符串注入页面的表达式漏带 helper」的缺陷
+  `tsc` 与常规单测**都发现不了**，只能靠它提前拦住（真机已因此踩到两次）。
+- 全量 **126 files passed / 3 skipped / 0 failed**；typecheck / lint / build / 严格 stdio 全绿。
+
+---
+
 ## [0.7.7] - 2026-10-01
 
 ### 新增

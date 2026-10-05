@@ -60,6 +60,33 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.7.8] - 2026-10-06
+
+### Added
+
+- **Seventh GUI agent adapter: MiniMax Code (`agentId=minimax`)**. It sits alongside the existing six and covers the full loop of "locate the installation → launch it with CDP enabled → bind the project folder → select model / reasoning level / context window → send the task → detect completion → auto-verify → rework on failure → re-verify". See [MiniMax Code adapter](docs/minimax-cdp.en.md).
+
+  **Real-machine evidence (2026-10-05, MiniMax Code 3.1.0 / Electron 42.8.0 / Chromium 148.0.7778.280) corrected three structural assumptions** that were wrong before implementation; these conclusions live in both the code comments and the docs:
+
+  - **Reasoning level / context window live in a second-level submenu.** The product's own frontend artifacts show them as flat `role="group"` elements, but the live DOM **only renders them after hovering a model row carrying `aria-haspopup="menu"`** (`aria-expanded` flips to `true` and a second `role="menu"` appears). Selecting a model is therefore a three-step sequence: hover to expand → pick the tier/window → **finally** click the model row to commit (clicking it immediately commits and closes the menu). **The submenu container is reused**: moving straight into a row without first moving the pointer away does not fire `mouseenter`, so the DOM keeps the previously hovered model's tier set — picking from it selects another model's set. Candidate reads are therefore scoped to the owning model via `aria-label`.
+  - **Tier / window sets vary per model** (measured): `M3.1-Flash-Preview` has six tiers (default/low/medium/high/xhigh/max) plus windows (512K/1M); `M3` has **no tier group** plus windows; `deepseek-v4.1-flash` has three tiers (low/high/max) and **no window group**; `M2.7-highspeed` / `M2.7` have **no submenu**. Requesting these parameters on a model without a submenu is **fail-closed** — the adapter never silently keeps the UI's current value, and refuses to guess when the tier set cannot be read.
+  - **"New project" takes two steps**: clicking the sidebar's "New project" first opens an **in-app HTML modal** (`.responsive-modal-mask`); clicking "Choose folder" inside it then opens the **native `Select Directory`** dialog (title measured in English even on a Chinese UI), and after confirming the modal still needs its own "Create project" submit. Doing only one step misreads "the native dialog never appears" as a broken selector.
+
+  Other measured facts: the `Model menu` is a **separate renderer process** (hence the adapter connects across windows); that window **stays `visible` after the menu closes** (its content is emptied), so open/closed must be judged by "is content rendered" rather than `visibilityState`; the "new task" testid sits on a `<kbd>` (the clickable element is its ancestor `button`); the send button is a `DIV` (usability comes from `aria-disabled`, there is **no `disabled` property**); the input is **tiptap ProseMirror**; and the authoritative project-binding criterion is the sidebar's `data-workspace-dir` **full absolute path**.
+
+  **The real-machine loop passed** (sandbox `MiniMax-Test`, seeded with one deliberately failing test): dispatched `M3.1-Flash-Preview / low / 512K` → `ok=true`, `endReason=reply_stable`, with the `stop_button` run signal recorded live; the agent really edited `src/calc.mjs` and made the sandbox tests pass 4/4 (independently re-verified with `node --test` + `git diff`). Evidence: [real-machine loop transcript](docs/minimax-evidence/real-machine-e2e.txt).
+
+- **New `contextWindow` parameter (minimax only)**: deliberately loose (UI candidates vary per model, and a hard-coded enum would reject valid values); validity is checked against the **actual UI candidates** before sending. Passing it for a non-minimax dispatch is an error.
+- **New read-only diagnostic probe `scripts/probe-minimax.mjs`** (`npm run probe:minimax`): prints install discovery, processes and CDP topology, model/submenu candidates (**hover only, no clicks**), project groups, run-signal snapshot and native-dialog enumeration — it reproduces every conclusion above.
+
+### Tests
+
+- Added `test/unit/minimax-*` (6 files, **121 cases**): discovery order, parameter surface, tier/window set validation (all fail-closed paths covered), selector structural contracts, run judging and question detection, project path normalisation and session location.
+- Included a **new class of "in-page expression sandbox executability" test**: it runs every in-page expression through `node:vm` and asserts `/is not defined/`. Bugs of the "string-assembled expression missing a helper" kind are invisible to both `tsc` and ordinary unit tests — this is the only thing that catches them early (the real machine hit this twice).
+- Full suite **126 files passed / 3 skipped / 0 failed**; typecheck / lint / build / strict stdio all green.
+
+---
+
 ## [0.7.7] - 2026-10-01
 
 ### Added
