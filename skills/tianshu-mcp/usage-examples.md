@@ -207,7 +207,49 @@ run_task(projectPath=D:/repo/design, agentId=opendesign,
 - 可正常派活（Windows 真机取证；macOS 为 `research` 且禁止派发）。仍 **fail-closed**：选择器漂移时硬失败 `selector_drift` 并列出缺失键，模型未命中报 `model_unavailable` 并回显可见候选，设计方向非法在**入口**即拒绝。
   详见 [docs/opendesign-cdp.md](../../docs/opendesign-cdp.md) 与 `.dsh/plans/opendesign-gui-adapter-plan.md`。
 
-### 2.9 codex-cli（用户自建 profile；无头路径，无 GUI）
+### 2.9 minimax（MiniMax Code 桌面端；Windows 真机闭环通过，macOS `research` 禁止派发）
+
+```text
+run_task(projectPath=D:/repo/app, agentId=minimax,
+  model=M3.1-Flash-Preview,
+  reasoningLevel=low,
+  contextWindow=512K,
+  task=修复 src/calc.mjs 里 add 函数：两个负数相加应返回其和，修完跑 node --test,
+  autoVerify=true, autoFixRounds=2)
+```
+
+- `model` **必填**，填**界面模型名**（如 `M3.1-Flash-Preview`、`M3`、`deepseek-v4.1-flash`、`M2.7-highspeed`）。
+  按名字精确匹配菜单项，未命中报 `model_unavailable` 并**回显当前可见候选**，不会退化成模糊匹配。
+- `reasoningLevel` 可选，是本适配器**唯一接受 `中`/`medium`** 的地方（界面确实有该档）：
+  `default` / `低·low` / `中·medium` / `高·high` / `极高·xhigh` / `最大·max`。
+- `contextWindow` 可选（**本适配器专属**）：如 `512K` / `1M`，取值按界面实际候选校验。
+- `mode` 不支持（那是 traework 的面板模式）；`projectPath` **必填**（不支持无项目派发）。
+
+**关键差异：档位与窗口在「悬停模型项才展开的二级子菜单」里，且候选随模型变化**
+
+真机实测（3.1.0）四种形态，直接决定参数怎么传：
+
+| 模型 | 推理等级 | 上下文窗口 |
+|---|---|---|
+| `M3.1-Flash-Preview` | `default`/`low`/`medium`/`high`/`xhigh`/`max` | `512K` / `1M` |
+| `M3` | **无此组** | `512K` / `1M` |
+| `deepseek-v4.1-flash` | `low` / `high` / `max` | **无此组** |
+| `M2.7-highspeed`、`M2.7` | **无子菜单** | **无子菜单** |
+
+对没有子菜单的模型传 `reasoningLevel` / `contextWindow`，适配器**在发送前直接报错**，
+**绝不静默沿用界面当前值**（否则用户以为设了、实际没设）。同理，目标值不在该模型候选内也报错并列出候选。
+
+**其它实测要点**（排查时用得上）：
+
+- 模型弹层渲染在**独立渲染进程**（`Model menu` 窗口）——在主窗口里找档位/窗口永远找不到。
+- 「新建项目」是**两步**：点侧栏「新建项目」先弹**应用内 HTML 模态框**，模态框里点「选择文件夹」
+  才弹原生 `Select Directory`（标题是英文），确认后还要点模态框的「创建项目」提交。
+- 项目绑定的权威判据是侧栏 `data-workspace-dir` 的**完整绝对路径**（不是显示名）；同名不同目录 fail-closed。
+- 权限模式默认「始终授权」；与期望不符时**只告警不自动切换**（权限菜单候选项未取证，不猜选择器）。
+- 只读诊断探针：`npm run probe:minimax`（可打印各模型的档位/窗口候选，只悬停不点击）。
+  详见 docs/minimax-cdp.md。
+
+### 2.10 codex-cli（用户自建 profile；无头路径，无 GUI）
 
 内置 `codex` 走桌面 GUI 驱动。不想依赖 GUI 自动化（或需要可复现的无头执行）时，在数据目录 `~/.tianshu-mcp/agent-profiles.json` 加一个 `driver=spawn` 的 profile（示例见 README「macOS 无头路径：codex-cli」），之后按普通 agent 派活：
 
@@ -221,15 +263,15 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 - 写入被 `workspace-write` 沙箱限制在项目目录内；POSIX 下取消/超时对进程组 `SIGTERM`→`SIGKILL`。
 - **无头路径没有 GUI 交互**：不存在 `user_confirmation` 这类等待，`continue_task` 不适用；失败直接看 `agentEndReason` 与日志。
 
-### 2.10 通用约定
+### 2.11 通用约定
 
 - `run_task` 是**异步契约**：立即返回 `taskId` + 队列位置，不要当同步调用等结果。
 - **优先用 `wait_task` 等结果（issue #28）**：回合驱动调用方无法自行轮询，`run_task` 后在本回合内直接 `wait_task(taskId)` 阻塞等到停点，无需用户再发消息触发查询；要看进度细节才用 `query_task` 轮询（间隔 5–10 秒，缺省返回 agent 日志末 40 行）。同项目串行 + 全局并发默认 2，重复派单只会排队。
 - **重试复用同一条 `idempotencyKey`（issue #15）**：`tools/call` 超时、断线、宿主重启后重发同一意图时，`run_task` 会返回**原 `taskId` 与当前状态**（不排队第二轮 agent），`verify_task` 会返回「进行中」或既有报告（不重跑检查）。**参数变了就换 key**——同键异参 fail-closed 报错并回报原记录 id。幂等重放的响应文本以「幂等重放：」开头、meta 带 `idempotencyReplay`，不要汇报成「已重新派单」。
-- 只有 `needs_user` 能用 `continue_task` 恢复，且当前支持 **codex / zcode / kimicode / qoder / opendesign**（opendesign 会产出 `login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance` 五类，均支持 `continue_task` 恢复）；traework 与 spawn 类会被明确拒绝。
-- `autoVerify` 不传时**默认开**；`autoFixRounds` 不传时取 agent 缺省（codex 5 / zcode 2 / kimicode 2 / qoder 3 / traework 落 server 默认 0）。
+- 只有 `needs_user` 能用 `continue_task` 恢复，且当前支持 **codex / zcode / kimicode / qoder / opendesign / minimax**（opendesign 会产出 `login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance` 五类，均支持 `continue_task` 恢复）；traework 与 spawn 类会被明确拒绝。
+- `autoVerify` 不传时**默认开**；`autoFixRounds` 不传时取 agent 缺省（codex 5 / zcode 2 / kimicode 2 / qoder 3 / minimax 2 / traework 落 server 默认 0）。
 
-### 2.11 等待任务：`wait_task` / `wait_any`（issue #28）
+### 2.12 等待任务：`wait_task` / `wait_any`（issue #28）
 
 **动机**：`run_task` 秒回 `taskId`，但回合驱动调用方（天枢 agent 会话）只在收到用户消息的回合内运行、无法自行轮询——过去「每次任务完成都必须人工发一条消息触发查询」。`wait_task` 用**一次阻塞只读调用**承载等待：等到任务到达**停点**（终态或 `needs_user`）或超时后返回。
 
@@ -292,6 +334,7 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 |---|---|---|
 | `modelSource` | 仅 qoder | 传给其他 agent 直接报错 |
 | `reasoningLevel` 别名 `极高`/`xhigh`/`最大`/`关闭思考` | 仅 qoder | 传给其他 agent 直接报错 |
+| `contextWindow` | 仅 minimax | 传给其他 agent 直接报错 |
 | `mode` | 仅 traework | 其他 agent 传了报错 |
 | `allowCreateProject` | 仅 zcode（有项目模式） | 其他 agent 传了报错 |
 | `planDoc` | codex（可选）、qoder（**必填**） | qoder 的计划文件必须存在且可读，相对路径按项目根解析 |
@@ -364,7 +407,7 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 | `abortSource` | 中断来源：`user`/`shutdown`/`timeout`/`internal` |
 | `cancelReason` / `cancelRequestedAt` | 取消原因与发起时间 |
 | `keptInstance` | 是否因任务未真正完成而保留了 GUI 实例 |
-| `zcodeSessionId` / `qoderSessionId` / `boundProjectPath` | 会话锚点与项目绑定回执（kimicode 的锚点仅在服务端保留，不回显） |
+| `zcodeSessionId` / `qoderSessionId` / `boundProjectPath` | 会话锚点与项目绑定回执（kimicode / minimax 的锚点仅在服务端保留，不回显） |
 | `modelProvider` / `permissionMode` | 实际生效的供应商标识与权限模式（zcode 等） |
 | `actualModel` / `actualReasoningLevel` / `modelSource` | 实际生效模型、等级与模型来源（qoder） |
 | `guiStop` | 最近一次中断时 GUI 停止的点击与空闲确认结果（`clicked` / `idle`）；`idle=true` 才是**已确认**停止 |
@@ -406,7 +449,7 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 | `permission_unknown` | 权限模式未确认（如 ZCode 未开「完全访问」） | 让用户在 agent 内切好权限模式 |
 | `cdp_disconnected` | CDP 连接断开且未能恢复 | 让用户关掉冲突实例；重试 |
 | `instance_busy` | 同项目/同实例已有未停止的运行（重派护栏） | 先 `cancel_task` 并**确认 GUI 已停**，或等其自行结束 |
-| `session_lost` | zcode/kimicode/qoder 找不到原会话锚点 | 用新任务重派，不要指望恢复原会话 |
+| `session_lost` | zcode/kimicode/qoder/minimax 找不到原会话锚点 | 用新任务重派，不要指望恢复原会话 |
 | `input_mismatch` / `send_unknown` | 发送前回读不一致 / 发送结果无法确认（**绝不自动重发**） | 人工看窗口状态，必要时 `continue_task` 或重派 |
 | `idle_timeout` | GUI 长时间静止且无完成标志（现场已保留） | 看窗口里 agent 是否真卡住；必要时 `continue_task` 或取消 |
 | `agent_error` | Kimi Code 界面出现失败文案/「继续」按钮（如官方额度用尽 `provider.auth_error`） | 读窗口内错误原文；额度/模型类可换非官方免费模型后重派 |
