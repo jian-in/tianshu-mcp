@@ -1,6 +1,6 @@
 ---
 name: tianshu-mcp
-description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder/opendesign/minimax）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 13 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/wait_task/wait_any/prepare_visual_baseline/approve_visual_baseline）派活、阻塞等待、暂停继续、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
+description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder/opendesign/minimax）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 13 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/wait_task/wait_any/prepare_visual_baseline/approve_visual_baseline）派活、等待、验收、返修、视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
 triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|kimicode|kimi.?code|qoder|opendesign|open.?design|minimax|mini.?max|claude|编排|项目开发|派活|派单'
 ---
 
