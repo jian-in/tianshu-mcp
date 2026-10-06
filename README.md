@@ -63,7 +63,7 @@
               ↓  MCP over stdio（stdout 仅承载 JSON-RPC）
         tianshu-mcp              ← 调度 · 执行面 · 验收仪
               ↓
-Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design
+Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Code
               ↓（GUI 经 CDP 驱动桌面 UI；CLI 走子进程）
         目标项目工作区            ← git 仓库 + 测试 + .tianshu-mcp/
 ```
@@ -227,7 +227,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | 工具 | 能力 / 审批 | 作用 |
 |---|---|---|
 | `run_task` | write + 审批 | 派活（可带自动验收 / 自动返修），异步返回 `taskId`；可选 `idempotencyKey`、`acceptanceOverride` 与 `dryRun` |
-| `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode / Codex / Kimi Code / Qoder CN 各有恢复语义） |
+| `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode / Codex / Kimi Code / Qoder CN / MiniMax Code 各有恢复语义） |
 | `query_task` | read | 轮询状态 / 进度 / 日志尾 / 最近细粒度事件（可选 `eventLimit`） |
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文（`report.md`） |
@@ -256,9 +256,10 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | `kimicode` | `gui` / `kimicode-gui` | **ready**（macOS 为 `research`） | Kimi Code 桌面端（Electron）；**双渲染进程**（主窗口 + `Kimi Browser Overlay` 浮层承载模型 / 档位 / 模式菜单）；工作区以完整路径绑定；支持 `model` / `reasoningLevel`，**不支持 `mode`**，且**不支持无项目派发** |
 | `qoder` | `gui` / `qoder-gui` | Windows 真机闭环通过；macOS **research** | 仅 Qoder CN；必须提供已有 `projectPath` 与可读 `planDoc`；`modelSource=default\|custom` 消除同名模型歧义，思考等级经「模型管理」保存为全局偏好并回读 |
 | `opendesign` | `gui` / `opendesign-gui` | **ready**（macOS 为 `research`） | Open Design 桌面端 GUI；选择器取自产品自身 Web 前端的 `data-testid` 钩子，12 步执行链全部接线，并接入验收 → 自动返修 → 再验收闭环；它是唯一带「产物信号」（文件 mtime / 大小指纹）的 driver |
+| `minimax` | `gui` / `minimax-gui` | **ready**（macOS 为 `research`） | MiniMax Code 桌面端（Electron）；**双渲染进程**（主窗口 + `Model menu` 弹层）；推理等级 / 上下文窗口在**悬停模型项展开的二级子菜单**里，且**候选集合随模型变化**（无子菜单的模型请求这两项即 fail-closed）；支持 `model` / `reasoningLevel` / **`contextWindow`**（本适配器专属），**不支持 `mode`**，且**不支持无项目派发**；「新建项目」为**应用内模态框 → 原生 `Select Directory` → 模态框提交**两步 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good / fix-on-first / never） |
 
-> `mode` 支持 `Work` / `Code` / `Design`（仅 TraeWork），不传时从任务书文本识别。Kimi Code 的 `reasoningLevel` 按**界面实际渲染的档位集合**校验（官方模型 `低` / `高` / `max`，非官方模型仅 `on` / `off`）。新增 agent 通常只需加一个 profile，详见 [docs/agent-profiles.md](docs/agent-profiles.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。
+> `mode` 支持 `Work` / `Code` / `Design`（仅 TraeWork），不传时从任务书文本识别。Kimi Code 的 `reasoningLevel` 按**界面实际渲染的档位集合**校验（官方模型 `低` / `高` / `max`，非官方模型仅 `on` / `off`）。MiniMax Code 的 `reasoningLevel` / `contextWindow` 同样按**界面实际候选**校验（如 `M3.1-Flash-Preview` 为 `default`/`low`/`medium`/`high`/`xhigh`/`max` 与 `512K`/`1M`，而 `M3` 无档位组、`deepseek-v4.1-flash` 无窗口组），越权或读不到即 fail-closed。新增 agent 通常只需加一个 profile，详见 [docs/agent-profiles.md](docs/agent-profiles.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ### macOS 无头路径：codex-cli（用户 profile）
 
@@ -370,6 +371,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | 视觉与幂等 | 0.5.x | 视觉验收（0.5.0）+ 可选 AI 内容校验（0.5.4）、ZCode 无项目派发、Kimi Code / Qoder CN 适配、幂等键（0.5.10） |
 | 加固与可观测 | 0.6.x | 技能自装加固（0.6.0）、GUI 选择器漂移修复（0.6.2）、细粒度事件流、结构化修复指令、dryRun、验收配置三级继承、终态通知 |
 | Open Design | 0.7.x | Open Design 桌面端适配（0.7.1）、ZCode 3.14.x 绑定契约修复（0.7.4） |
+| MiniMax Code | 0.7.8 | 第七个 GUI agent 接入（0.7.8）；真机取证修正三处结构假设（二级子菜单 / 集合随模型变化 / 项目创建两步），新增 `contextWindow` 参数与只读诊断探针 |
 | 日志台 GUI | `gui-v*`（独立线） | `mcp-gui/` 本地只读日志台（Tauri 2.x + Vue 3），独立版本与 tag，**不随 MCP 主包发布** |
 
 > 完整逐版记录见 [CHANGELOG.md](CHANGELOG.md)，交接状态与排障手册见 [HANDOFF.md](HANDOFF.md)，工程质量口径见 [ARCHITECTURE.md](ARCHITECTURE.md)。

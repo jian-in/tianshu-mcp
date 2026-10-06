@@ -27,7 +27,7 @@
       "displayName": "Codex (OpenAI 桌面端 CLI)",   // 展示名
       "type": "cli",                                  // 目前仅 cli
       "driver": "spawn",                              // spawn=外部子进程（默认）；gui=桌面 UI 自动化
-      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui；旧缺省按 TraeWork 兼容
+      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui | minimax-gui；旧缺省按 TraeWork 兼容
       "status": "ready",                              // ready | research | unsupported
       "command": null,                                // 可执行；null + discovery 则自动探测
       "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check"],
@@ -70,9 +70,9 @@
 | 值 | 说明 |
 |---|---|
 | `spawn`（默认） | 拉起外部 CLI 子进程（`argsTemplate` + `promptMode`），结果按退出码判定 |
-| `gui` | 通过 CDP 驱动桌面 UI（当前为 `traework` / `zcode` / `codex` / `kimicode`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
+| `gui` | 通过 CDP 驱动桌面 UI（当前为 `traework` / `zcode` / `codex` / `kimicode` / `qoder` / `opendesign` / `minimax`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
 
-> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效。显式 `adapter` 用于隔离各 GUI 实现；旧 profile 缺失该字段时仍按 TraeWork 行为兼容。分别见 [traework-cdp.md](traework-cdp.md)、[zcode-cdp.md](zcode-cdp.md)、[codex-gui-cdp.md](codex-gui-cdp.md)、[kimi-cdp.md](kimi-cdp.md) 与 [qoder-cdp.md](qoder-cdp.md)。
+> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效。显式 `adapter` 用于隔离各 GUI 实现；旧 profile 缺失该字段时仍按 TraeWork 行为兼容。分别见 traework-cdp.md、zcode-cdp.md、codex-gui-cdp.md、kimi-cdp.md、qoder-cdp.md、opendesign-cdp.md 与 minimax-cdp.md。
 
 TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随后还需持续 `idleTimeoutMs` 无变化且无运行信号才返回
 `idle`。`cdpSendTimeoutMs` 限制单次 CDP 命令等待，`progressIntervalMs` 控制 `query_task` 可见的进度事件频率。
@@ -323,6 +323,61 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 > Windows 真机取证；macOS 仍为 `research`（无真机证据，registry 拒绝派发）。
 > 仍然 fail-closed：选择器漂移时派活会**硬失败 `selector_drift`** 并列出缺失键——不会盲点坐标。
 > `gui.selectors` 支持按**语义键热覆盖**（UI 小改版不用发版）。
+
+### MiniMax Code（GUI 驱动，Windows 真机闭环通过；macOS 为 `research`）
+
+```json
+{
+  "profiles": {
+    "minimax": {
+      "displayName": "MiniMax Code",
+      "driver": "gui",
+      "adapter": "minimax-gui",
+      "status": "ready",                 // macOS 为 research（fail-closed，禁止派发）
+      "executableDiscovery": {
+        "preferredDrives": ["D:"],
+        "relativePaths": [
+          "MiniMax-Code/MiniMax Code/MiniMax Code.exe",   // 实测安装布局
+          "MiniMax Code/MiniMax Code.exe"
+        ],
+        "fileNames": ["MiniMax Code.exe"],               // macOS 为 ["MiniMax Code"]
+        "dirs": [
+          "{PROGRAMFILES}/MiniMax Code",
+          "{LOCALAPPDATA}/Programs/MiniMax Code",
+          "{LOCALAPPDATA}/MiniMax Code"
+        ]
+      },
+      "gui": {
+        "cdpPort": 9999,                 // 基准端口；9222/9333/9666/9777/9889 已被既有 agent 占用
+        "cdpPortRange": 10,
+        "exeArgs": ["--remote-debugging-port=<port>"],
+        "launchTimeoutMs": 120000,
+        "modelSwitch": true,
+        "modelRequired": true,
+        "permissionMode": "始终授权",
+        "defaultPermissionMode": "始终授权",
+        "fixPlanDir": ".minimax/plans",
+        "defaultAutoFixRounds": 2
+      },
+      "minimax": {                        // 仅 adapter="minimax-gui" 使用；全部可选
+        "submenuOpenTimeoutMs": 8000,     // 悬停模型项后等二级子菜单展开的预算
+        "modelMenuTimeoutMs": 10000,
+        "sendReadyTimeoutMs": 20000,
+        "levelLabels": {},                // 档位 token → 界面显示名（应对文案漂移）
+        "planDir": ".minimax/plans"
+      }
+    }
+  }
+}
+```
+
+> **要点**：`projectPath` 必填（**不支持无项目派发**）；`model` 必填；`reasoningLevel` 支持
+> `default` / `低·low` / `中·medium` / `高·high` / `极高·xhigh` / `最大·max`；`contextWindow`
+> （如 `512K` / `1M`）是**本适配器专属**参数，其他 agent 显式传入即报错。
+> 模型弹层渲染在**独立渲染进程**（`Model menu`），且推理等级 / 上下文窗口在**悬停模型项才展开的二级子菜单**里，
+> 候选集合**随模型变化**——无子菜单的模型请求这两项即 fail-closed，绝不静默沿用界面当前值。
+> 「新建项目」为**两步**：应用内「创建项目」模态框 → 「选择文件夹」触发原生 `Select Directory` → 模态框提交。
+> 只读诊断探针：`npm run probe:minimax`。详见 minimax-cdp.md。
 
 ### 历史：Codex 内核 CLI（`codex exec`，已被 GUI 驱动取代）
 

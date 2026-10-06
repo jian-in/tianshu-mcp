@@ -63,7 +63,7 @@ Tianshu (TUI × GUI)              ← commander / user surface / verdict
               ↓  MCP over stdio (stdout carries JSON-RPC only)
         tianshu-mcp              ← scheduling · execution surface · acceptance gate
               ↓
-Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design
+Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Code
               ↓ (GUI driven over CDP; CLI via child process)
         target project workspace ← git repo + tests + .tianshu-mcp/
 ```
@@ -227,7 +227,7 @@ run_task(projectPath=D:/xxx/my-app, task="…task brief…", agentId=codex,
 | Tool | Capability / approval | Purpose |
 |---|---|---|
 | `run_task` | write + approval | Dispatch work (optionally with auto-verify / auto-rework), returning a `taskId` asynchronously; optional `idempotencyKey`, `acceptanceOverride` and `dryRun` |
-| `continue_task` | write + approval | Resume a `needs_user` session (ZCode / Codex / Kimi Code / Qoder CN each have their own resume semantics) |
+| `continue_task` | write + approval | Resume a `needs_user` session (ZCode / Codex / Kimi Code / Qoder CN / MiniMax Code each have their own resume semantics) |
 | `query_task` | read | Poll status / progress / log tail / recent fine-grained events (optional `eventLimit`) |
 | `list_tasks` | read | Filtered list of historical tasks |
 | `get_task_report` | read | Full text of one round's acceptance report (`report.md`) |
@@ -256,9 +256,10 @@ run_task(projectPath=D:/xxx/my-app, task="…task brief…", agentId=codex,
 | `kimicode` | `gui` / `kimicode-gui` | **ready** (`research` on macOS) | Kimi Code desktop (Electron); **dual renderer processes** (main window plus a `Kimi Browser Overlay` that hosts the model / reasoning / mode menus); workspaces bind by full path; supports `model` / `reasoningLevel`, **not `mode`**, and **not project-less dispatch** |
 | `qoder` | `gui` / `qoder-gui` | closed-loop verified on Windows; **research** on macOS | Qoder CN only; requires an existing `projectPath` and a readable `planDoc`; `modelSource=default\|custom` disambiguates same-named models, and the reasoning level is saved as a global preference via "Model management" and read back |
 | `opendesign` | `gui` / `opendesign-gui` | **ready** (`research` on macOS) | Open Design desktop GUI; selectors are taken from the product's own web-frontend `data-testid` hooks, the full 12-step execution chain is wired, and the acceptance → auto-rework → re-acceptance loop is connected; it is the only driver with an "artifact signal" (file mtime / size fingerprint) |
+| `minimax` | `gui` / `minimax-gui` | **ready** (`research` on macOS) | MiniMax Code desktop (Electron); **dual renderer processes** (main window plus a `Model menu` popup); the reasoning level / context window live in a **second-level submenu that only appears on hovering a model row**, and their **candidate sets vary per model** (requesting them on a submenu-less model is fail-closed); supports `model` / `reasoningLevel` / **`contextWindow`** (this adapter only), **not `mode`**, and **not project-less dispatch**; "New project" takes **two steps: in-app modal → native `Select Directory` → modal submit** |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with three scripts (good / fix-on-first / never) |
 
-> `mode` supports `Work` / `Code` / `Design` (TraeWork only) and is inferred from the task text when omitted. Kimi Code's `reasoningLevel` is validated against the **set of levels actually rendered by the UI** (official models `low` / `high` / `max`; unofficial models only `on` / `off`). Adding an agent is usually just a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
+> `mode` supports `Work` / `Code` / `Design` (TraeWork only) and is inferred from the task text when omitted. Kimi Code's `reasoningLevel` is validated against the **set of levels actually rendered by the UI** (official models `low` / `high` / `max`; unofficial models only `on` / `off`). MiniMax Code's `reasoningLevel` / `contextWindow` are likewise validated against the **actual UI candidates** (e.g. `M3.1-Flash-Preview` offers `default`/`low`/`medium`/`high`/`xhigh`/`max` plus `512K`/`1M`, while `M3` has no level group and `deepseek-v4.1-flash` has no window group); an out-of-range or unreadable value is fail-closed. Adding an agent is usually just a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
 
 ### macOS headless path: codex-cli (user profile)
 
@@ -370,6 +371,7 @@ Allowing and disabling (a CLI flag or its equivalent environment variable; `--no
 | Visual and idempotency | 0.5.x | Visual acceptance (0.5.0) + optional AI content validation (0.5.4), ZCode project-less dispatch, Kimi Code / Qoder CN adapters, idempotency keys (0.5.10) |
 | Hardening and observability | 0.6.x | Skill self-install hardening (0.6.0), GUI selector drift fixes (0.6.2), fine-grained event stream, structured repair directives, dryRun, three-level acceptance config inheritance, terminal-state webhook |
 | Open Design | 0.7.x | Open Design desktop adapter (0.7.1), ZCode 3.14.x binding-contract fix (0.7.4) |
+| MiniMax Code | 0.7.8 | Seventh GUI agent (0.7.8); real-machine evidence corrected three structural assumptions (second-level submenu / per-model candidate sets / two-step project creation), plus the `contextWindow` parameter and a read-only diagnostic probe |
 | Log viewer GUI | `gui-v*` (separate line) | `mcp-gui/` local read-only log viewer (Tauri 2.x + Vue 3), independent version and tag, **not released with the MCP main package** |
 
 > The complete per-version record is in [CHANGELOG.en.md](CHANGELOG.en.md); handoff status and the troubleshooting handbook are in [HANDOFF.md](HANDOFF.md); engineering-metric definitions are in [ARCHITECTURE.en.md](ARCHITECTURE.en.md).

@@ -25,7 +25,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
       "displayName": "…",
       "type": "cli",                 // only cli today
       "driver": "spawn",             // spawn = external child process (default); gui = desktop UI automation
-      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui; missing keeps legacy TraeWork behavior
+      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui | minimax-gui; missing keeps legacy TraeWork behavior
       "status": "ready",             // ready | research | unsupported
       "command": null,               // absolute path; null + discovery = auto-probe
       "argsTemplate": ["exec", "<prompt:arg>"],
@@ -67,9 +67,9 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
 | value | meaning |
 |---|---|
 | `spawn` (default) | launches an external CLI child process (`argsTemplate` + `promptMode`); success is decided by exit code |
-| `gui` | drives a desktop UI over CDP (currently `traework` / `zcode` / `codex` / `kimicode`); no child process, and `run_task` may pass `model` to pick its model |
+| `gui` | drives a desktop UI over CDP (currently `traework` / `zcode` / `codex` / `kimicode` / `qoder` / `opendesign` / `minimax`); no child process, and `run_task` may pass `model` to pick its model |
 
-> With `driver=gui`, `argsTemplate`/`promptMode` are unused. An explicit `adapter` isolates each GUI implementation; a legacy profile without it keeps TraeWork behavior. See [traework-cdp.en.md](traework-cdp.en.md), [zcode-cdp.en.md](zcode-cdp.en.md), [codex-gui-cdp.en.md](codex-gui-cdp.en.md), [kimi-cdp.en.md](kimi-cdp.en.md) and [qoder-cdp.en.md](qoder-cdp.en.md).
+> With `driver=gui`, `argsTemplate`/`promptMode` are unused. An explicit `adapter` isolates each GUI implementation; a legacy profile without it keeps TraeWork behavior. See [traework-cdp.en.md](traework-cdp.en.md), [zcode-cdp.en.md](zcode-cdp.en.md), [codex-gui-cdp.en.md](codex-gui-cdp.en.md), [kimi-cdp.en.md](kimi-cdp.en.md), [qoder-cdp.en.md](qoder-cdp.en.md), [opendesign-cdp.en.md](opendesign-cdp.en.md) and [minimax-cdp.en.md](minimax-cdp.en.md).
 
 TraeWork liveness fields: `stableRounds` only confirms that the DOM is stable; `idle` is returned only after another
 `idleTimeoutMs` without changes or authoritative running signals. `cdpSendTimeoutMs` bounds one CDP command, while
@@ -347,6 +347,63 @@ Per-agent applicability and semantics:
 > Windows machine-verified; macOS remains `research` (no machine evidence, so the registry refuses dispatch).
 > Still fail-closed: on selector drift, dispatching **hard-fails with `selector_drift`** listing the missing keys — it never clicks blindly.
 > `gui.selectors` supports **hot overrides keyed by semantic name** (a minor UI change needs no release).
+
+### MiniMax Code (GUI driver, Windows machine-verified; macOS `research`)
+
+```json
+{
+  "profiles": {
+    "minimax": {
+      "displayName": "MiniMax Code",
+      "driver": "gui",
+      "adapter": "minimax-gui",
+      "status": "ready",                 // `research` on macOS (fail-closed, dispatch refused)
+      "executableDiscovery": {
+        "preferredDrives": ["D:"],
+        "relativePaths": [
+          "MiniMax-Code/MiniMax Code/MiniMax Code.exe",   // measured install layout
+          "MiniMax Code/MiniMax Code.exe"
+        ],
+        "fileNames": ["MiniMax Code.exe"],               // ["MiniMax Code"] on macOS
+        "dirs": [
+          "{PROGRAMFILES}/MiniMax Code",
+          "{LOCALAPPDATA}/Programs/MiniMax Code",
+          "{LOCALAPPDATA}/MiniMax Code"
+        ]
+      },
+      "gui": {
+        "cdpPort": 9999,                 // base port; 9222/9333/9666/9777/9889 are taken by the other agents
+        "cdpPortRange": 10,
+        "exeArgs": ["--remote-debugging-port=<port>"],
+        "launchTimeoutMs": 120000,
+        "modelSwitch": true,
+        "modelRequired": true,
+        "permissionMode": "始终授权",
+        "defaultPermissionMode": "始终授权",
+        "fixPlanDir": ".minimax/plans",
+        "defaultAutoFixRounds": 2
+      },
+      "minimax": {                        // only for adapter="minimax-gui"; every field optional
+        "submenuOpenTimeoutMs": 8000,     // budget for the second-level submenu after hovering a model row
+        "modelMenuTimeoutMs": 10000,
+        "sendReadyTimeoutMs": 20000,
+        "levelLabels": {},                // tier token -> UI label (absorbs wording drift)
+        "planDir": ".minimax/plans"
+      }
+    }
+  }
+}
+```
+
+> **Key points**: `projectPath` is mandatory (**project-less dispatch is not supported**); `model` is mandatory;
+> `reasoningLevel` accepts `default` / `低·low` / `中·medium` / `高·high` / `极高·xhigh` / `最大·max`; `contextWindow`
+> (e.g. `512K` / `1M`) is a parameter **specific to this adapter** — passing it for any other agent is an error.
+> The model popup renders in a **separate renderer process** (`Model menu`), and the reasoning level / context window
+> live in a **second-level submenu that only appears on hovering a model row**, with **candidate sets that vary per model** —
+> requesting either on a submenu-less model is fail-closed and never silently keeps the UI current value.
+> "New project" takes **two steps**: the in-app "Create project" modal → "Choose folder" opens the native
+> `Select Directory` → the modal submit.
+> Read-only diagnostic probe: `npm run probe:minimax`. Details: [minimax-cdp.en.md](minimax-cdp.en.md).
 
 ### Historical: Codex kernel CLI (`codex exec`, superseded by the GUI driver)
 
