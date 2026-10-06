@@ -168,13 +168,14 @@ tianshu-mcp visual rules approve TASK_ID REVIEW_ID DIGEST "用户确认的批准
 
 - **占位符**（未在模板中出现的占位符不会生成对应临时文件）：
 
-| 占位符 | 展开为 | 附加条件 |
-|---|---|---|
-| `<image:path>` | 被检图片的绝对路径（经项目路径闸门） | — |
-| `<expect:file>` | 写入 UTF-8 期望原文的临时文件绝对路径 | — |
-| `<image:base64:file>` | 写入该图片 base64 的临时文件绝对路径 | **必须**该规则有效 `allowRemote === true`，否则 schema 拒绝 |
+| 占位符 | 展开为 | 是否受 `allowRemote` 约束 | 附加条件 |
+|---|---|---|---|
+| `<image:path>` | 被检图片的绝对路径（经项目路径闸门） | **否** | — |
+| `<expect:file>` | 写入 UTF-8 期望原文的临时文件绝对路径（**不是图片外发通道**，只交付期望文本） | **否** | — |
+| `<image:base64:file>` | 写入该图片 base64 的临时文件绝对路径（把图片**字节**内联进文件） | **是** | **必须**该规则有效 `allowRemote === true`，否则 schema 拒绝 |
 
-  出现任何其他 `<...>` token 直接拒绝配置。
+  出现任何其他 `<...>` token 直接拒绝配置。`allowRemote` **只**约束 `<image:base64:file>` 这一内联字节
+  形态；两个路径通道不受约束（原因见下方「数据外发声明」），`visual doctor` 会逐规则标出实际使用的通道。
 
 - **stdout**：取**最后一行非空文本**解析 JSON：`{ "passed": boolean, "confidence"?: 0..1, "reason": string }`（严格模式，未知字段拒绝）。
 - **退出码**：`0` 表示命令正常执行（**不代表判定通过**，通过与否看 JSON）；非 `0` 表示命令执行失败。
@@ -230,9 +231,14 @@ tianshu-mcp visual rules approve TASK_ID REVIEW_ID DIGEST "用户确认的批准
 
 ### 数据外发声明
 
-图片是否离开本机取决于**用户自备命令的行为**，MCP 无法在系统层拦截。MCP 的强制力仅在契约层：未显式放行
-`allowRemote` 的规则禁止使用 `<image:base64:file>`（schema 拒绝）。`visual doctor` 列出各规则的 `allowRemote`
-声明。请自行确认命令的实际行为。
+图片是否离开本机取决于**用户自备命令的行为**，MCP 无法在系统层拦截。MCP 的强制力仅在契约层，且
+**只覆盖 `allowRemote` 对 `<image:base64:file>` 的约束**（把图片字节内联进临时文件；未显式放行即 schema 拒绝）。
+
+**契约层不是对图片外发的完备拦截**（issue #29）：`<image:path>` / `<expect:file>` 不受 `allowRemote`
+约束。判定命令以 `shell:false` 在**项目目录内**执行，本身就能读取项目内的被检图片，因此门控路径通道
+既无安全收益，又会因「必须开 `allowRemote` 才能过 schema」而反向连带放行 base64 内联。`allowRemote`
+的定位是**防无意/防误配的内联外发**，不是「封死一切把图交给命令的形态」。`visual doctor` 列出各规则的
+`allowRemote` 声明与**实际使用的占位符通道**（标明哪些通道受约束）。请自行确认命令的实际行为。
 
 ### 验证自备命令
 

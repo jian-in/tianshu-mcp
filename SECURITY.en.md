@@ -48,10 +48,20 @@ Understanding these boundaries helps you judge whether a finding is intended beh
 
 - Whether an image leaves the machine **depends on the behaviour of the user's own command**; the MCP
   cannot block that at the system level.
-- The MCP's enforcement is **contract-level only**: `allowRemote` defaults to `false`, and a rule that has
-  not explicitly opted in may **not** use the byte-egress placeholder `<image:base64:file>` in its
-  `argsTemplate` (the schema rejects that configuration outright rather than warning at runtime).
-- `visual doctor` lists each rule's `allowRemote` declaration for human review.
+- The MCP's enforcement is **contract-level only, and covers exactly one shape**: `allowRemote` defaults to
+  `false`, and a rule that has not explicitly opted in may **not** use the inline-byte placeholder
+  `<image:base64:file>` in its `argsTemplate` (which encodes the image bytes into a temp file; the schema
+  rejects that configuration outright rather than warning at runtime).
+- **The contract layer is not a complete block on image egress** (issue #29): the other two placeholders are
+  **not** constrained by `allowRemote` — `<image:path>` delivers the inspected image's absolute path and
+  `<expect:file>` delivers a temp file holding the expectation text. The judgement command runs with
+  `shell:false` inside the **project directory** and can read project files by itself, so gating the path
+  channel adds no security while forcing users to set `allowRemote` just to pass the schema — which would
+  also open up the inline base64 channel. `allowRemote` is about **preventing accidental/misconfigured
+  inline egress**, not “blocking every way of handing an image to a command”.
+- `visual doctor` lists each rule's `allowRemote` declaration **together with the placeholder channels it
+  actually uses**, marking which channels are constrained (`GATED`) by `allowRemote` — the channels are
+  visible, not hidden.
 - Users must therefore confirm their command's real behaviour themselves; the MCP makes no vague promises
   about this.
 

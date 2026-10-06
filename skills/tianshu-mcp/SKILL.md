@@ -274,7 +274,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 - **整轮阻塞**：任一规则的**有效**命令不可解析（`CONTENT_COMMAND_MISSING`）或宿主环境变量缺失（`CONTENT_ENV_MISSING`）会让整轮进 `needs_attention` 且**不产出任何视觉结果行**。这是 fail-closed，不是告警。
 - **`uncertain` 不是失败**：票不集中或低于 `minConfidence` 时判 `uncertain`，永不阻塞、不触发返修；命令不报 confidence 时 `minConfidence` 不生效。
 - 排查：`tianshu-mcp visual doctor <project>`、`visual content probe <project> [ruleId]`、`visual content cache clear <taskId>`。
-- **数据外发**：`allowRemote` 默认 `false`，未放行的规则禁止使用字节外传占位符；图片是否离开本机取决于用户命令的行为，MCP 无法在系统层拦截。
+- **数据外发**：`allowRemote` 默认 `false`，**只**禁止受约束的内联字节通道 `<image:base64:file>`（未放行即 schema 拒绝）；`<image:path>` / `<expect:file>` 是**不受约束**的路径通道（命令在项目内执行、本就能自读文件，门控无收益）。契约层不是对图片外发的完备拦截——图片是否离开本机取决于用户命令的行为，MCP 无法在系统层拦截。`visual doctor` 逐规则标出实际使用的通道与是否 `GATED`。
 
 ---
 

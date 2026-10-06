@@ -60,6 +60,44 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.7.10] - 2026-10-06
+
+### Fixed
+
+- **Precise semantics for the visual content-egress gate (issue #29)**: with `allowRemote` defaulting to
+  `false`, `<image:base64:file>` is rejected by the schema, while `<image:path>` / `<expect:file>` are
+  unconstrained — and the docs implied the contract layer blocked *every* way of handing an image to a
+  command, leading readers to believe the channels were sealed. Probes and counter-evidence show that
+  **gating the path channel yields zero security**: the judgement command runs with `shell:false` inside the
+  **project directory** and can already read project files itself; forcing an opt-in would also make users
+  set `allowRemote` just to pass the schema, which **opens up the inline base64 channel too**. This release
+  therefore does not change the gate — it states the boundary precisely and makes the channels visible.
+
+### Changed
+
+- **New `contentChannelUsage()` (`src/visual/schema.ts`) as the single source of channel semantics**: the
+  gate check and the doctor/probe display share the same logic, so the two cannot drift apart.
+- **`visual doctor` now reports each rule's actually-used placeholder channels and whether they are
+  constrained** (`GATED` / `NOT gated`) — surfacing what the command really receives (absence never raises
+  an alarm by itself).
+- **`visual content probe` output gains `egressConstrained` / `pathChannels`** for programmatic checks.
+- Wording synced across `SECURITY.md` / `SECURITY.en.md`, `docs/visual-acceptance.md` / `.en.md`, and
+  `skills/tianshu-mcp/SKILL.md`: `allowRemote` constrains **only** the inline-byte shape, and the contract
+  layer is **not** a complete block on image egress.
+- `<expect:file>` nature clarified: it delivers a temp file holding the **expectation text** and is **not**
+  an image-egress channel (the issue conflated the two).
+
+### Verification
+
+- 5 new channel/admission contract tests (`test/unit/visual-content-schema.test.ts`), 2 doctor
+  channel-semantics tests (`test/unit/visual-runtime.test.ts`), plus the probe field assertion.
+- Counter-evidence probe: the command read a project file with **zero placeholders**
+  (`READ 4187 bytes with zero placeholders`), proving gating the path channel has no benefit.
+- Full `npm test` **1582 passed / 12 skipped, 0 failed**; `typecheck` / `lint` / `build` / `pack:check` /
+  `check:stdio` all green.
+
+---
+
 ## [0.7.9] - 2026-10-06
 
 ### Fixed

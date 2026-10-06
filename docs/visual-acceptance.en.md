@@ -166,13 +166,15 @@ client. Judgement is fully delegated to a local command you supply, which uses i
 
 - **Placeholders** (a placeholder absent from the template produces no temporary file):
 
-| Placeholder | Expands to | Extra condition |
-|---|---|---|
-| `<image:path>` | absolute path of the inspected image (through the project path gate) | — |
-| `<expect:file>` | absolute path of a temporary file holding the expectation as UTF-8 | — |
-| `<image:base64:file>` | absolute path of a temporary file holding the image's base64 | **requires** the rule's effective `allowRemote === true`, else the schema rejects it |
+| Placeholder | Expands to | Constrained by `allowRemote`? | Extra condition |
+|---|---|---|---|
+| `<image:path>` | absolute path of the inspected image (through the project path gate) | **No** | — |
+| `<expect:file>` | absolute path of a temporary file holding the expectation as UTF-8 (**not** an image-egress channel; it carries expectation text only) | **No** | — |
+| `<image:base64:file>` | absolute path of a temporary file holding the image's base64 (inlines the image **bytes**) | **Yes** | **requires** the rule's effective `allowRemote === true`, else the schema rejects it |
 
-  Any other `<...>` token is rejected at configuration time.
+  Any other `<...>` token is rejected at configuration time. `allowRemote` constrains **only** the
+  inline-byte shape `<image:base64:file>`; the two path channels are unconstrained (see “Egress statement”
+  below), and `visual doctor` marks each rule's actually-used channels.
 
 - **stdout**: the **last non-empty line** is parsed as JSON: `{ "passed": boolean, "confidence"?: 0..1, "reason": string }` (strict mode; unknown fields rejected).
 - **Exit code**: `0` means the command ran normally (**not** that the judgement passed — read the JSON); non-`0` means the command failed.
@@ -221,7 +223,9 @@ There is no separate cap on judgement count or spend. Cost is bounded entirely b
 
 ### Egress statement
 
-Whether images leave the machine **depends on the behaviour of your command**; the MCP cannot block that at the system level. Its enforcement is contract-level only: a rule that has not explicitly opted into `allowRemote` may not use `<image:base64:file>` (the schema rejects it). `visual doctor` lists each rule's `allowRemote` declaration. Confirm your command's actual behaviour yourself.
+Whether images leave the machine **depends on the behaviour of your command**; the MCP cannot block that at the system level. Its enforcement is contract-level only, and **covers just the `allowRemote` constraint on `<image:base64:file>`** (inlining the image bytes into a temp file; the schema rejects it unless the rule explicitly opts in).
+
+**The contract layer is not a complete block on image egress** (issue #29): `<image:path>` / `<expect:file>` are **not** constrained by `allowRemote`. The judgement command runs with `shell:false` inside the **project directory** and can read the inspected project image by itself, so gating the path channel adds no security while forcing users to set `allowRemote` just to pass the schema — which would also open up the inline base64 channel. `allowRemote` is about **preventing accidental/misconfigured inline egress**, not “blocking every way of handing an image to a command”. `visual doctor` lists each rule's `allowRemote` declaration and the placeholder channels it **actually uses** (marking which are constrained). Confirm your command's actual behaviour yourself.
 
 ### Testing your command
 

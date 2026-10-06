@@ -67,6 +67,51 @@ it("doctor resolves each effective content command and lists allowRemote", async
   expect(budget.detail).toContain("60000ms");
 });
 
+/**
+ * issue #29：doctor 必须把**通道语义**摆到台面——用户看到「命令实际拿到什么、
+ * 哪些通道受 allowRemote 约束」，而不是只有一句 allowRemote=false 让人以为封死了一切。
+ */
+it("doctor marks the path channel as not constrained by allowRemote (issue #29)", async () => {
+  const { project, home } = await doctorFixture(
+    {
+      enabled: true,
+      command: process.execPath,
+      argsTemplate: ["-e", "0", "--image", "<image:path>", "--expect-file", "<expect:file>"],
+      samples: 2,
+      timeoutMs: 30_000,
+    },
+    [{ id: "logo", files: ["assets/logo.png"], expect: "blue logo" }],
+  );
+  const command = (await doctor(project, home)).findings.find(
+    (f) => f.check === "content command",
+  )!;
+  expect(command.passed).toBe(true);
+  expect(command.detail).toContain("<image:path>");
+  expect(command.detail).toContain("NOT gated");
+  // 兼容既有断言：allowRemote 声明仍在
+  expect(command.detail).toContain("allowRemote=false");
+});
+
+it("doctor flags a rule that uses the constrained inline-byte channel (issue #29)", async () => {
+  const { project, home } = await doctorFixture(
+    {
+      enabled: true,
+      command: process.execPath,
+      allowRemote: true,
+      argsTemplate: ["-e", "0", "--b64", "<image:base64:file>"],
+      samples: 2,
+      timeoutMs: 30_000,
+    },
+    [{ id: "logo", files: ["assets/logo.png"], expect: "blue logo" }],
+  );
+  const command = (await doctor(project, home)).findings.find(
+    (f) => f.check === "content command",
+  )!;
+  expect(command.passed).toBe(true);
+  expect(command.detail).toContain("<image:base64:file>");
+  expect(command.detail).toContain("GATED");
+});
+
 it("doctor fails the content command finding when a rule command cannot resolve", async () => {
   const { project, home } = await doctorFixture(
     { enabled: true, command: "definitely-missing-vision-cli-xyz", argsTemplate: ["x"] },

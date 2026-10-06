@@ -144,6 +144,33 @@ const envReference = z.record(
 );
 /** 占位符白名单：argsTemplate 中形如 <...> 的 token 只允许这三个 */
 export const CONTENT_PLACEHOLDERS = ["<image:path>", "<expect:file>", "<image:base64:file>"] as const;
+/**
+ * 外发闸门的通道边界（issue #29）——**唯一的语义源**，schema 校验与 doctor/probe 展示共用：
+ * - `<image:base64:file>`：把图片字节**内联**进临时文件。这是「明确要把图片交给命令」的强信号，
+ *   受 `allowRemote` 约束（未放行即拒绝配置）。定位是**防无意/防误配**，不是防有意外发。
+ * - `<image:path>` / `<expect:file>`：交付路径/期望文本，**不受** `allowRemote` 约束。
+ *   命令的 cwd 本就在项目内、可自读文件，门控 path 无安全收益（见计划 §2.1 探针）；
+ *   且强制放行会反向扩大外发面（用户为过 schema 而开 allowRemote 会连带放行 base64）。
+ */
+export const EGRESS_CONSTRAINED_PLACEHOLDER = "<image:base64:file>" as const;
+export interface ContentChannelUsage {
+  /** 模板中是否含受 allowRemote 约束的内联字节通道 */
+  egressConstrained: boolean;
+  /** 模板中使用的非门控通道（路径/期望文本），按首次出现顺序去重 */
+  pathChannels: string[];
+}
+/** 按 argsTemplate 统计通道使用情况：doctor/probe 据此把「命令实际拿到什么」显性化 */
+export function contentChannelUsage(argsTemplate: string[]): ContentChannelUsage {
+  const pathChannels: string[] = [];
+  let egressConstrained = false;
+  for (const token of argsTemplate)
+    for (const match of token.matchAll(/<[^<>\s]*>/g)) {
+      const channel = match[0];
+      if (channel === EGRESS_CONSTRAINED_PLACEHOLDER) egressConstrained = true;
+      else if (!pathChannels.includes(channel)) pathChannels.push(channel);
+    }
+  return { egressConstrained, pathChannels };
+}
 /** 页面/规则共用的内容检查声明（pages[].content 与 contents[] 条目） */
 export const ContentCheckSchema = z
   .object({
@@ -303,9 +330,11 @@ export const VisualConfigSchema = z
         const argsTemplate = check.argsTemplate ?? v.content.argsTemplate;
         if (!command || !argsTemplate)
           issue(`${label}: content checks require command and argsTemplate`);
-        // 外发闸门：字节外传占位符必须逐规则显式放行
+        // 外发闸门：仅内联字节通道（<image:base64:file>）需逐规则显式放行；
+        // 路径通道（<image:path>/<expect:file>）不受约束——边界见 EGRESS_CONSTRAINED_PLACEHOLDER 注释
         const allowRemote = check.allowRemote ?? v.content.allowRemote;
-        if (argsTemplate?.some((token) => token.includes("<image:base64:file>")) && allowRemote !== true)
+        const channels = contentChannelUsage(argsTemplate ?? []);
+        if (channels.egressConstrained && allowRemote !== true)
           issue(`${label}: <image:base64:file> requires allowRemote = true`);
         // 预算自洽：roundTimeoutMs 是硬总闸，超预算配置必然整轮 ROUND_TIMEOUT，必须在配置期拦截
         const samples = check.samples ?? v.content.samples;

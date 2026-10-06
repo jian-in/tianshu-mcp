@@ -63,7 +63,14 @@ it("probe runs the declared rule without writing evidence or cache", async () =>
     expect(probe.votes).toHaveLength(2);
     expect(probe.provider).toBe(process.execPath);
     expect(output.commands).toEqual([
-      { id: "logo", command: process.execPath, resolved: true, allowRemote: false },
+      {
+        id: "logo",
+        command: process.execPath,
+        resolved: true,
+        allowRemote: false,
+        egressConstrained: false,
+        pathChannels: ["<image:path>", "<expect:file>"],
+      },
     ]);
     // 不落证据、不落缓存
     const taskRoot = path.join(project, "visual");

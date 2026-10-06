@@ -58,6 +58,39 @@
 
 ---
 
+## [0.7.10] - 2026-10-06
+
+### 修复
+
+- **视觉内容判定的外发闸门语义精确化（issue #29）**：`allowRemote` 默认 `false` 时，
+  `<image:base64:file>` 被 schema 拒绝，但 `<image:path>` / `<expect:file>` 不受任何约束——
+  文档措辞又暗示「契约层封死了所有把图交给命令的形态」，读者会以为通道已被堵死。
+  经探针实测与反证（见下），**门控路径通道零安全收益**：判定命令以 `shell:false` 在**项目目录内**
+  执行，本就能自读项目内文件；且强制放行会因「必须开 `allowRemote` 才能过 schema」而**反向连带
+  放行 base64 内联**。故本版不改门控、只把边界说清并把通道可见化。
+
+### 变更
+
+- **新增 `contentChannelUsage()`（`src/visual/schema.ts`）作为通道语义的单一来源**：
+  门控判定与 doctor/probe 展示共用同一段逻辑，避免两处实现分叉。
+- **`visual doctor` 逐规则输出实际使用的占位符通道与是否受约束**（`GATED` / `NOT gated`）——
+  把「命令实际拿到什么」摆到台面（缺席不会自己报警）。
+- **`visual content probe` 输出新增 `egressConstrained` / `pathChannels` 字段**，便于调用方可编程核对。
+- `SECURITY.md` / `SECURITY.en.md`、`docs/visual-acceptance.md` / `.en.md`、`skills/tianshu-mcp/SKILL.md`
+  同步措辞：明确 `allowRemote` **只**约束内联字节形态，契约层**不是**对图片外发的完备拦截。
+- `<expect:file>` 性质澄清：它交付的是**期望文本**临时文件，**不是图片外发通道**（issue 原文在此处有误归并）。
+
+### 验证
+
+- 新增 5 个 `contentChannelUsage` / 准入边界契约用例（`test/unit/visual-content-schema.test.ts`），
+  2 个 doctor 通道语义用例（`test/unit/visual-runtime.test.ts`），probe 字段断言同步。
+- 反证探针实测：命令在**零占位符**下即读到项目内文件字节（`READ 4187 bytes with zero placeholders`），
+  证明门控路径通道无收益。
+- 全量 `npm test` **1582 passed / 12 skipped，0 失败**；`typecheck` / `lint` / `build` / `pack:check` /
+  `check:stdio` 全绿。
+
+---
+
 ## [0.7.9] - 2026-10-06
 
 ### 修复

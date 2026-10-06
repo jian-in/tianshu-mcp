@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VisualConfigSchema } from "../../src/visual/schema.js";
+import { VisualConfigSchema, contentChannelUsage } from "../../src/visual/schema.js";
 
 /** 内容校验全局声明（合法）：命令 + 占位符模板 */
 const judge = {
@@ -230,5 +230,62 @@ describe("visual content schema", () => {
       contents: valid.contents,
     });
     expect(offButEnabled.success).toBe(true);
+  });
+
+  /**
+   * issue #29：外发闸门的**通道语义**显式化。
+   * 现状是有意识的取舍——allowRemote 只约束「内联字节」这一个形态；路径通道不受约束，
+   * 因为命令的 cwd 就在项目内、本就能自读文件，门控 path 零收益（见计划 §2.1 探针）。
+   * 这些用例把边界钉死，防止未来任一方向的无意改动。
+   */
+  describe("issue #29: allowRemote 的通道边界", () => {
+    const withTemplate = (argsTemplate: string[]) => ({
+      enabled: true,
+      content: { enabled: true, command: "vision-cli", argsTemplate },
+      contents: [{ id: "logo", files: ["assets/logo.png"], expect: "blue gear" }],
+    });
+
+    it("默认（allowRemote=false）拒绝内联字节通道 <image:base64:file>", () => {
+      expect(
+        VisualConfigSchema.safeParse(withTemplate(["judge", "--b64", "<image:base64:file>"]))
+          .success,
+      ).toBe(false);
+    });
+
+    it("默认（allowRemote=false）接受路径通道 <image:path>", () => {
+      expect(
+        VisualConfigSchema.safeParse(withTemplate(["judge", "--image", "<image:path>"])).success,
+      ).toBe(true);
+    });
+
+    it("默认（allowRemote=false）接受期望文本通道 <expect:file>（不是图片外发通道）", () => {
+      expect(
+        VisualConfigSchema.safeParse(withTemplate(["judge", "--expect-file", "<expect:file>"]))
+          .success,
+      ).toBe(true);
+    });
+
+    it("contentChannelUsage 只把 base64 归入受约束通道", () => {
+      expect(
+        contentChannelUsage(["judge", "--image", "<image:path>", "--expect-file", "<expect:file>"]),
+      ).toEqual({ egressConstrained: false, pathChannels: ["<image:path>", "<expect:file>"] });
+      expect(contentChannelUsage(["judge", "--b64", "<image:base64:file>"])).toEqual({
+        egressConstrained: true,
+        pathChannels: [],
+      });
+      expect(
+        contentChannelUsage(["judge", "--image", "<image:path>", "--b64", "<image:base64:file>"]),
+      ).toEqual({ egressConstrained: true, pathChannels: ["<image:path>"] });
+    });
+
+    it("contentChannelUsage 去重且保留模板出现顺序", () => {
+      expect(
+        contentChannelUsage(["a", "<image:path>", "b", "<image:path>", "<expect:file>"]),
+      ).toEqual({ egressConstrained: false, pathChannels: ["<image:path>", "<expect:file>"] });
+      expect(contentChannelUsage(["judge"])).toEqual({
+        egressConstrained: false,
+        pathChannels: [],
+      });
+    });
   });
 });

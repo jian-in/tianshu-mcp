@@ -5,6 +5,7 @@ import { VisualError } from "./errors.js";
 import { projectFile } from "./paths.js";
 import { contentCommandParts, hasContentRules, contentRulesOf } from "./content.js";
 import { resolveCommandPath } from "./content-command.js";
+import { contentChannelUsage } from "./schema.js";
 import type { VisualConfig } from "./schema.js";
 
 export function assertVisualRuntime(version = process.versions.node): void {
@@ -131,6 +132,8 @@ export async function doctor(projectPath: string, home: string) {
   );
   // 内容校验诊断（issue #13 F 组）：逐条有效命令的解析结果 + allowRemote 声明清单、
   // 规则数 × samples × timeoutMs 与 roundTimeoutMs 的预算对比（超预算给出建议值，不自动改配置）
+  // issue #29：额外显性化**通道语义**——命令实际使用哪些占位符、哪些受 allowRemote 约束，
+  // 避免「allowRemote=false 即封死一切外发」的错误安全感（缺席不会自己报警）。
   await check("content command", async () => {
     const visual = (await readAcceptanceConfig(projectPath))?.visual;
     if (!visual?.content.enabled || !hasContentRules(visual)) return "disabled (no content rules)";
@@ -141,10 +144,16 @@ export async function doctor(projectPath: string, home: string) {
       const cwd = await projectFile(projectPath, effective.cwd);
       const resolved = await resolveCommandPath(effective.command, cwd);
       if (!resolved) unresolved.push(rule.label);
+      // allowRemote 的实际约束范围只有内联字节通道；路径通道不受约束（issue #29）
+      const channels = contentChannelUsage(effective.argsTemplate);
+      const gated = channels.egressConstrained ? "GATED" : "NOT gated";
+      const used = [...(channels.egressConstrained ? ["<image:base64:file>"] : []), ...channels.pathChannels];
       lines.push(
         `${rule.label}: ${effective.command} -> ${
           resolved ?? "UNRESOLVED (will block the whole round)"
-        }; allowRemote=${effective.allowRemote}`,
+        }; allowRemote=${effective.allowRemote} (constrains only <image:base64:file>); channels used: ${
+          used.length ? used.join(", ") : "(none)"
+        } — ${gated} by allowRemote`,
       );
     }
     // 有效命令不可解析会让整轮配置错误（assertContentReady 抛错），诊断必须据实报失败

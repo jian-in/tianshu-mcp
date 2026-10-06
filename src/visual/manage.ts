@@ -15,6 +15,7 @@ import { VisualBrowser } from "./capture.js";
 import { VisualServices } from "./services.js";
 import { clearContentCache } from "./content-cache.js";
 import { resolveCommandPath } from "./content-command.js";
+import { contentChannelUsage } from "./schema.js";
 import {
   contentCommandParts,
   hasContentRules,
@@ -178,8 +179,17 @@ export async function clearContentCacheForTask(home: string, taskId: string) {
 export interface ContentProbeOutput {
   project: string;
   results: ContentProbeResult[];
-  /** 逐规则命令解析结果，便于用户核对自备命令是否可执行 */
-  commands: { id: string; command: string; resolved: boolean; allowRemote: boolean }[];
+  /** 逐规则命令解析结果与通道语义，便于用户核对自备命令能拿到什么、哪些通道受约束 */
+  commands: {
+    id: string;
+    command: string;
+    resolved: boolean;
+    allowRemote: boolean;
+    /** 模板是否使用受 allowRemote 约束的内联字节通道 <image:base64:file> */
+    egressConstrained: boolean;
+    /** 使用的非门控通道（<image:path> / <expect:file>），按首次出现顺序 */
+    pathChannels: string[];
+  }[];
 }
 
 /**
@@ -213,6 +223,7 @@ export async function probeContentRules(
         command: effective.command,
         resolved: (await resolveCommandPath(effective.command, await projectFile(projectPath, effective.cwd))) !== null,
         allowRemote: effective.allowRemote,
+        ...contentChannelUsage(effective.argsTemplate),
       });
       for (const [fileIndex, file] of rule.files.entries())
         results.push(
@@ -234,6 +245,7 @@ export async function probeContentRules(
         command: effective.command,
         resolved: (await resolveCommandPath(effective.command, await projectFile(projectPath, effective.cwd))) !== null,
         allowRemote: effective.allowRemote,
+        ...contentChannelUsage(effective.argsTemplate),
       });
       for (const viewport of config.viewports.filter(
         (v) => page.viewports === undefined || page.viewports.includes(v.id),
