@@ -319,10 +319,27 @@ async function clickDropdownFooter(
   opts: SessionUiOptions & { dialogWaitTimeoutMs?: number },
 ): Promise<{ clicked: boolean; hwnd: number }> {
   const { logger } = opts;
+  const sleep = opts.sleep ?? defaultSleep;
+  const dialogWaitTimeoutMs = opts.dialogWaitTimeoutMs ?? 20_000;
 
-  // 1) 先按语义键点击（cascadeFooterButton 等）
+  // 1) 坐标点击优先（issue #35）：cascadeFooterButton 是 DirectUI 按钮，DOM element.click()
+  //    会「返回成功却不唤起原生弹窗」（间歇，Code/Work 两模式均可能触发），旧实现据此白等到
+  //    dialogWaitTimeout。改用真实鼠标事件（clickAt）——实测在 Code 模式多次稳定弹出对话框。
+  const pos = await cdp.center("cascadeMenuFooter", opts.selectors);
+  if (pos) {
+    await cdp.clickAt(pos.x, pos.y);
+    // 短探测：真实鼠标点击后原生窗口通常很快出现；未出现才回退 DOM click，不在坐标点击上死等。
+    const quick = await waitDialogAppeared(Math.min(dialogWaitTimeoutMs, 3_000), sleep);
+    if (quick) {
+      logger.info(`[traework] 原生「选择文件夹」对话框已弹出（hwnd=${quick.hwnd}，坐标点击）`);
+      return { clicked: true, hwnd: quick.hwnd };
+    }
+    logger.warn("[traework] 坐标点击「选择文件夹」后原生对话框未出现，回退 DOM click 再试一次");
+  }
+
+  // 2) 回退：语义键点击（cascadeFooterButton 等）
   const byKey = await cdp.click("cascadeMenuFooter", opts.selectors);
-  // 2) 文本兜底：扩大到 role=button 与 footer 容器内的可点击元素
+  // 3) 文本兜底：扩大到 role=button 与 footer 容器内的可点击元素
   const byText = byKey
     ? false
     : await cdp.evaluate<boolean>(`(function(){
@@ -344,7 +361,7 @@ async function clickDropdownFooter(
   }
 
   // 3) 关键：确认原生对话框真的被唤起（避免「点了但没弹」被当成成功）
-  const appeared = await waitDialogAppeared(opts.dialogWaitTimeoutMs ?? 20_000, opts.sleep ?? defaultSleep);
+  const appeared = await waitDialogAppeared(dialogWaitTimeoutMs, sleep);
   if (!appeared) {
     // 记录当前下拉 DOM 快照，便于诊断选择器漂移
     const snapshot = await cdp
@@ -392,39 +409,17 @@ export async function bindProject(
   projectPath: string,
   opts: SessionUiOptions & { mode?: TraeworkMode; dialogWaitTimeoutMs?: number },
 ): Promise<BindProjectResult> {
-  const { selectors, logger } = opts;
   const wantMode = opts.mode ?? "Work";
 
-  const first = await bindProjectOnce(cdp, projectPath, { ...opts, mode: wantMode });
-  if (first.bound || wantMode === "Work") return first;
-
-  // 兜底（实测 2026-09-08）：「选择文件夹」相关 UI 在非 Work 模式下可能不出现/不稳定
-  // （失败任务 mode=Code 时下拉底部按钮点击后原生对话框未弹出）。回落 Work 完成绑定，
-  // 再切回目标模式；仅重试一次，避免无限循环。
-  logger.warn(`[traework] 在 ${wantMode} 模式绑定失败（${first.message}），回落 Work 模式重试一次`);
-  const inWork = await bindProjectOnce(cdp, projectPath, { ...opts, mode: "Work" });
-  if (!inWork.bound) {
-    // 把两次失败信息都带出来，便于定位
-    return {
-      bound: false,
-      method: inWork.method,
-      message: `${wantMode} 模式失败（${first.message}）；Work 模式亦失败（${inWork.message}）`,
-    };
-  }
-  // 切回目标模式
-  const backOk = await ensureMode(cdp, wantMode, { selectors, logger, sleep: opts.sleep });
-  if (!backOk) {
-    logger.warn(`[traework] Work 模式绑定成功，但切回 ${wantMode} 模式失败`);
-  }
-  const stillBound = await readBoundProject(cdp, selectors);
-  if (!stillBound || !matchProjectItem({ name: stillBound, subtitle: "" }, projectPath)) {
-    return {
-      bound: false,
-      method: "failed",
-      message: `Work 模式绑定成功但切回 ${wantMode} 后项目丢失（当前：${stillBound || "空"}）`,
-    };
-  }
-  return { bound: true, method: inWork.method, message: `${inWork.message}（经 Work 模式兜底，已切回 ${wantMode}）` };
+  // 项目绑定是 mode-scoped：TraeWork 的 Work/Code/Design **各自维护独立的项目绑定**
+  // （run.ts:328 的不变量；产品侧 `%APPDATA%\TRAE SOLO CN\...\work-mode-projects\` 亦佐证）。
+  // 故只在**目标模式内**完成绑定。
+  //
+  // 旧实现「在目标模式失败 → 回落 Work 绑定 → 切回目标模式 → 校验项目仍在」在该语义下
+  // 结构性不可达：切回目标模式时项目必然丢失，stillBound 校验恒失败，最终必然报
+  // 「Work 模式绑定成功但切回 X 后项目丢失」——既救不了场，又白耗两轮原生对话框预算，
+  // 还把逻辑性失败伪装成环境性失败（issue #35）。据此移除兜底：绑定失败如实失败。
+  return bindProjectOnce(cdp, projectPath, { ...opts, mode: wantMode });
 }
 
 /** 单次绑定尝试（在指定模式下） */

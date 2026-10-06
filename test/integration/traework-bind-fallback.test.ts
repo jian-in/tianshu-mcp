@@ -93,7 +93,7 @@ beforeEach(async () => {
   vi.resetModules();
 });
 
-describe("bindProject 的 Code→Work 兜底", () => {
+describe("bindProject 的目标模式内绑定（issue #35）", () => {
   it("下拉未命中且原生对话框未弹出 → 明确失败，且错误信息含两种模式的失败原因", async () => {
     // 桩化 dialog 模块：findFolderDialog 恒为「未出现」，pickFolderViaNativeDialog 走真实逻辑
     vi.doMock("../../src/agents/traework/computeruse/dialog.js", () => ({
@@ -118,9 +118,9 @@ describe("bindProject 的 Code→Work 兜底", () => {
 
     expect(r.ok).toBe(false);
     expect(r.hardFailure).toBe(true);
-    // 应体现「Code 模式失败 + Work 模式亦失败」的兜底信息
+    // 绑定是 mode-scoped：失败即在目标模式内如实失败，不再回落 Work（issue #35）
     expect(r.error).toContain("项目文件夹绑定失败");
-    expect(r.error).toContain("Work");
+    expect(r.error).not.toContain("Work 模式亦失败");
   });
 
   it("仅在下拉未命中、真正要走原生对话框时才清理遗留对话框", async () => {
@@ -173,5 +173,21 @@ describe("bindProject 的 Code→Work 兜底", () => {
     expect(r.ok).toBe(false);
     // 只报一次失败，不应出现「Work 模式亦失败」的双重措辞
     expect(r.error).not.toContain("Work 模式亦失败");
+  });
+
+  it("下拉命中目标项目 → 在目标模式内直接绑定成功（无需跨模式兜底）", async () => {
+    const { bindProject } = await import("../../src/agents/traework/ui/session.js");
+    const state = makeFakeState({
+      projectItems: [{ name: "demo", subtitle: "d:/trae项目/demo" }],
+      mode: "Code",
+    });
+    const cdp = new FakeCdpClient(9222, state) as never;
+    const r = await bindProject(cdp as never, "d:/trae项目/demo", {
+      logger: silentLogger,
+      mode: "Code",
+      sleep: (ms) => new Promise((res) => setTimeout(res, Math.min(ms, 2))),
+    });
+    expect(r.bound).toBe(true);
+    expect(r.method).toBe("dropdown");
   });
 });
