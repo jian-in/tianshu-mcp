@@ -58,6 +58,42 @@
 
 ---
 
+## [0.7.9] - 2026-10-06
+
+### 修复
+
+- **npm 包内 `docs/agent-profiles.md` 死链**：README 有 3 处（含顶部导航「Agent 配置」）指向该文档，
+  但它不在 `package.json` 的 `files` 白名单里——从 npm 安装的用户点进去是 404。
+  已补 `docs/agent-profiles.md` 与 `.en.md`。**这是 0.7.8 之前就存在的缺陷，不是 0.7.8 引入的。**
+
+### 文档
+
+- **补全 MiniMax Code 适配的文档面**：0.7.8 发布了 `src/agents/minimax/` 全套实现与
+  `docs/minimax-cdp.md`，但**其它描述 agent 的文档面没同步**——本轮补齐 4 个文件共 23 处：
+  - `README.md` / `README.en.md`（各 5 处）：Agent 横幅、`continue_task` 恢复语义列表、
+    agent 能力表新增 `minimax` 行、`reasoningLevel` 校验规则脚注、版本线历史表。
+  - `docs/agent-profiles.md` / `.en.md`（各 4 处）：`adapter` 枚举注释、`driver=gui` 表格的
+    agent 列表（**此前连 qoder / opendesign 也漏了**）、文档互链、新增完整 `minimax` profile 示例段。
+  - `skills/tianshu-mcp/SKILL.md`（35 处）：头部 `description` 与 `triggers`（**否则关键词触发不到该技能**）、
+    工具面 `continue_task` 支持列表、§3.1 参数兼容矩阵新增第 8 列与 `contextWindow` 行、
+    §3.2 新增 minimax 小节、§3.3 平台状态、§5 恢复矩阵六类 `needsUserKind` 与锚点字段、
+    §9 六条错误码补 minimax 语义。
+  - `skills/tianshu-mcp/usage-examples.md`（9 处）：新增 §2.9 minimax 完整示例（含**四种模型形态的
+    候选对照表**）、`codex-cli` 小节顺延（**修掉原文重复的两个 `### 2.10`**）、参数拒绝表补 `contextWindow`、
+    `autoFixRounds` 缺省与会话锚点字段表。
+
+  文档里的具体断言均**回源码核验**而非凭记忆，并对其中的行为差异跑了实测：
+  `defaultAutoFixRounds=2` / `cdpPort=9999` / `permissionMode=始终授权` / 平台状态判定见
+  `src/agents/minimax/profile.ts`；`contextWindow` 仅 minimax 见 `src/mcp/handlers.ts:476`；
+  **minimax 是唯一接受 `中`/`medium` 的适配器**，接受 `极高`/`最大` 但**拒绝 `关闭思考`**（实测确认）。
+
+### 变更
+
+- 版本号 `0.7.8` → `0.7.9`（`package.json` 与 `src/version.generated.ts`）。
+  本版**无代码逻辑变更**，仅文档与打包白名单。
+
+---
+
 ## [0.7.8] - 2026-10-06
 
 ### 新增

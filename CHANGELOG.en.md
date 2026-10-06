@@ -60,6 +60,50 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.7.9] - 2026-10-06
+
+### Fixed
+
+- **Dead link to `docs/agent-profiles.md` inside the npm package**: three places in the README (including
+  the top navigation "Agent Profiles" entry) point at that document, but it was missing from the
+  `package.json` `files` allowlist — users installing from npm hit a 404. Both `docs/agent-profiles.md`
+  and `.en.md` are now included. **This defect predates 0.7.8; it was not introduced by it.**
+
+### Docs
+
+- **Completed the documentation surface for the MiniMax Code adapter**: 0.7.8 shipped the full
+  `src/agents/minimax/` implementation and `docs/minimax-cdp.md`, but **the other documents that describe
+  agents were not synchronised** — this release fills in 4 files and 23 places:
+  - `README.md` / `README.en.md` (5 each): the agent banner, the `continue_task` resume-semantics list,
+    a new `minimax` row in the agent capability table, the `reasoningLevel` validation footnote, and the
+    version-history table.
+  - `docs/agent-profiles.md` / `.en.md` (4 each): the `adapter` enum comment, the `driver=gui` table's
+    agent list (**which had also been missing qoder / opendesign**), cross-document links, and a new
+    complete `minimax` profile example section.
+  - `skills/tianshu-mcp/SKILL.md` (35): the header `description` and `triggers` (**without which the skill
+    cannot be keyword-triggered**), the tool-surface `continue_task` support list, a new 8th column and a
+    `contextWindow` row in the §3.1 parameter matrix, a new minimax subsection in §3.2, the §3.3 platform
+    status, all six `needsUserKind` rows plus the anchor field in the §5 resume matrix, and minimax
+    semantics for six error codes in §9.
+  - `skills/tianshu-mcp/usage-examples.md` (9): a new §2.9 minimax example (including a **candidate table
+    for all four measured model shapes**), renumbering of the `codex-cli` section (**fixing a duplicate
+    `### 2.10` in the original**), a `contextWindow` row in the parameter-rejection table, and updates to
+    the `autoFixRounds` defaults and the session-anchor field table.
+
+  Every concrete assertion in these docs was **verified against the source** rather than recalled, and the
+  behavioural differences were exercised with a real probe:
+  `defaultAutoFixRounds=2` / `cdpPort=9999` / `permissionMode=始终授权` / the platform status check live in
+  `src/agents/minimax/profile.ts`; `contextWindow` is minimax-only per `src/mcp/handlers.ts:476`;
+  and **minimax is the only adapter that accepts `中`/`medium`** — it accepts `极高`/`最大` but
+  **rejects `关闭思考`** (confirmed by probe).
+
+### Changed
+
+- Version `0.7.8` → `0.7.9` (`package.json` and `src/version.generated.ts`).
+  This release contains **no logic changes** — documentation and the packaging allowlist only.
+
+---
+
 ## [0.7.8] - 2026-10-06
 
 ### Added

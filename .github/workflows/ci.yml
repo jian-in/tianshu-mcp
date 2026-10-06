@@ -164,6 +164,7 @@ jobs:
                    package/scripts/probe-qoder.mjs package/docs/qoder-cdp.md package/docs/qoder-cdp.en.md \
                    package/dist/agents/minimax/adapter.js package/dist/agents/minimax/run.js \
                    package/scripts/probe-minimax.mjs package/docs/minimax-cdp.md package/docs/minimax-cdp.en.md \
+                   package/docs/agent-profiles.md package/docs/agent-profiles.en.md \
                    package/README.md package/README.en.md package/LICENSE; do
             if ! grep -qF "$f" "$LIST"; then echo "$f missing"; MISSING=1; fi
           done
