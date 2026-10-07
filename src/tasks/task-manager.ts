@@ -24,11 +24,13 @@ import type {
   PartialAcceptanceConfig,
 } from "../config/schema.js";
 import { TaskOrchestrator } from "../loop/fix-loop.js";
+import { waitForStops as waitForStopsCore, type WaitForStopsResult } from "./wait.js";
 import { genTaskId, nowIso } from "../util/id.js";
 import type { DataHome } from "../config/store.js";
 import type { AgentAdapterRegistry } from "../agents/registry.js";
+import { SUPPORTED_RESUME_AGENTS } from "../agents/registry.js";
 import type { AcceptanceEngine } from "../verify/acceptance.js";
-import type { TaskContext } from "../agents/adapter.js";
+import type { TaskContext, AgentAdapter } from "../agents/adapter.js";
 import { Logger } from "../util/log.js";
 import { normPath } from "../util/path.js";
 
@@ -51,6 +53,8 @@ export interface NewTaskInput {
   designSystem?: string;
   /** Open Design 设计方向（已归一为 prototype/document/clone）；其他 agent 忽略 */
   designDirection?: string;
+  /** MiniMax Code 上下文窗口（界面候选文本）；其他 agent 忽略 */
+  contextWindow?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
   /** ZCode 专用：目标项目未登记时是否允许自动导入（省略 = 允许）。 */
@@ -120,7 +124,12 @@ export class TaskManager {
     private readonly registry: AgentAdapterRegistry,
     private readonly engine: AcceptanceEngine,
     private readonly logger: Logger,
-    private readonly buildCtx: (meta: TaskMeta, round: number, feedback?: string) => TaskContext,
+    private readonly buildCtx: (
+      meta: TaskMeta,
+      round: number,
+      feedback?: string,
+      adapter?: AgentAdapter,
+    ) => TaskContext,
   ) {}
 
   /**
@@ -196,6 +205,24 @@ export class TaskManager {
     return this.tasks.get(taskId) ?? (await this.store.readSnapshot(taskId));
   }
 
+  /**
+   * 阻塞等待一组任务到达停点（issue #28 / 计划 §2.4 C3）。
+   *
+   * **纯只读**：等待期间不写任务状态、不动任务本体；被客户端截断 / 连接中断 / 超时
+   * 都不影响任务继续执行。状态读取复用 `getMeta`（`waitForStatusWrite` 屏障 +
+   * 内存优先 + 快照兜底），因此 wait 看到的是与 `query_task` 同一口径的事实。
+   * @param taskIds 目标任务 id（`wait_task` 单个 / `wait_any` 一组）
+   * @param timeoutMs 本次等待上限（调用方已钳制）
+   * @param signal SDK 请求的取消信号（连接关闭 / 请求取消）
+   */
+  async waitForStops(
+    taskIds: string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<WaitForStopsResult> {
+    return waitForStopsCore(taskIds, (id) => this.getMeta(id), { timeoutMs, signal });
+  }
+
   /** S4：外部对终态任务元数据的更新（如手动 verify 更新报告指针/轮次）——写快照并同步内存 map */
   async persistMetaUpdate(meta: TaskMeta): Promise<void> {
     this.tasks.set(meta.taskId, meta);
@@ -257,6 +284,7 @@ export class TaskManager {
       planDoc: input.planDoc,
       designSystem: input.designSystem,
       designDirection: input.designDirection,
+      contextWindow: input.contextWindow,
       mode: input.mode,
       allowCreateProject: input.allowCreateProject,
       autoVerify: input.autoVerify,
@@ -350,73 +378,20 @@ export class TaskManager {
     if (!meta) return { found: false, reason: `任务不存在: ${taskId}` };
     if (meta.status !== "needs_user")
       return { found: false, reason: `任务状态为 ${meta.status}，只允许恢复 needs_user` };
-    if (meta.agentId === "zcode") {
-      if (
-        meta.needsUserKind === "agent_question" &&
-        !meta.zcodeSessionId &&
-        !meta.zcodeSessionTitle
-      ) {
-        return { found: false, reason: "原 ZCode 会话定位信息丢失，拒绝打开最近会话" };
-      }
-      meta.continueMessage = message.trim();
-      meta.continueSendMessage = meta.needsUserKind === "agent_question";
-    } else if (meta.agentId === "codex") {
-      if (meta.needsUserKind === "user_confirmation") {
-        // GUI 内 turn 暂停等待用户；恢复后不发送消息，仅重连 CDP 观察至终态
-        meta.continueMessage = message.trim();
-        meta.continueSendMessage = false;
-        meta.continueReobserve = true;
-      } else if (meta.needsUserKind === "login_required") {
-        // 登录前任务尚未发送、项目尚未绑定：恢复后走全新派发并重发任务书
-        meta.continueMessage = message.trim();
-        meta.continueSendMessage = false;
-      } else {
-        return {
-          found: false,
-          reason: `codex 任务等待类型为 ${meta.needsUserKind ?? "unknown"}，仅支持 login_required / user_confirmation`,
-        };
-      }
-    } else if (meta.agentId === "qoder") {
-      if (meta.needsUserKind === "agent_question" && !meta.qoderSessionId)
-        return { found: false, reason: "原 Qoder 会话锚点丢失，拒绝打开最近会话" };
-      meta.continueMessage = message.trim();
-      meta.continueSendMessage = meta.needsUserKind === "agent_question";
-      meta.continueReobserve = !!meta.qoderSessionId && !meta.continueSendMessage;
-    } else if (meta.agentId === "kimicode") {
-      if (meta.needsUserKind === "agent_question") {
-        // 提问必须回答到**原会话**里：缺会话锚点就无法唯一定位，直接拒绝（绝不退化打开最近会话）
-        if (!meta.kimicodeSessionId && !meta.kimicodeSessionTitle)
-          return { found: false, reason: "原 Kimi Code 会话定位信息丢失，拒绝打开最近会话" };
-        meta.continueMessage = message.trim();
-        meta.continueSendMessage = true;
-        meta.continueReobserve = undefined;
-      } else if (meta.needsUserKind === "user_confirmation") {
-        // GUI 内 turn 暂停等待用户；恢复后不发送消息（用户确认文本绝不发给模型），仅重连观察至终态
-        meta.continueMessage = message.trim();
-        meta.continueSendMessage = false;
-        meta.continueReobserve = true;
-      } else {
-        // 环境类（close_existing_instance / login_required / setup_recovery / system_permission）：
-        // 任务尚未真正派发或绑定未完成 → 复检环境后走全新派发并**补发完整任务书**，
-        // 用户确认文本只作为「已处理」说明，绝不发给模型。
-        meta.continueMessage = message.trim();
-        meta.continueSendMessage = false;
-        meta.continueReobserve = undefined;
-      }
-    } else if (meta.agentId === "opendesign") {
-      // Open Design 没有可回选的会话 id（单页应用，当前视图即当前会话）：
-      // - agent_question：回答要发进当前会话（适配器发送前确认会话页锚点，不在即 session_lost）；
-      // - user_confirmation：用户确认文本绝不发给模型，只重连观察；
-      // - 环境类：任务尚未真正派发 → 复检环境后走全新派发并补发完整任务书。
-      meta.continueMessage = message.trim();
-      meta.continueSendMessage = meta.needsUserKind === "agent_question";
-      meta.continueReobserve = meta.needsUserKind === "user_confirmation" ? true : undefined;
-    } else {
+    // 恢复语义由各 adapter 自己声明（AgentAdapter.planResume），编排层只做分发。
+    // 不实现 planResume 的 agent（如 traework、纯 CLI）直接拒绝 —— 对应旧 else 分支。
+    const adapter = await this.registry.ensureAdapter(meta.agentId);
+    const planned = adapter?.planResume?.(meta, message);
+    if (!planned) {
       return {
         found: false,
-        reason: `continue_task 当前仅支持 zcode/codex/kimicode/qoder/opendesign 任务（agentId=${meta.agentId}）`,
+        reason: `continue_task 当前仅支持 ${SUPPORTED_RESUME_AGENTS.join("/")} 任务（agentId=${meta.agentId}）`,
       };
     }
+    if (!planned.ok) return { found: false, reason: planned.reason };
+    meta.continueMessage = planned.plan.continueMessage;
+    meta.continueSendMessage = planned.plan.continueSendMessage;
+    meta.continueReobserve = planned.plan.continueReobserve;
     meta.status = "queued";
     meta.updatedAt = nowIso();
     meta.finishedAt = undefined;

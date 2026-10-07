@@ -2,7 +2,8 @@
  * context：从工具参数构造命令上下文 + 项目登记。
  * buildCtx：meta → agent 任务上下文（taskDir / 工作目录 / 超时 / 轮次）。
  */
-import type { TaskContext } from "../agents/adapter.js";
+import type { TaskContext, AgentAdapter } from "../agents/adapter.js";
+import type { AgentAdapterRegistry } from "../agents/registry.js";
 import type { TaskMeta } from "../tasks/task.js";
 import type { TaskStore } from "../tasks/task-store.js";
 import type { DataHome } from "../config/store.js";
@@ -10,6 +11,7 @@ import type { DataHome } from "../config/store.js";
 export interface AppServices {
   store: TaskStore;
   dataHome: DataHome;
+  registry: AgentAdapterRegistry;
 }
 
 /**
@@ -39,7 +41,12 @@ export const DRY_RUN_CONSTRAINT = [
 ].join("\n");
 
 export function makeBuildCtx(services: AppServices) {
-  return (meta: TaskMeta, round: number, feedback?: string): TaskContext => ({
+  return (
+    meta: TaskMeta,
+    round: number,
+    feedback?: string,
+    adapter?: AgentAdapter,
+  ): TaskContext => ({
     taskId: meta.taskId,
     workspaceMode: meta.workspaceMode,
     projectPath: meta.projectPath,
@@ -56,6 +63,7 @@ export function makeBuildCtx(services: AppServices) {
     planDoc: meta.planDoc,
     designSystem: meta.designSystem,
     designDirection: meta.designDirection,
+    contextWindow: meta.contextWindow,
     mode: meta.mode,
     allowCreateProject: meta.allowCreateProject,
     round,
@@ -63,7 +71,7 @@ export function makeBuildCtx(services: AppServices) {
     taskDir: services.store.dir(meta.taskId),
     workDir: meta.projectPath,
     taskTimeoutMs: meta.taskTimeoutMs,
-    resume: buildResume(meta, round),
+    resume: buildResume(meta, round, adapter),
   });
 }
 
@@ -75,75 +83,12 @@ export function makeBuildCtx(services: AppServices) {
  *   user_confirmation 恢复透传 reobserve（重连观察，不发送任何消息）。
  * - opendesign：没有可回选的会话 id，恢复语义是「对当前会话续说」，适配器侧确认会话页锚点。
  */
-function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
-  const continuing = meta.continueMessage !== undefined;
-  if (meta.agentId === "zcode") {
-    if (!continuing && round <= 0) return undefined;
-    return {
-      kind: continuing ? "continue" : "rework",
-      message: meta.continueMessage,
-      sendMessage: meta.continueSendMessage ?? round > 0,
-      sessionId: meta.zcodeSessionId,
-      sessionTitle: meta.zcodeSessionTitle,
-      boundProjectPath: meta.boundProjectPath,
-      provider: meta.modelProvider,
-      model: meta.model,
-      permissionMode: meta.permissionMode,
-    };
-  }
-  if (meta.agentId === "codex") {
-    if (!continuing && round <= 0) return undefined;
-    return {
-      kind: continuing ? "continue" : "rework",
-      message: meta.continueMessage,
-      sendMessage: meta.continueSendMessage ?? round > 0,
-      // user_confirmation 恢复：重连 CDP 观察至终态，不发送任何消息
-      ...(meta.continueReobserve ? { reobserve: true } : {}),
-      boundProjectPath: meta.boundProjectPath,
-      model: meta.model,
-      permissionMode: meta.permissionMode,
-    };
-  }
-  if (meta.agentId === "qoder") {
-    if (!continuing && round <= 0) return undefined;
-    return {
-      kind: continuing ? "continue" : "rework",
-      message: meta.continueMessage,
-      sendMessage: meta.continueSendMessage ?? round > 0,
-      reobserve: meta.continueReobserve,
-      sessionId: meta.qoderSessionId,
-      boundProjectPath: meta.boundProjectPath,
-      model: meta.actualModel ?? meta.model,
-      permissionMode: meta.permissionMode,
-    };
-  }
-  if (meta.agentId === "kimicode") {
-    if (!continuing && round <= 0) return undefined;
-    return {
-      kind: continuing ? "continue" : "rework",
-      message: meta.continueMessage,
-      sendMessage: meta.continueSendMessage ?? round > 0,
-      // user_confirmation 恢复：重连观察至终态，不发送任何消息（用户确认文本绝不发给模型）
-      ...(meta.continueReobserve ? { reobserve: true } : {}),
-      sessionId: meta.kimicodeSessionId,
-      sessionTitle: meta.kimicodeSessionTitle,
-      boundProjectPath: meta.boundProjectPath,
-      model: meta.model,
-      permissionMode: meta.permissionMode,
-    };
-  }
-  if (meta.agentId === "opendesign") {
-    if (!continuing && round <= 0) return undefined;
-    // Open Design 没有可回选的会话 id：恢复语义是「对当前会话续说」——
-    // 发送前由适配器确认当前确实在会话页（不在即 session_lost），绝不退化到首页重新派发。
-    return {
-      kind: continuing ? "continue" : "rework",
-      message: meta.continueMessage,
-      sendMessage: meta.continueSendMessage ?? round > 0,
-      ...(meta.continueReobserve ? { reobserve: true } : {}),
-      boundProjectPath: meta.boundProjectPath,
-      model: meta.actualModel ?? meta.model,
-    };
-  }
-  return undefined;
+function buildResume(
+  meta: TaskMeta,
+  round: number,
+  adapter?: AgentAdapter,
+): TaskContext["resume"] {
+  // 各 agent 的 resume 载荷由自己声明（AgentAdapter.buildResumePayload），
+  // 这里只做分发。不实现该方法的 adapter 返回 undefined（无恢复上下文）。
+  return adapter?.buildResumePayload?.(meta, round);
 }

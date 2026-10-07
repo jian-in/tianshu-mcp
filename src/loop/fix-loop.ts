@@ -15,7 +15,7 @@ import {
   readJsonSafe,
   writeTextAtomic,
 } from "../util/fs.js";
-import type { TaskContext, ResolvedAgent } from "../agents/adapter.js";
+import type { TaskContext, ResolvedAgent, AgentAdapter } from "../agents/adapter.js";
 import { AgentAdapterRegistry } from "../agents/registry.js";
 import { runChild } from "../agents/spawn.js";
 import { captureBaseline, type Baseline } from "../verify/git-baseline.js";
@@ -33,6 +33,10 @@ import {
   buildOpenDesignFixPrompt,
   writeOpenDesignFixPlan,
 } from "../agents/opendesign/fixplan.js";
+import {
+  buildMinimaxFixPrompt,
+  writeMinimaxFixPlan,
+} from "../agents/minimax/fixplan.js";
 import { buildFixPrompt } from "../agents/codex/input.js";
 import { extractFailureEvidence } from "../agents/codex/verify.js";
 import {
@@ -58,7 +62,12 @@ export interface OrchestratorDeps {
   registry: AgentAdapterRegistry;
   engine: AcceptanceEngine;
   logger: Logger;
-  buildCtx: (meta: TaskMeta, round: number, feedback?: string) => TaskContext;
+  buildCtx: (
+    meta: TaskMeta,
+    round: number,
+    feedback?: string,
+    adapter?: AgentAdapter,
+  ) => TaskContext;
 }
 
 export interface OrchestrateResult {
@@ -66,6 +75,35 @@ export interface OrchestrateResult {
   meta: TaskMeta;
   summary?: string;
   reason?: string;
+}
+
+/**
+ * agent 侧异常结束、实例已保留的 endReason 集合。
+ *
+ * 这些情形下**必须**落 `needs_attention`（非终态、可 continue_task 恢复），
+ * 绝不能进入项目验收链——否则「从未观测到运行信号」的任务会被当成成功派发的结果去验收。
+ */
+export const AGENT_ABORT_END_REASONS = ["idle_timeout", "task_timeout", "cdp_disconnected"] as const;
+
+/**
+ * 在这些 endReason 下应转 needs_attention 的适配器集合。
+ *
+ * issue #31：旧判定把 agent 名硬编码为 `zcode || codex`，导致 kimicode/minimax/opendesign
+ * 的 idle_timeout 因 `autoVerify` 默认为 true 而绕过下方两个 `!autoVerify` 出口，直接去做验收。
+ * 这里与 `ARCHITECTURE.md §8.4` 的 endReason 产出表对齐：会产出上述 endReason 的 driver 才在集合内。
+ */
+export const AGENT_ABORT_PARKING_AGENTS = ["zcode", "codex", "kimicode", "minimax", "opendesign"] as const;
+
+/** 该 agent 在该 endReason 下是否应转 needs_attention（非终态、可恢复） */
+export function shouldParkAsNeedsAttention(
+  agentId: string,
+  endReason: string | undefined,
+): boolean {
+  if (!endReason) return false;
+  return (
+    (AGENT_ABORT_PARKING_AGENTS as readonly string[]).includes(agentId) &&
+    (AGENT_ABORT_END_REASONS as readonly string[]).includes(endReason)
+  );
 }
 
 export class TaskOrchestrator {
@@ -204,7 +242,13 @@ export class TaskOrchestrator {
       for (;;) {
         if (this.aborted()) return this.abortTerminal();
         await store.updateStatus(meta, "running", `第 ${round} 轮 agent 执行`, "started");
-        const ctx = this.deps.buildCtx(meta, round, feedback);
+        const ctx = this.deps.buildCtx(
+          meta,
+          round,
+          feedback,
+          // resolve() 已在上方调用，getAdapter 返回对齐后的 adapter 实例
+          this.deps.registry.getAdapter(meta.agentId),
+        );
         if (meta.continueMessage !== undefined) {
           delete meta.continueMessage;
           delete meta.continueSendMessage;
@@ -238,13 +282,16 @@ export class TaskOrchestrator {
         // 在 shutdown 竞态里丢失适配器已回报的停止结果，只能写"无停止结果可确认"。
         if (runRes.guiStop) meta.guiStop = runRes.guiStop;
         if (runRes.session) {
-          // 会话锚点按 agent 分槽存放：zcodeSession* 与 kimicodeSession* 语义不同
-          // （旧快照里的 zcodeSession* 是 ZCode 会话，拿去 Kimi Code 里定位必然失败）。
+          // 会话锚点按 agent 分槽存放：zcodeSession* 与 kimicodeSession*/minimaxSession* 语义不同
+          // （旧快照里的 zcodeSession* 是 ZCode 会话，拿去 MiniMax Code 里定位必然失败）。
           if (meta.agentId === "qoder") {
             meta.qoderSessionId = runRes.session.id ?? meta.qoderSessionId;
           } else if (meta.agentId === "kimicode") {
             meta.kimicodeSessionId = runRes.session.id ?? meta.kimicodeSessionId;
             meta.kimicodeSessionTitle = runRes.session.title ?? meta.kimicodeSessionTitle;
+          } else if (meta.agentId === "minimax") {
+            meta.minimaxSessionId = runRes.session.id ?? meta.minimaxSessionId;
+            meta.minimaxSessionTitle = runRes.session.title ?? meta.minimaxSessionTitle;
           } else {
             meta.zcodeSessionId = runRes.session.id ?? meta.zcodeSessionId;
             meta.zcodeSessionTitle = runRes.session.title ?? meta.zcodeSessionTitle;
@@ -270,12 +317,11 @@ export class TaskOrchestrator {
           await store.updateStatus(meta, "needs_user", meta.lastMessage, "needs_user");
           return { status: "needs_user", meta, summary: meta.lastMessage };
         }
-        if (
-          (meta.agentId === "zcode" || meta.agentId === "codex") &&
-          ["idle_timeout", "task_timeout", "cdp_disconnected"].includes(runRes.endReason ?? "")
-        ) {
-          const label = meta.agentId === "codex" ? "Codex" : "ZCode";
-          const message = runRes.error ?? `${label} 执行中止：${runRes.endReason}`;
+        // issue #31：这几种 endReason 表示「agent 侧异常结束、实例已保留」，必须落
+        // needs_attention（非终态、可 continue_task 恢复），**不得**进入项目验收链。
+        if (shouldParkAsNeedsAttention(meta.agentId, runRes.endReason)) {
+          // 文案优先用 runRes.error（各 driver 已自带 agent 名与具体原因），避免在此重复硬编码映射。
+          const message = runRes.error ?? `${meta.agentId} 执行中止：${runRes.endReason}`;
           meta.lastMessage = message;
           meta.errorType = runRes.endReason === "task_timeout" ? "timeout" : "agent_failed";
           await store.updateStatus(meta, "needs_attention", message);
@@ -283,10 +329,14 @@ export class TaskOrchestrator {
         }
 
         if (runRes.hardFailure) {
+          // issue #38：失败性质由适配器声明（runRes.errorType），编排器不反推。
+          // 缺省 `spawn` 保持既有行为——未声明分类的 adapter 逐字不变。
+          const errorType = runRes.errorType ?? "spawn";
+          const headline = errorType === "setup_failed" ? "setup 阶段失败" : "agent 基础设施失败";
           return this.finish(
             "failed",
-            "spawn",
-            `agent 基础设施失败：${runRes.error ?? "未知"}（日志 ${runRes.logFile}）`,
+            errorType,
+            `${headline}：${runRes.error ?? "未知"}（日志 ${runRes.logFile}）`,
           );
         }
         if (runRes.timeout) {
@@ -442,6 +492,32 @@ export class TaskOrchestrator {
               directives: verdict.report.repairDirectives,
             });
             logger.info(`[codex] 第 ${roundNo} 轮返修指令已引用修复计划 ${plan.relPath}`);
+            continue;
+          }
+
+          if (meta.agentId === "minimax") {
+            // MiniMax Code 的修复计划落在**项目根内**（默认 `.minimax/plans/`）：
+            // 计划文件名要写进发给 agent 的返修指令，agent 必须能读到它；
+            // 写进任务数据目录会导致「我让你看计划，你说读不到」。文件名含轮次号，不覆盖历史。
+            const plan = await writeMinimaxFixPlan({
+              taskId: meta.taskId,
+              round: round - 1,
+              projectPath: meta.projectPath,
+              displayPath: meta.displayPath,
+              taskText: meta.task,
+              report: verdict.report,
+              planDir: resolved.profile.minimax?.planDir,
+              logger,
+            });
+            feedback = buildMinimaxFixPrompt({
+              summary: verdict.summary,
+              planRelPath: plan.relPath,
+              reportPath: verdict.mdPath,
+              evidence: visualEvidence(verdict.report),
+            });
+            logger.info(
+              `[minimax] 第 ${round} 轮返修指令已引用修复计划 ${plan.relPath}（项目内，供 MiniMax Code 读取）`,
+            );
             continue;
           }
 
