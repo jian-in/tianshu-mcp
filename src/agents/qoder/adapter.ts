@@ -5,8 +5,10 @@ import type {
   AgentRunResult,
   ResolvedAgent,
   SpawnInvocation,
+  ResumePlanResult,
   TaskContext,
 } from "../adapter.js";
+import type { TaskMeta } from "../../tasks/task.js";
 import type { SpawnResult } from "../spawn.js";
 
 let serial: Promise<void> = Promise.resolve();
@@ -41,6 +43,37 @@ export class QoderGuiAdapter implements AgentAdapter {
 
   parseExit(res: SpawnResult): AgentRunResult {
     return { ...res, hardFailure: Boolean(res.error && res.exitCode === null) };
+  }
+
+  /** Qoder 恢复语义：提问需原会话锚点，缺锚点直接拒绝（绝不退化打开最近会话）。 */
+  planResume(meta: TaskMeta, message: string): ResumePlanResult {
+    if (meta.needsUserKind === "agent_question" && !meta.qoderSessionId) {
+      return { ok: false, reason: "原 Qoder 会话锚点丢失，拒绝打开最近会话" };
+    }
+    const continueSendMessage = meta.needsUserKind === "agent_question";
+    return {
+      ok: true,
+      plan: {
+        continueMessage: message.trim(),
+        continueSendMessage,
+        continueReobserve: !!meta.qoderSessionId && !continueSendMessage,
+      },
+    };
+  }
+
+  buildResumePayload(meta: TaskMeta, round: number): TaskContext["resume"] {
+    const continuing = meta.continueMessage !== undefined;
+    if (!continuing && round <= 0) return undefined;
+    return {
+      kind: continuing ? "continue" : "rework",
+      message: meta.continueMessage,
+      sendMessage: meta.continueSendMessage ?? round > 0,
+      reobserve: meta.continueReobserve,
+      sessionId: meta.qoderSessionId,
+      boundProjectPath: meta.boundProjectPath,
+      model: meta.actualModel ?? meta.model,
+      permissionMode: meta.permissionMode,
+    };
   }
 
   async run(

@@ -11,6 +11,11 @@ import type {
 import type { TaskMeta } from "../../tasks/task.js";
 import type { SpawnResult } from "../spawn.js";
 
+/**
+ * 同一台机器上 MiniMax Code 只有一个受管实例：与 Kimi Code / Qoder / Open Design 同构的
+ * **全局串行门**。并行派活会两条流程同时点同一个「模型」/「项目」菜单，必然互相踩踏；
+ * 而模型弹层是**独立窗口**，两条流程的 hover 二级子菜单会互相覆盖。
+ */
 let serial: Promise<void> = Promise.resolve();
 
 async function waitForPrevious(
@@ -34,11 +39,11 @@ async function waitForPrevious(
   }
 }
 
-export class KimicodeGuiAdapter implements AgentAdapter {
+export class MinimaxGuiAdapter implements AgentAdapter {
   constructor(readonly id: string) {}
 
   buildInvocation(): SpawnInvocation {
-    throw new Error("kimicode-gui 不通过 spawn 执行");
+    throw new Error("minimax-gui 不通过 spawn 执行");
   }
 
   parseExit(res: SpawnResult): AgentRunResult {
@@ -46,15 +51,14 @@ export class KimicodeGuiAdapter implements AgentAdapter {
   }
 
   /**
-   * Kimi Code 恢复语义三分派：agent_question 回答回原会话（缺锚点拒绝）；
-   * user_confirmation 重连观察（用户确认文本绝不发给模型）；
-   * 环境类复检后全新派发并补发完整任务书。
+   * MiniMax 恢复语义（与 kimicode 同构）：agent_question 回答回原会话；
+   * user_confirmation 重连观察；环境类复检后全新派发并补发完整任务书
+   *（用户确认文本绝不发给模型）。
    */
   planResume(meta: TaskMeta, message: string): ResumePlanResult {
     if (meta.needsUserKind === "agent_question") {
-      // 提问必须回答到**原会话**里：缺会话锚点就无法唯一定位，直接拒绝（绝不退化打开最近会话）
-      if (!meta.kimicodeSessionId && !meta.kimicodeSessionTitle) {
-        return { ok: false, reason: "原 Kimi Code 会话定位信息丢失，拒绝打开最近会话" };
+      if (!meta.minimaxSessionId && !meta.minimaxSessionTitle) {
+        return { ok: false, reason: "原 MiniMax Code 会话定位信息丢失，拒绝打开最近会话" };
       }
       return {
         ok: true,
@@ -62,7 +66,6 @@ export class KimicodeGuiAdapter implements AgentAdapter {
       };
     }
     if (meta.needsUserKind === "user_confirmation") {
-      // GUI 内 turn 暂停等待用户；恢复后不发送消息（用户确认文本绝不发给模型），仅重连观察至终态
       return {
         ok: true,
         plan: {
@@ -81,14 +84,20 @@ export class KimicodeGuiAdapter implements AgentAdapter {
   buildResumePayload(meta: TaskMeta, round: number): TaskContext["resume"] {
     const continuing = meta.continueMessage !== undefined;
     if (!continuing && round <= 0) return undefined;
+    /**
+     * 恢复语义（与 kimicode 同构）：
+     * - continue + sendMessage（agent_question）：定位原会话 → 回答写进输入框发送（不重发任务书）；
+     * - continue + reobserve（user_confirmation）：重连观察至终态，不发送任何消息；
+     * - rework：定位原会话 → 发送返修消息。
+     * 定位不到原会话一律 session_lost，绝不退化打开「最近会话」。
+     */
     return {
       kind: continuing ? "continue" : "rework",
       message: meta.continueMessage,
       sendMessage: meta.continueSendMessage ?? round > 0,
-      // user_confirmation 恢复：重连观察至终态，不发送任何消息（用户确认文本绝不发给模型）
       ...(meta.continueReobserve ? { reobserve: true } : {}),
-      sessionId: meta.kimicodeSessionId,
-      sessionTitle: meta.kimicodeSessionTitle,
+      sessionId: meta.minimaxSessionId,
+      sessionTitle: meta.minimaxSessionTitle,
       boundProjectPath: meta.boundProjectPath,
       model: meta.model,
       permissionMode: meta.permissionMode,
@@ -120,8 +129,8 @@ export class KimicodeGuiAdapter implements AgentAdapter {
           keptInstance: true,
         };
       }
-      const { runKimicodeTask } = await import("./run.js");
-      return await runKimicodeTask({
+      const { runMinimaxTask } = await import("./run.js");
+      return await runMinimaxTask({
         ctx,
         resolved,
         opts,
