@@ -6,7 +6,7 @@
 import type { SpawnSpec } from "./spawn.js";
 import type { AgentProfile, TraeworkMode } from "../config/schema.js";
 import type { ReasoningLevel } from "../config/schema.js";
-import type { WorkspaceMode } from "../tasks/task.js";
+import type { WorkspaceMode, TaskMeta } from "../tasks/task.js";
 import type { OnAgentEvent } from "./agent-events.js";
 
 export interface ResolvedAgent {
@@ -46,6 +46,11 @@ export interface TaskContext {
   designSystem?: string;
   /** Open Design 设计方向（已归一 prototype/document/clone）；其他 agent 忽略 */
   designDirection?: string;
+  /**
+   * MiniMax Code 上下文窗口（已归一到界面候选文本，如 `512K` / `1M`）；其他 agent 忽略。
+   * 合法性（是否落在界面实际候选内）只能在运行期读界面候选项校验，见 minimax/run.ts。
+   */
+  contextWindow?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
   /**
@@ -89,6 +94,16 @@ export interface AgentRunResult {
   durationMs: number;
   logFile: string;
   hardFailure?: boolean; // 基础设施/认证等错误，不进入验收/返修
+  /**
+   * 适配器对 hardFailure 失败性质的自我归类（issue #38）。
+   *
+   * - `spawn`：进程/安装/CDP 等基础设施失败（默认，未声明时编排器按此处理）
+   * - `setup_failed`：setup 阶段的**逻辑性**失败（模式未就绪、项目未绑定、模型不可用…），
+   *   重试或换环境不会成功，不应被读日志的人当成环境问题反复重试
+   *
+   * 缺省不传即保持既有行为（`spawn`）；只有确实握有失败性质的适配器才显式声明。
+   */
+  errorType?: "spawn" | "setup_failed";
   /** GUI agent 的结构化结束原因（如 completion_mark / idle_no_completion / timeout） */
   endReason?: string;
   /** GUI 实例是否因任务未真正完成而被保留 */
@@ -160,8 +175,7 @@ export interface AgentRunLogger {
 export interface AgentAdapter {
   id: string;
   /** 构造一次调用（命令/参数/工作目录/env/prompt 传递） */
-  buildInvocation(ctx: TaskContext, resolved: ResolvedAgent): SpawnInvocation;
-  /** 将子进程退出结果翻译为语义结果 */
+  buildInvocation(ctx: TaskContext, resolved: ResolvedAgent): SpawnInvocation;  /** 将子进程退出结果翻译为语义结果 */
   parseExit(res: {
     ok: boolean;
     exitCode: number | null;
@@ -176,4 +190,30 @@ export interface AgentAdapter {
    * 而是调用它（GUI 类 adapter 如 traework 实现；CLI 类不实现，走原 spawn 路径）。
    */
   run?(ctx: TaskContext, resolved: ResolvedAgent, opts: AgentRunOptions): Promise<AgentRunResult>;
+
+  /**
+   * 可选：continue_task 恢复语义。各 agent 的会话恢复规则由自己声明，
+   * 编排层（TaskManager）不再按 agentId 写分支 —— 标注与解释分离。
+   * 不实现时 continue_task 直接拒绝该 agent。
+   */
+  planResume?(meta: TaskMeta, message: string): ResumePlanResult;
+
+  /**
+   * 可选：构造 TaskContext.resume 载荷。各 agent 用的会话字段不同
+   *（zcodeSessionId / qoderSessionId / …），由自己映射。
+   * 不实现时返回 undefined（无恢复上下文）。
+   */
+  buildResumePayload?(meta: TaskMeta, round: number): TaskContext["resume"];
 }
+
+/** continue_task 恢复计划 */
+export interface ResumePlan {
+  continueMessage: string;
+  continueSendMessage: boolean;
+  continueReobserve?: boolean;
+}
+
+/** planResume 返回：恢复计划，或拒绝原因 */
+export type ResumePlanResult =
+  | { ok: true; plan: ResumePlan }
+  | { ok: false; reason: string };
