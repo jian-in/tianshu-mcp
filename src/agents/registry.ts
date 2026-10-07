@@ -13,10 +13,12 @@ import { QoderGuiAdapter } from "./qoder/adapter.js";
 import { discoverQoder } from "./qoder/discovery.js";
 import { KimicodeGuiAdapter } from "./kimicode/adapter.js";
 import { OpenDesignGuiAdapter } from "./opendesign/adapter.js";
+import { MinimaxGuiAdapter } from "./minimax/adapter.js";
 import { discoverZcode } from "./zcode/discovery.js";
 import { discoverCodex } from "./codex/discovery.js";
 import { discoverKimicode } from "./kimicode/discovery.js";
 import { discoverOpenDesign } from "./opendesign/discovery.js";
+import { discoverMinimax } from "./minimax/discovery.js";
 import { discoverTraework } from "./traework/discovery.js";
 import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
@@ -24,17 +26,44 @@ import { Logger } from "../util/log.js";
 import { expandEnvPath, platformDefaultDiscoveryDirs } from "../util/path.js";
 import { execFileAsync } from "../verify/exec.js";
 
+/**
+ * GUI adapter 构造器注册表：adapter 类型字符串 → 构造器。
+ * 新增 GUI adapter 时只需在此加一行，ensureAdapterFor 无需改动。
+ * key 与 config schema 的 adapter 枚举同源：schema 加新类型而这里没跟上时，
+ * 下方 `GUI_ADAPTERS[adapterType]` 的索引会直接编译失败，而不是静默走 fallback。
+ */
+const GUI_ADAPTERS = {
+  "minimax-gui": MinimaxGuiAdapter,
+  "qoder-gui": QoderGuiAdapter,
+  "opendesign-gui": OpenDesignGuiAdapter,
+  "zcode-gui": ZcodeGuiAdapter,
+  "codex-gui": CodexGuiAdapter,
+  "kimicode-gui": KimicodeGuiAdapter,
+  "traework-gui": TraeworkGuiAdapter,
+} as const satisfies Record<string, new (id: string) => AgentAdapter>;
+
+/** GUI adapter 构造器列表（与注册表同源，供回退判断用）。 */
+const GUI_ADAPTER_CLASSES = Object.values(GUI_ADAPTERS);
+
 export class AgentAdapterRegistry {
   private adapters = new Map<string, AgentAdapter>();
   private resolveCache = new Map<string, ResolvedAgent>();
-
   constructor(
     private readonly loadProfiles: () => Promise<Record<string, AgentProfile>>,
     private readonly logger: Logger,
   ) {
     // 默认：所有 profile 都用通用 CLI adapter（按 profile.promptMode 传递 prompt）。
     // driver=gui 的 profile 会在 resolve() 时替换为 GUI adapter（见 ensureAdapterFor）。
-    for (const id of ["codex", "zcode", "traework", "kimicode", "qoder", "opendesign", "stub"]) {
+    for (const id of [
+      "codex",
+      "zcode",
+      "traework",
+      "kimicode",
+      "qoder",
+      "opendesign",
+      "minimax",
+      "stub",
+    ]) {
       this.adapters.set(id, new CliAdapter(id));
     }
   }
@@ -47,33 +76,16 @@ export class AgentAdapterRegistry {
   private ensureAdapterFor(agentId: string, profile: AgentProfile): void {
     const adapterType = profile.adapter ?? (profile.driver === "gui" ? "traework-gui" : undefined);
     const current = this.adapters.get(agentId);
-    if (adapterType === "qoder-gui") {
-      if (!(current instanceof QoderGuiAdapter))
-        this.adapters.set(agentId, new QoderGuiAdapter(agentId));
-    } else if (adapterType === "opendesign-gui") {
-      if (!(current instanceof OpenDesignGuiAdapter))
-        this.adapters.set(agentId, new OpenDesignGuiAdapter(agentId));
-    } else if (adapterType === "zcode-gui") {
-      if (!(current instanceof ZcodeGuiAdapter))
-        this.adapters.set(agentId, new ZcodeGuiAdapter(agentId));
-    } else if (adapterType === "codex-gui") {
-      if (!(current instanceof CodexGuiAdapter))
-        this.adapters.set(agentId, new CodexGuiAdapter(agentId));
-    } else if (adapterType === "kimicode-gui") {
-      if (!(current instanceof KimicodeGuiAdapter))
-        this.adapters.set(agentId, new KimicodeGuiAdapter(agentId));
-    } else if (adapterType === "traework-gui") {
-      if (!(current instanceof TraeworkGuiAdapter))
-        this.adapters.set(agentId, new TraeworkGuiAdapter(agentId));
-    } else if (
-      current instanceof TraeworkGuiAdapter ||
-      current instanceof ZcodeGuiAdapter ||
-      current instanceof CodexGuiAdapter ||
-      current instanceof KimicodeGuiAdapter ||
-      current instanceof QoderGuiAdapter ||
-      current instanceof OpenDesignGuiAdapter ||
-      !current
-    ) {
+    if (adapterType !== undefined) {
+      // adapterType 来自 config schema 的 adapter 枚举，与注册表 key 同源；
+      // 若 schema 新增类型而注册表漏加，这里的索引编译失败（而不是静默回退）。
+      const Ctor = GUI_ADAPTERS[adapterType];
+      if (!(current instanceof Ctor)) this.adapters.set(agentId, new Ctor(agentId));
+      return;
+    }
+    // 未指定 adapter 类型：当前是 GUI adapter（或尚未创建）时回退为 CliAdapter；
+    // 已是 CliAdapter 或用户自定义 adapter 则保持不动。
+    if (!current || GUI_ADAPTER_CLASSES.some((C) => current instanceof C)) {
       this.adapters.set(agentId, new CliAdapter(agentId));
     }
   }
@@ -194,6 +206,46 @@ export class AgentAdapterRegistry {
               version: found.version,
             }
           : undefined,
+      };
+    }
+    if (profile.adapter === "minimax-gui") {
+      const found = await discoverMinimax(profile);
+      if (process.platform !== "win32") {
+        return {
+          id: agentId,
+          displayName: profile.displayName || agentId,
+          profile,
+          command: found?.path ?? "",
+          argsTemplate: profile.argsTemplate,
+          ok: false,
+          message: "MiniMax Code macOS research：未完成真机验证，禁止派发",
+          discovered: found ? { source: "discovery", version: found.version } : undefined,
+        };
+      }
+      if (found)
+        return {
+          id: agentId,
+          displayName: profile.displayName || agentId,
+          profile,
+          command: found.path,
+          argsTemplate: profile.argsTemplate,
+          ok: true,
+          message: `探测到 MiniMax Code: ${found.path}${found.version ? ` (v${found.version})` : ""}`,
+          discovered: {
+            source: found.source === "explicit" ? "explicit" : "discovery",
+            version: found.version,
+          },
+        };
+      return {
+        id: agentId,
+        displayName: profile.displayName || agentId,
+        profile,
+        command: "",
+        argsTemplate: profile.argsTemplate,
+        ok: false,
+        message:
+          profile.note ||
+          "未探测到 MiniMax Code 桌面端（固定盘相对路径、注册表卸载信息与标准安装目录均未命中）；请确认已安装 MiniMax Code",
       };
     }
     if (profile.adapter === "qoder-gui") {

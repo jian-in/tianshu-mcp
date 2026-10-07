@@ -1,6 +1,7 @@
 /**
- * 11 个工具的具体 handler。统一返回 ToolResult（文本 + meta 块）。
- * run_task / rework / verify 依赖 AppContext 提供的 manager/engine/services。
+ * 13 个工具的具体 handler。统一返回 ToolResult（文本 + meta 块）。
+ * run_task / rework / verify 依赖 AppContext 提供的 manager/engine/services；
+ * wait_task / wait_any（issue #28）额外接收 SDK 的请求 `extra`（用其 `signal` 感知中断）。
  */
 import fsp from "node:fs/promises";
 import { validateQoderReferences } from "../agents/qoder/references.js";
@@ -23,10 +24,16 @@ import {
   type VerifyTaskParams,
   type ReworkTaskParams,
   type ContinueTaskParams,
+  type WaitTaskParams,
+  type WaitAnyParams,
   type ServerConfig,
   type ProjectRecord,
 } from "../config/schema.js";
-import { QUERY_TASK_EVENT_LIMIT_DEFAULT } from "../config/schema.js";
+import {
+  QUERY_TASK_EVENT_LIMIT_DEFAULT,
+  WAIT_TASK_TIMEOUT_MAX_MS,
+  clampWaitTimeout,
+} from "../config/schema.js";
 import { toAcceptanceDef, type DataHome } from "../config/store.js";
 import type { TaskManager } from "../tasks/task-manager.js";
 import type { AcceptanceEngine } from "../verify/acceptance.js";
@@ -45,7 +52,8 @@ import {
   keyDigest,
   type IdempotencyEntry,
 } from "../tasks/idempotency.js";
-import { genTaskId, genVerifyId, nowIso } from "../util/id.js";
+import { genTaskId, genVerifyId, nowIso, asTaskId, asAgentId } from "../util/id.js";
+import type { TaskId } from "../util/id.js";
 import type { Logger } from "../util/log.js";
 import {
   formatToolResult,
@@ -64,7 +72,7 @@ import {
 import { readTextSafe, readJsonSafe } from "../util/fs.js";
 import { readLatestReportSummary } from "../loop/fix-loop.js";
 import { readDirSafe } from "../util/fs.js";
-import { parseZcodeModel } from "../agents/zcode/model.js";
+import { parseZcodeModel, describeZcodeLevelValueError } from "../agents/zcode/model.js";
 import { describeLevelValueError, parseKimicodeModel } from "../agents/kimicode/model.js";
 import { validateTaskReferences } from "../agents/zcode/references.js";
 
@@ -296,13 +304,21 @@ export function makeHandlers(ctx: AppContext, defaults: Defaults) {
     get_task_report: getReportHandler(ctx),
     cancel_task: cancelTaskHandler(ctx),
     verify_task: verifyTaskHandler(ctx, idempotency),
+    wait_task: waitTaskHandler(ctx),
+    wait_any: waitAnyHandler(ctx),
     rework_task: reworkTaskHandler(ctx),
     continue_task: continueTaskHandler(ctx),
     get_profiles: getProfilesHandler(ctx),
   };
 }
 
-type Handler = (args: Record<string, unknown>) => Promise<ToolResult>;
+/** wait_task / wait_any 用到的请求上下文（SDK `RequestHandlerExtra` 的结构子集）。 */
+export interface HandlerExtra {
+  /** 请求取消 / 连接关闭信号（SDK 注入）——wait 循环据此立即退出，不泄漏后台等待。 */
+  signal?: AbortSignal;
+}
+
+type Handler = (args: Record<string, unknown>, extra?: HandlerExtra) => Promise<ToolResult>;
 
 /**
  * 仓库未提交变更计数（git status --porcelain 行数）。
@@ -391,7 +407,11 @@ function runTaskHandler(
     if (finalAgentId === "zcode") {
       if (args.mode !== undefined) return errorResult("ZCode 不支持 mode 参数；请移除 mode 后重试");
       try {
-        parseZcodeModel(args.model);
+        // 参数级只做「格式 + 取值域」校验（issue #27 问题三）：档位集合随模型变化，
+        // 只能在运行期读界面实际渲染的选项，故「越权档位」的判定留给 run.ts。
+        const spec = parseZcodeModel(args.model, args.reasoningLevel);
+        const levelError = describeZcodeLevelValueError(spec);
+        if (levelError) throw new Error(levelError);
         validateTaskReferences(args.task, args.context, norm);
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
@@ -450,6 +470,13 @@ function runTaskHandler(
       return errorResult("designDirection 是 Open Design 专用参数");
     }
 
+    if (finalAgentId === "minimax") {
+      if (args.mode !== undefined) return errorResult("MiniMax Code 不支持 mode 参数；请移除 mode 后重试");
+    } else if (args.contextWindow !== undefined) {
+      // 与 designDirection 同一决策：非专用 agent 显式传入即拒绝，绝不静默忽略。
+      return errorResult("contextWindow 是 MiniMax Code 专用参数");
+    }
+
     const cfg = await dataHome.loadConfig();
     // 有效任务超时（R2）：调用参数 > profile > server 默认值，在提交时固化
     const taskTimeoutMs =
@@ -468,6 +495,7 @@ function runTaskHandler(
         planDoc: args.planDoc,
         designSystem: args.designSystem,
         designDirection: args.designDirection,
+        contextWindow: args.contextWindow,
         mode: args.mode,
         allowCreateProject: args.allowCreateProject,
         autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
@@ -591,7 +619,9 @@ async function runTaskWithoutProject(
     );
   }
   try {
-    parseZcodeModel(args.model);
+    const spec = parseZcodeModel(args.model, args.reasoningLevel);
+    const levelError = describeZcodeLevelValueError(spec);
+    if (levelError) throw new Error(levelError);
     // 无项目模式不做项目引用解析：识别到本地引用就在发送前说明需要 projectPath。
     validateTaskReferences(args.task, args.context, undefined);
   } catch (e) {
@@ -697,6 +727,114 @@ function queryTaskHandler(ctx: AppContext): Handler {
         : "",
     ].filter((s) => s !== "");
     return formatToolResult(lines.join("\n"), metaFromTask(meta, { recentEvents }));
+  };
+}
+
+/* ---------------- 等待原语（issue #28） ---------------- */
+
+/** 停点后的后续动作指引：终态 → 取报告；needs_user → continue 后再次 wait。 */
+function waitNextStep(status: TaskStatus): string {
+  if (status === "needs_user") {
+    return "任务在等待人工处理：请用 continue_task 恢复，恢复后再次调用 wait_task 继续等待。";
+  }
+  if (status === "succeeded") return "可用 get_task_report 查看验收报告。";
+  return "可用 get_task_report / query_task 查看详情。";
+}
+
+/** 钳制披露（仅在显式 timeoutMs 超上限时非空）：如实说明已钳制，不静默改值。 */
+function waitClampNote(clamped: boolean): string {
+  return clamped ? `（timeoutMs 超上限，已钳制到 ${WAIT_TASK_TIMEOUT_MAX_MS}ms）` : "";
+}
+
+function waitTaskHandler(ctx: AppContext): Handler {
+  const { manager } = ctx;
+  return async (rawArgs, extra) => {
+    const args = rawArgs as WaitTaskParams;
+    const meta = await manager.getMeta(args.taskId);
+    if (!meta) return errorResult(`任务不存在: ${args.taskId}`);
+    const { timeoutMs, clamped } = clampWaitTimeout(args.timeoutMs);
+    const result = await manager.waitForStops([args.taskId], timeoutMs, extra?.signal);
+    const waitedSec = Math.round(result.waitedMs / 1000);
+    const clampNote = waitClampNote(clamped);
+
+    if (result.aborted) {
+      // 连接已断时本响应自然丢弃；循环已释放（SDK _onclose abort 全部 in-flight handler）。
+      return formatToolResult(
+        `等待被取消（调用方中断 / 连接关闭），任务不受影响。${describeStatus(meta)}`,
+        metaFromTask(meta, { waitSettled: false, waitedMs: result.waitedMs }),
+      );
+    }
+    if (result.stopped.length > 0) {
+      const hit = result.stopped[0]!;
+      return formatToolResult(
+        [
+          `任务已到停点（等待 ${waitedSec} 秒）：${describeStatus(hit.meta)}`,
+          waitNextStep(hit.meta.status),
+        ].join("\n"),
+        metaFromTask(hit.meta, { waitSettled: true, waitedMs: result.waitedMs }),
+      );
+    }
+    // 超时：重读一次最新快照，避免回显等待开始前的旧 meta
+    const current = (await manager.getMeta(args.taskId)) ?? meta;
+    return formatToolResult(
+      [
+        `等待超时（${waitedSec} 秒）：${describeStatus(current)}${clampNote}`,
+        "任务本体不受影响；请再次调用 wait_task 继续等待，或用 query_task 查看细节。",
+      ].join("\n"),
+      metaFromTask(current, { waitSettled: false, waitedMs: result.waitedMs }),
+    );
+  };
+}
+
+function waitAnyHandler(ctx: AppContext): Handler {
+  const { manager } = ctx;
+  return async (rawArgs, extra) => {
+    const args = rawArgs as WaitAnyParams;
+    // 入口预检全部 id（fail-closed）：缺一即报错并列出缺失 id，绝不静默跳过。
+    const pre = await Promise.all(args.taskIds.map((id) => manager.getMeta(id)));
+    const missing = args.taskIds.filter((_, i) => pre[i] === null);
+    if (missing.length > 0) return errorResult(`任务不存在: ${missing.join(", ")}`);
+
+    const { timeoutMs, clamped } = clampWaitTimeout(args.timeoutMs);
+    const result = await manager.waitForStops(args.taskIds, timeoutMs, extra?.signal);
+    const waitedSec = Math.round(result.waitedMs / 1000);
+    const clampNote = waitClampNote(clamped);
+    const current = await Promise.all(args.taskIds.map((id) => manager.getMeta(id)));
+    const statusLines = args.taskIds
+      .map((id, i) => {
+        const m = current[i];
+        return `- ${id}: ${m ? describeStatus(m) : "任务不存在"}`;
+      })
+      .join("\n");
+
+    if (result.aborted) {
+      return formatToolResult(
+        ["等待被取消（调用方中断 / 连接关闭），任务不受影响。", statusLines].join("\n"),
+        { ok: false, message: "等待被取消", waitSettled: false, waitedMs: result.waitedMs },
+      );
+    }
+    if (result.stopped.length > 0) {
+      // stopped 按 taskIds 数组下标升序 → stopped[0] 即「数组顺序首个已停」（确定性优先）。
+      const hit = result.stopped[0]!;
+      return formatToolResult(
+        [
+          `已有任务到达停点（等待 ${waitedSec} 秒）：${hit.meta.taskId} —— ${describeStatus(hit.meta)}`,
+          waitNextStep(hit.meta.status),
+          "全部任务当前状态：",
+          statusLines,
+        ].join("\n"),
+        metaFromTask(hit.meta, { waitSettled: true, waitedMs: result.waitedMs }),
+      );
+    }
+    return formatToolResult(
+      [
+        `等待超时（${waitedSec} 秒）：暂无任务到达停点。${clampNote}`,
+        "任务本体不受影响；请再次调用 wait_any 继续等待，或用 query_task 查看细节。",
+        "全部任务当前状态：",
+        statusLines,
+      ].join("\n"),
+      { ok: false, message: "等待超时", waitSettled: false, waitedMs: result.waitedMs },
+    );
   };
 }
 
@@ -996,7 +1134,7 @@ function verifyTaskHandler(ctx: AppContext, idempotency: IdempotencyIndex): Hand
     // round 分配：手动验收写入任务目录时不能覆盖已有 report-0.*，分配下一可用轮次
     let round = await nextReportRound(store, taskId);
 
-    const verifyTaskId = taskId ?? genVerifyId();
+    const verifyTaskId = asTaskId(taskId ?? genVerifyId());
     // 抢占同键「执行中」标记：未抢到说明同键验收正在执行——立刻如实回报，而不是排队数分钟
     let reserved = false;
     if (key !== undefined && digest !== undefined) {
@@ -1083,7 +1221,7 @@ async function executeVerify(
     displayPath: string;
     taskText: string | undefined;
     taskId: string | undefined;
-    verifyTaskId: string;
+    verifyTaskId: TaskId;
     baseline: BaselineT | undefined;
     cfg: ServerConfig;
     projectVerify:
@@ -1156,7 +1294,7 @@ async function executeVerify(
       status: passed ? "succeeded" : report.blockingIssues?.length ? "needs_attention" : "failed",
       projectPath,
       displayPath,
-      agentId: "manual-verify",
+      agentId: asAgentId("manual-verify"),
       task: taskText ?? "(手动验收)",
       autoVerify: true,
       autoFixRounds: 0,
