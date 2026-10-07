@@ -24,7 +24,8 @@ import type {
   PartialAcceptanceConfig,
 } from "../config/schema.js";
 import { TaskOrchestrator } from "../loop/fix-loop.js";
-import { genTaskId, nowIso } from "../util/id.js";
+import { waitForStops as waitForStopsCore, type WaitForStopsResult } from "./wait.js";
+import { genTaskId, nowIso, asTaskId, asAgentId } from "../util/id.js";
 import type { DataHome } from "../config/store.js";
 import type { AgentAdapterRegistry } from "../agents/registry.js";
 import type { AcceptanceEngine } from "../verify/acceptance.js";
@@ -51,6 +52,8 @@ export interface NewTaskInput {
   designSystem?: string;
   /** Open Design 设计方向（已归一为 prototype/document/clone）；其他 agent 忽略 */
   designDirection?: string;
+  /** MiniMax Code 上下文窗口（界面候选文本）；其他 agent 忽略 */
+  contextWindow?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
   /** ZCode 专用：目标项目未登记时是否允许自动导入（省略 = 允许）。 */
@@ -196,6 +199,24 @@ export class TaskManager {
     return this.tasks.get(taskId) ?? (await this.store.readSnapshot(taskId));
   }
 
+  /**
+   * 阻塞等待一组任务到达停点（issue #28 / 计划 §2.4 C3）。
+   *
+   * **纯只读**：等待期间不写任务状态、不动任务本体；被客户端截断 / 连接中断 / 超时
+   * 都不影响任务继续执行。状态读取复用 `getMeta`（`waitForStatusWrite` 屏障 +
+   * 内存优先 + 快照兜底），因此 wait 看到的是与 `query_task` 同一口径的事实。
+   * @param taskIds 目标任务 id（`wait_task` 单个 / `wait_any` 一组）
+   * @param timeoutMs 本次等待上限（调用方已钳制）
+   * @param signal SDK 请求的取消信号（连接关闭 / 请求取消）
+   */
+  async waitForStops(
+    taskIds: string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<WaitForStopsResult> {
+    return waitForStopsCore(taskIds, (id) => this.getMeta(id), { timeoutMs, signal });
+  }
+
   /** S4：外部对终态任务元数据的更新（如手动 verify 更新报告指针/轮次）——写快照并同步内存 map */
   async persistMetaUpdate(meta: TaskMeta): Promise<void> {
     this.tasks.set(meta.taskId, meta);
@@ -244,11 +265,11 @@ export class TaskManager {
   async submit(input: NewTaskInput): Promise<TaskMeta> {
     const now = nowIso();
     const meta: TaskMeta = {
-      taskId: input.taskId ?? genTaskId(),
+      taskId: input.taskId !== undefined ? asTaskId(input.taskId) : genTaskId(),
       workspaceMode: input.workspaceMode,
       projectPath: input.projectPath,
       displayPath: input.displayPath,
-      agentId: input.agentId,
+      agentId: asAgentId(input.agentId),
       task: input.task,
       context: input.context,
       model: input.model,
@@ -257,6 +278,7 @@ export class TaskManager {
       planDoc: input.planDoc,
       designSystem: input.designSystem,
       designDirection: input.designDirection,
+      contextWindow: input.contextWindow,
       mode: input.mode,
       allowCreateProject: input.allowCreateProject,
       autoVerify: input.autoVerify,
@@ -399,6 +421,24 @@ export class TaskManager {
         // 环境类（close_existing_instance / login_required / setup_recovery / system_permission）：
         // 任务尚未真正派发或绑定未完成 → 复检环境后走全新派发并**补发完整任务书**，
         // 用户确认文本只作为「已处理」说明，绝不发给模型。
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = false;
+        meta.continueReobserve = undefined;
+      }
+    } else if (meta.agentId === "minimax") {
+      // 与 kimicode 同构的三分派：agent_question 回答回原会话；user_confirmation 重连观察；
+      // 环境类复检后全新派发并补发完整任务书（用户确认文本绝不发给模型）。
+      if (meta.needsUserKind === "agent_question") {
+        if (!meta.minimaxSessionId && !meta.minimaxSessionTitle)
+          return { found: false, reason: "原 MiniMax Code 会话定位信息丢失，拒绝打开最近会话" };
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = true;
+        meta.continueReobserve = undefined;
+      } else if (meta.needsUserKind === "user_confirmation") {
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = false;
+        meta.continueReobserve = true;
+      } else {
         meta.continueMessage = message.trim();
         meta.continueSendMessage = false;
         meta.continueReobserve = undefined;

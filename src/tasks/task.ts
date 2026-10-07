@@ -11,6 +11,7 @@ import type {
 import type { VisualReport } from "../visual/types.js";
 import type { AgentEventName } from "../agents/agent-events.js";
 import type { RepairDirectives } from "../verify/directives.js";
+import type { TaskId, AgentId } from "../util/id.js";
 
 /**
  * 任务工作区模式（issue #12）：
@@ -113,7 +114,7 @@ export interface AnalysisResult {
 /** 一轮验收报告（内存 + report.json） */
 export interface VerifyReport {
   round: number;
-  taskId: string;
+  taskId: TaskId;
   projectPath: string;
   startedAt: string;
   finishedAt: string;
@@ -134,7 +135,7 @@ export interface VerifyReport {
 
 /** 任务全量 meta（task.json 快照 + meta 块输出共用） */
 export interface TaskMeta {
-  taskId: string;
+  taskId: TaskId;
   status: TaskStatus;
   /**
    * 工作区模式。旧 task.json 无此字段时按 project 归一化（见 workspaceModeOf）——
@@ -143,7 +144,7 @@ export interface TaskMeta {
   workspaceMode?: WorkspaceMode;
   projectPath: string;
   displayPath: string;
-  agentId: string;
+  agentId: AgentId;
   task: string;
   context?: string;
   /** GUI 类 agent（traework/codex）使用的模型名；CLI 类忽略 */
@@ -157,6 +158,11 @@ export interface TaskMeta {
   designSystem?: string;
   /** Open Design 设计方向（已归一为 prototype/document/clone）；其他 agent 忽略 */
   designDirection?: string;
+  /** MiniMax Code 上下文窗口（界面候选文本）；其他 agent 忽略 */
+  contextWindow?: string;
+  /** MiniMax Code 原会话锚点（id 来自主窗口 URL；标题来自侧栏会话列表） */
+  minimaxSessionId?: string;
+  minimaxSessionTitle?: string;
   /** GUI 类 agent（traework）使用的面板模式（Work/Code/Design）；CLI 类忽略 */
   mode?: TraeworkMode;
   /**
@@ -172,6 +178,7 @@ export interface TaskMeta {
   errorType?:
     | "timeout"
     | "spawn"
+    | "setup_failed"
     | "agent_failed"
     | "verify_failed"
     | "cancelled"
@@ -328,6 +335,20 @@ export const TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
 
 export function isTerminal(s: TaskStatus): boolean {
   return TERMINAL_STATUSES.includes(s);
+}
+
+/**
+ * `wait_task` / `wait_any` 的「停点」判定（issue #28 的单一判定点）：
+ * 任务**停止推进**的时刻 = 调用方应当被唤醒的时刻。
+ *
+ * 与 cancel 路径的 `settled` 语义刻意分开：`needs_user` 是**非终态**
+ * （可被 `continue_task` 恢复到 `queued`，之后可能再次进入），但此刻任务已停止推进、
+ * 在等人工处理，必须立即唤醒调用方——否则 wait 会一直空等到 timeout，
+ * 调用方对「任务在等人」一无所知。
+ * 状态机演进（新增停点）只改这一处。
+ */
+export function isWaitSettled(s: TaskStatus): boolean {
+  return isTerminal(s) || s === "needs_user";
 }
 
 /** 归一化工作区模式：缺字段一律按 project（保守，绝不把旧记录或损坏记录当作无项目）。 */
