@@ -31,7 +31,7 @@ import { analyzeChanges } from "./code-analysis.js";
 import { extractRepairDirectives } from "./directives.js";
 import { runDryRunChecks, type DryRunReport } from "./dry-run.js";
 import { captureBaseline, gitDiffCheckSince } from "./git-baseline.js";
-import { nowIso } from "../util/id.js";
+import { nowIso, asTaskId } from "../util/id.js";
 import type { VerifyReport, CheckResult } from "../tasks/task.js";
 import { TaskStore } from "../tasks/task-store.js";
 import { Logger } from "../util/log.js";
@@ -529,7 +529,7 @@ export class AcceptanceEngine {
 
     const report: VerifyReport = {
       round: req.round,
-      taskId: req.taskId,
+      taskId: asTaskId(req.taskId),
       projectPath: req.projectPath,
       startedAt,
       finishedAt,
